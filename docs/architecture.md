@@ -41,11 +41,25 @@ sleep2skin 백엔드의 구조와 설계 결정. 제품 요구사항은 [prd.md]
 com.allday.sleep2skin_be
 ├── Sleep2skinBeApplication.java
 │
-├── common/                     공통 인프라 — 도메인 로직 없음
-│   ├── config/                 SwaggerConfig, JpaConfig, S3Config, OpenAiConfig
-│   ├── response/               ApiResponse, ErrorResponse
-│   ├── exception/              GlobalExceptionHandler, BusinessException, ErrorCode
-│   └── entity/                 BaseTimeEntity (createdAt/updatedAt)
+├── global/                     공통 인프라 — 도메인 로직 없음
+│   ├── config/
+│   │   ├── SwaggerConfig       (구현 완료)
+│   │   ├── JpaConfig           @EnableJpaAuditing
+│   │   ├── S3Config            S3Client 빈
+│   │   └── OpenAiConfig        HTTP 클라이언트 빈 + 타임아웃
+│   ├── response/
+│   │   ├── ApiResponse         { success, data, error }
+│   │   └── ErrorResponse       { code, message }
+│   ├── exception/
+│   │   ├── ErrorCode           enum — 도메인별 구역으로 나눠 관리
+│   │   ├── BusinessException
+│   │   └── GlobalExceptionHandler
+│   ├── entity/
+│   │   ├── BaseTimeEntity      createdAt + updatedAt
+│   │   └── BaseCreatedEntity   createdAt만 (append-only 이력용)
+│   └── infra/                  외부 연동 — 교체 가능하게 감싼다
+│       ├── s3/                 SelfieStorage (업로드 + 삭제)
+│       └── openai/             SkinVisionClient 인터페이스 + 구현체
 │
 ├── user/                       사용자 · 동의 이력 · 설정
 ├── sleep/                      수면 세션 수신 · 정규화 · 집계
@@ -255,7 +269,21 @@ public abstract class BaseTimeEntity {
 }
 ```
 
-`@EnableJpaAuditing`은 `common/config/JpaConfig`에 둔다.
+`@EnableJpaAuditing`은 `global/config/JpaConfig`에 둔다.
+
+`consent_history` 같은 **append-only 이력 테이블**은 수정되지 않으므로 `updatedAt`이 항상 `createdAt`과 같다. 이런 엔티티는 `BaseCreatedEntity`(createdAt만)를 상속한다.
+
+### `global`에 넣지 않는 것
+
+| 흔히 넣지만 이 프로젝트엔 불필요 | 이유 |
+|---|---|
+| `security/` | 인증이 없다. Spring Security를 추가하지 않는다 |
+| `resolver/` (`@LoginUser`) | 위와 같은 이유. `userId`는 파라미터로 받는다 |
+| `interceptor/`, `filter/` | 인증·로깅 요구사항이 아직 없다 |
+| `CorsConfig` | 클라이언트가 iOS 앱이라 CORS를 타지 않는다. 웹 프론트가 붙으면 그때 |
+| `util/` | **비어 있는 채로 만들지 않는다.** 두 번째 도메인이 같은 걸 필요로 할 때 옮긴다 |
+
+**`ScoringPolicy`는 `global`이 아니라 `skin`에 둔다.** 공통 설정처럼 보이지만 피부 도메인의 비즈니스 규칙이다. 판단 기준은 *"다른 도메인이 이걸 쓸 일이 있나?"* — 없으면 도메인 안이다.
 
 ---
 

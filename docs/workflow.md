@@ -79,15 +79,28 @@ feature/       ●──●            ●───●
 ### 브랜치 이름
 
 ```
-feature/{도메인}-{작업}
+{접두사}/{도메인}-{작업}
 ```
+
+**접두사는 커밋 type과 같은 단어를 쓴다.** `feat`만 `feature/`로 늘려 쓴다(관례). 그러면 브랜치 이름만 보고 커밋 type이 정해진다.
+
+| 커밋 type | 브랜치 접두사 |
+|---|---|
+| `feat` | `feature/` |
+| `fix` | `fix/` |
+| `refactor` | `refactor/` |
+| `docs` | `docs/` |
+| `chore` | `chore/` |
+| — | `hotfix/` (배포된 코드 긴급 수정 전용) |
 
 | 예시 | 설명 |
 |---|---|
 | `feature/sleep-session-upload` | 수면 세션 업로드 API |
 | `feature/skin-forecast` | 피부 예보 산출 |
-| `feature/common-exception-handler` | 전역 예외 처리 |
+| `feature/global-exception-handler` | 전역 예외 처리 |
+| `refactor/global-package` | common 패키지를 global로 통일 |
 | `fix/deploy-issue-template` | dev에 있는 배포 이슈 템플릿 버그 수정 |
+| `docs/add-claude-md` | CLAUDE.md 추가 |
 | `hotfix/selfie-s3-delete` | 배포 후 발견된 셀피 삭제 누락 긴급 수정 |
 
 소문자 + 하이픈. 한글을 쓰지 않는다.
@@ -151,13 +164,13 @@ type(scope): 한국어 설명
 feat(sleep):    수면 세션 업로드 API 추가
 feat(skin):     피부 예보 가중합 스코어링 구현
 fix(skin):      셀피 분석 실패 시 S3 객체 삭제 누락 수정
-refactor(common): 응답 래퍼를 record로 전환
+refactor(global): 응답 래퍼를 record로 전환
 docs(prd):      셀피 이미지 취급 정책 상세화
 chore(build):   JPA/MySQL 연동 의존성 추가
 chore(ci):      GitHub Actions 빌드/테스트 워크플로 추가
 ```
 
-주로 쓰는 scope: `sleep` · `skin` · `todo` · `report` · `user` · `common` · `build` · `ci` · `docker` · `config` · `readme` · `prd`
+주로 쓰는 scope: `sleep` · `skin` · `todo` · `report` · `user` · `global` · `build` · `ci` · `docker` · `config` · `github` · `readme` · `prd`
 
 ### 규칙
 
@@ -202,9 +215,9 @@ API 개발자가 합류하면 도메인 단위로 나눈다. 도메인 패키지
 |---|---|---|
 | A | `sleep` + `skin` | 핵심 루프. 서로 강하게 엮여 한 사람이 맡는 게 낫다 |
 | B | `todo` + `report` | A의 결과를 조회하는 쪽 |
-| 공통 | `common`, `user` | 먼저 완성해두고 양쪽이 공유 |
+| 공통 | `global`, `user` | 먼저 완성해두고 양쪽이 공유 |
 
-**`common` 패키지(응답 래퍼, 에러 코드, 예외 처리)를 가장 먼저 확정한다.** 이게 흔들리면 두 사람의 코드가 모두 흔들린다.
+**`global` 패키지(응답 래퍼, 에러 코드, 예외 처리)를 가장 먼저 확정한다.** 이게 흔들리면 두 사람의 코드가 모두 흔들린다.
 
 에러 코드 enum은 여러 명이 동시에 추가하면 충돌이 잦은 파일이다. 도메인별로 구역을 나눠 추가한다.
 

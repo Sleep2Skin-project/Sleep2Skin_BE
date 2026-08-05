@@ -21,7 +21,7 @@ Swagger UI: http://localhost:8080/swagger-ui.html · 헬스체크: `/api/v1/heal
 
 ```
 com.allday.sleep2skin_be
-├── common/     config · response · exception · entity   (공통 인프라)
+├── global/     config · response · exception · entity · infra   (공통 인프라)
 ├── user/       사용자 · 동의 이력 · 설정
 ├── sleep/      수면 세션 수신 · 정규화 · 집계
 ├── skin/       피부 예보 · 셀피 실측 · 검증 · 개인 모델
