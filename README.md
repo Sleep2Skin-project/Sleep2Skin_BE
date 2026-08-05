@@ -22,7 +22,7 @@ docker compose up -d mysql
 
 ## 로컬에서 애플리케이션 실행 (`./gradlew bootRun`)
 
-`application.yml`이 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `JWT_EXPIRATION` 환경변수를 참조하므로, 실행 전 현재 셸에 `.env` 값을 주입해야 합니다.
+`application.yml`이 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` 환경변수를 참조하므로, 실행 전 현재 셸에 `.env` 값을 주입해야 합니다.
 
 ```bash
 # Bash
@@ -74,4 +74,4 @@ docker build -t sleep2skin-be .
 docker compose up --build
 ```
 
-`app` 컨테이너는 `mysql` 서비스의 healthcheck(`mysqladmin ping`)가 통과한 뒤에 시작됩니다. DB/JWT 값은 이미지 빌드 시점이 아니라 컨테이너 실행 시점에 `.env`로부터 주입됩니다.
+`app` 컨테이너는 `mysql` 서비스의 healthcheck(`mysqladmin ping`)가 통과한 뒤에 시작됩니다. DB 값은 이미지 빌드 시점이 아니라 컨테이너 실행 시점에 `.env`로부터 주입됩니다.

@@ -30,8 +30,6 @@ jobs:
       DB_NAME: sleep2skin_test
       DB_USERNAME: sleep2skin
       DB_PASSWORD: test1234
-      JWT_SECRET: ci-test-secret
-      JWT_EXPIRATION: 3600000
     steps:
       - name: Checkout
         uses: actions/checkout@v4

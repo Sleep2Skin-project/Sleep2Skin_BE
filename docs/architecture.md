@@ -403,9 +403,7 @@ aws:
 
 `src/test/resources/application-test.yml`은 **파일명이 `application.yml`이면 안 된다.** 그러면 main의 설정을 통째로 가려버려 `spring.application.name`·springdoc 설정까지 사라진다. 프로파일 파일로 두고 `@ActiveProfiles("test")`로 덮어쓴다.
 
-### ⚠️ 정리가 필요한 설정
-
-`application.yml`에 `jwt.secret`·`jwt.expiration`이 있고 `compose.yaml`·`ci.yml`에도 `JWT_SECRET`·`JWT_EXPIRATION`이 있다. **이 프로젝트는 인증을 두지 않기로 확정했다** (§6). 참조하는 코드가 없어 지금은 무해하지만, 남겨두면 나중에 "인증이 있는 줄" 알고 작업하는 사람이 생긴다.
+> JWT 관련 설정은 **전부 제거했다.** 이 프로젝트는 인증을 두지 않는다(§6). 참조하는 코드가 없어 무해했지만, 남겨두면 "인증이 있는 줄" 알고 작업하는 사람이 생긴다. 나중에 인증을 도입하면 그때 다시 넣는다.
 
 ### DDL 관리 — `ddl-auto: update`
 
