@@ -504,7 +504,7 @@ POST /api/v1/sleep/sessions 수신
 임시값이 코드 곳곳에 흩어지면 재확정 때 전부 찾아다녀야 한다. **한 곳에 모은다.**
 
 ```java
-// skin/ScoringPolicy.java — 임시값 전용. 확정 시 이 파일만 고친다
+// domain/skin/ScoringPolicy.java — 임시값 전용. 확정 시 이 파일만 고친다
 public final class ScoringPolicy {
     // ⚠️ 임시값 — PRD §9.1. 팀 논의로 재확정 예정
     public static final Map<SleepFeature, SkinMetric> FEATURE_METRIC_MAP = ...;

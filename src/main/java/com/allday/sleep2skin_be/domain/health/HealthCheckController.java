@@ -1,6 +1,6 @@
-package com.allday.sleep2skin_be.health;
+package com.allday.sleep2skin_be.domain.health;
 
-import com.allday.sleep2skin_be.health.dto.HealthCheckResponse;
+import com.allday.sleep2skin_be.domain.health.dto.HealthCheckResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;

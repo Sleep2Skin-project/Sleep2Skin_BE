@@ -22,15 +22,17 @@ Swagger UI: http://localhost:8080/swagger-ui.html · 헬스체크: `/api/v1/heal
 ```
 com.allday.sleep2skin_be
 ├── global/     config · response · exception · entity · infra   (공통 인프라)
-├── user/       사용자 · 동의 이력 · 설정
-├── sleep/      수면 세션 수신 · 정규화 · 집계
-├── skin/       피부 예보 · 셀피 실측 · 검증 · 개인 모델
-├── todo/       추천 엔진 · TODO 리스트
-├── report/     일간 · 주간 · 월간 · 종합 리포트
-└── health/     헬스체크 (구현 완료 — 패턴 참고용)
+└── domain/
+    ├── user/     사용자 · 동의 이력 · 설정
+    ├── sleep/    수면 세션 수신 · 정규화 · 집계
+    ├── skin/     피부 예보 · 셀피 실측 · 검증 · 개인 모델
+    ├── todo/     추천 엔진 · TODO 리스트
+    ├── report/   일간 · 주간 · 월간 · 종합 리포트
+    └── health/   헬스체크 (구현 완료 — 패턴 참고용)
 ```
 
 도메인마다 `Controller / Service / repository / entity / dto`. Controller-Service-Repository 3계층.
+의존 방향은 **`domain → global` 한쪽뿐이다.** `global`이 `domain`을 참조하면 안 된다.
 
 ## 핵심 루프
 
@@ -132,7 +134,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 **수면 피처 → 피부 지표 매핑은 확정값이 아니다.** 문서를 완성하려 임시로 채운 것이고 팀 논의로 재확정된다 (prd.md §9.1). 예보 산출·리포트·학습이 전부 이 매핑에 의존하므로 바뀔 때 파급이 크다.
 
-임시값은 전부 `skin/ScoringPolicy` 한 곳에 모은다. **서비스 로직에 하드코딩하지 않는다.** 참조하는 코드에는 `// 임시값 (PRD §9.1)` 주석을 남긴다.
+임시값은 전부 `domain/skin/ScoringPolicy` 한 곳에 모은다. **서비스 로직에 하드코딩하지 않는다.** 참조하는 코드에는 `// 임시값 (PRD §9.1)` 주석을 남긴다.
 
 ## 착수 전 확정이 필요한 것
 

@@ -66,28 +66,18 @@ public ApiResponse<SkinForecastResponse> getForecast(@RequestParam Long userId) 
 
 이 서비스는 **빈 상태가 정상 흐름**이다 — 수면 데이터가 없거나, 검증 이력이 없거나, 기록이 7일 미만인 상황이 예외가 아니라 일상이다. 이걸 전부 에러 코드로 관리해 프론트가 빈 상태 UI를 정확히 분기하게 한다.
 
+실제 코드는 **`global/exception/ErrorCode.java`가 단일 출처**다. 여기에 목록을 복사해두지 않는다 — 두 곳에 있으면 어긋난다.
+
 ```java
+@Getter
 public enum ErrorCode {
 
-    // 공통
+    // ===== 공통 =====
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "요청 값이 올바르지 않습니다."),
-    INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다."),
-
-    // 사용자
-    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
-
-    // 수면
-    SLEEP_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "수면 데이터가 없습니다."),
-    SLEEP_STAGE_INVALID(HttpStatus.BAD_REQUEST, "수면 단계 값이 올바르지 않습니다."),
-
-    // 피부
-    SKIN_FORECAST_NOT_FOUND(HttpStatus.NOT_FOUND, "오늘의 예보가 아직 산출되지 않았습니다."),
-    SELFIE_ANALYSIS_FAILED(HttpStatus.BAD_GATEWAY, "셀피 분석에 실패했습니다. 다시 시도해주세요."),
-    SELFIE_ANALYSIS_TIMEOUT(HttpStatus.GATEWAY_TIMEOUT, "분석이 지연되고 있습니다. 다시 시도해주세요."),
-    VERIFICATION_ALREADY_DONE(HttpStatus.CONFLICT, "오늘은 이미 검증을 완료했습니다."),
-
-    // 리포트
-    REPORT_DATA_INSUFFICIENT(HttpStatus.OK, "기록이 부족해 리포트를 만들 수 없습니다.");
+    ...
+    // ===== 수면 =====
+    SLEEP_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "수면 데이터가 없습니다. 앱에서 수면 기록을 동기화해주세요."),
+    ...
 
     private final HttpStatus status;
     private final String message;
@@ -95,6 +85,10 @@ public enum ErrorCode {
 ```
 
 **네이밍**: `{도메인}_{상황}`. 대문자 스네이크. 프론트가 문자열로 분기하므로 한번 정하면 함부로 바꾸지 않는다.
+
+**도메인별 구역을 지켜 추가한다.** 여러 명이 동시에 건드리면 충돌이 잦은 파일이다.
+
+**빈 상태도 HTTP 4xx로 내보낸다.** `success: false`라서 "정상 흐름인데 실패?"로 보이지만, 클라이언트 입장에서 중요한 건 **에러 코드 문자열로 화면을 분기할 수 있는가**다. 200으로 내리면서 본문에 상태 플래그를 넣으면 성공 응답의 스키마가 화면마다 달라진다.
 
 **메시지는 사용자에게 그대로 보여줄 수 있는 한국어 문장**으로 쓴다. 개발자용 상세 정보는 로그로 남긴다.
 
@@ -178,8 +172,8 @@ public record SkinForecastResponse(
 ### 패키지 배치
 
 ```
-{도메인}/dto/request/     요청 DTO
-{도메인}/dto/response/    응답 DTO
+domain/{도메인}/dto/request/     요청 DTO
+domain/{도메인}/dto/response/    응답 DTO
 ```
 
 DTO가 적은 도메인은 `dto/` 하나로 둬도 된다. `health` 도메인이 그 예다.
@@ -442,9 +436,10 @@ SkinForecast forecast = forecastRepository.findByUserIdAndBaseDate(...)
 
 ```
 src/test/java/com/allday/sleep2skin_be/
-├── skin/
-│   ├── SkinForecastServiceTest.java        스코어링 로직
-│   └── SkinControllerTest.java             @WebMvcTest
+├── domain/
+│   └── skin/
+│       ├── SkinForecastServiceTest.java    스코어링 로직
+│       └── SkinControllerTest.java         @WebMvcTest
 └── Sleep2skinBeApplicationTests.java       컨텍스트 로딩
 ```
 

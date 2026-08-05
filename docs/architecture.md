@@ -61,20 +61,23 @@ com.allday.sleep2skin_be
 │       ├── s3/                 SelfieStorage (업로드 + 삭제)
 │       └── openai/             SkinVisionClient 인터페이스 + 구현체
 │
-├── user/                       사용자 · 동의 이력 · 설정
-├── sleep/                      수면 세션 수신 · 정규화 · 집계
-├── skin/                       피부 예보 · 셀피 실측 · 검증 · 개인 모델
-├── todo/                       추천 엔진 · TODO 리스트
-├── report/                     일간 · 주간 · 월간 · 종합 리포트
-└── health/                     헬스체크 (구현 완료)
+└── domain/                     비즈니스 도메인
+    ├── user/                   사용자 · 동의 이력 · 설정
+    ├── sleep/                  수면 세션 수신 · 정규화 · 집계
+    ├── skin/                   피부 예보 · 셀피 실측 · 검증 · 개인 모델
+    ├── todo/                   추천 엔진 · TODO 리스트
+    ├── report/                 일간 · 주간 · 월간 · 종합 리포트
+    └── health/                 헬스체크 (구현 완료)
 ```
+
+`global`과 `domain` 두 갈래로 나눠, 최상위만 봐도 **공통 인프라와 비즈니스 로직의 경계**가 보이게 한다. 의존 방향은 `domain → global` 한쪽뿐이다. **`global`이 `domain`을 참조하면 안 된다.**
 
 ### 도메인 패키지 내부 구조
 
 모든 도메인 패키지는 같은 형태를 따른다. `health` 도메인이 이미 이 패턴의 축소판이다.
 
 ```
-skin/
+domain/skin/
 ├── SkinController.java             HTTP 진입점. 검증과 응답 변환만
 ├── SkinForecastService.java        예보 산출 (HOME-03)
 ├── SkinVerificationService.java    예보 vs 실측 검증 (HOME-07)
