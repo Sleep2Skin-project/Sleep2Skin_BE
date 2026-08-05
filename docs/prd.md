@@ -392,7 +392,7 @@ POST /api/v1/sleep/sessions 수신
 
 ### 빈 상태 · 예외 처리
 
-이 서비스는 **빈 상태가 정상 흐름**이다. 에러 코드 체계로 일괄 관리한다 ([conventions.md](conventions.md) 참조).
+이 서비스는 **빈 상태가 정상 흐름**이다. 조회 API는 200 + 상태 필드로, 동작 API는 4xx + `ErrorCode`로 나눠 처리한다 ([conventions.md](conventions.md) §2 참조).
 
 | # | 이슈 | 관련 |
 |---|---|---|
@@ -504,7 +504,7 @@ POST /api/v1/sleep/sessions 수신
 임시값이 코드 곳곳에 흩어지면 재확정 때 전부 찾아다녀야 한다. **한 곳에 모은다.**
 
 ```java
-// skin/ScoringPolicy.java — 임시값 전용. 확정 시 이 파일만 고친다
+// domain/skin/ScoringPolicy.java — 임시값 전용. 확정 시 이 파일만 고친다
 public final class ScoringPolicy {
     // ⚠️ 임시값 — PRD §9.1. 팀 논의로 재확정 예정
     public static final Map<SleepFeature, SkinMetric> FEATURE_METRIC_MAP = ...;

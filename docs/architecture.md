@@ -41,26 +41,43 @@ sleep2skin 백엔드의 구조와 설계 결정. 제품 요구사항은 [prd.md]
 com.allday.sleep2skin_be
 ├── Sleep2skinBeApplication.java
 │
-├── common/                     공통 인프라 — 도메인 로직 없음
-│   ├── config/                 SwaggerConfig, JpaConfig, S3Config, OpenAiConfig
-│   ├── response/               ApiResponse, ErrorResponse
-│   ├── exception/              GlobalExceptionHandler, BusinessException, ErrorCode
-│   └── entity/                 BaseTimeEntity (createdAt/updatedAt)
+├── global/                     공통 인프라 — 도메인 로직 없음
+│   ├── config/
+│   │   ├── SwaggerConfig       (구현 완료)
+│   │   ├── JpaConfig           @EnableJpaAuditing
+│   │   ├── S3Config            S3Client 빈
+│   │   └── OpenAiConfig        HTTP 클라이언트 빈 + 타임아웃
+│   ├── response/
+│   │   ├── ApiResponse         { success, data, error }
+│   │   └── ErrorResponse       { code, message }
+│   ├── exception/
+│   │   ├── ErrorCode           enum — 도메인별 구역으로 나눠 관리
+│   │   ├── BusinessException
+│   │   └── GlobalExceptionHandler
+│   ├── entity/
+│   │   ├── BaseTimeEntity      createdAt + updatedAt
+│   │   └── BaseCreatedEntity   createdAt만 (append-only 이력용)
+│   └── infra/                  외부 연동 — 교체 가능하게 감싼다
+│       ├── s3/                 SelfieStorage (업로드 + 삭제)
+│       └── openai/             SkinVisionClient 인터페이스 + 구현체
 │
-├── user/                       사용자 · 동의 이력 · 설정
-├── sleep/                      수면 세션 수신 · 정규화 · 집계
-├── skin/                       피부 예보 · 셀피 실측 · 검증 · 개인 모델
-├── todo/                       추천 엔진 · TODO 리스트
-├── report/                     일간 · 주간 · 월간 · 종합 리포트
-└── health/                     헬스체크 (구현 완료)
+└── domain/                     비즈니스 도메인
+    ├── user/                   사용자 · 동의 이력 · 설정
+    ├── sleep/                  수면 세션 수신 · 정규화 · 집계
+    ├── skin/                   피부 예보 · 셀피 실측 · 검증 · 개인 모델
+    ├── todo/                   추천 엔진 · TODO 리스트
+    ├── report/                 일간 · 주간 · 월간 · 종합 리포트
+    └── health/                 헬스체크 (구현 완료)
 ```
+
+`global`과 `domain` 두 갈래로 나눠, 최상위만 봐도 **공통 인프라와 비즈니스 로직의 경계**가 보이게 한다. 의존 방향은 `domain → global` 한쪽뿐이다. **`global`이 `domain`을 참조하면 안 된다.**
 
 ### 도메인 패키지 내부 구조
 
 모든 도메인 패키지는 같은 형태를 따른다. `health` 도메인이 이미 이 패턴의 축소판이다.
 
 ```
-skin/
+domain/skin/
 ├── SkinController.java             HTTP 진입점. 검증과 응답 변환만
 ├── SkinForecastService.java        예보 산출 (HOME-03)
 ├── SkinVerificationService.java    예보 vs 실측 검증 (HOME-07)
@@ -255,7 +272,21 @@ public abstract class BaseTimeEntity {
 }
 ```
 
-`@EnableJpaAuditing`은 `common/config/JpaConfig`에 둔다.
+`@EnableJpaAuditing`은 `global/config/JpaConfig`에 둔다.
+
+`consent_history` 같은 **append-only 이력 테이블**은 수정되지 않으므로 `updatedAt`이 항상 `createdAt`과 같다. 이런 엔티티는 `BaseCreatedEntity`(createdAt만)를 상속한다.
+
+### `global`에 넣지 않는 것
+
+| 흔히 넣지만 이 프로젝트엔 불필요 | 이유 |
+|---|---|
+| `security/` | 인증이 없다. Spring Security를 추가하지 않는다 |
+| `resolver/` (`@LoginUser`) | 위와 같은 이유. `userId`는 파라미터로 받는다 |
+| `interceptor/`, `filter/` | 인증·로깅 요구사항이 아직 없다 |
+| `CorsConfig` | 클라이언트가 iOS 앱이라 CORS를 타지 않는다. 웹 프론트가 붙으면 그때 |
+| `util/` | **비어 있는 채로 만들지 않는다.** 두 번째 도메인이 같은 걸 필요로 할 때 옮긴다 |
+
+**`ScoringPolicy`는 `global`이 아니라 `skin`에 둔다.** 공통 설정처럼 보이지만 피부 도메인의 비즈니스 규칙이다. 판단 기준은 *"다른 도메인이 이걸 쓸 일이 있나?"* — 없으면 도메인 안이다.
 
 ---
 
@@ -353,30 +384,90 @@ aws:
 
 ## 8. 설정과 시크릿
 
-| 항목 | 관리 방법 |
-|---|---|
-| DB 접속 정보 | 환경 변수 |
-| OpenAI API 키 | 환경 변수 `OPENAI_API_KEY` |
-| AWS 자격 증명 | EC2 IAM 역할 (키 없음) |
-| 프로파일 | `local` / `prod` |
+`application.yml`은 구조만 두고 값은 `${ENV_VAR}`로 주입한다. **구축 완료 상태다.**
 
-`application.yml`에는 기본값과 구조만 두고, 값은 `${ENV_VAR}`로 주입한다. **시크릿이 담긴 파일은 절대 커밋하지 않는다** — `.gitignore`에 `application-local.yml`을 추가한다.
+| 항목 | 관리 방법 | 상태 |
+|---|---|---|
+| DB 접속 정보 | 환경 변수 `DB_HOST`·`DB_PORT`·`DB_NAME`·`DB_USERNAME`·`DB_PASSWORD` | ✅ |
+| OpenAI API 키 | 환경 변수 `OPENAI_API_KEY` | 미도입 |
+| AWS 자격 증명 | EC2 IAM 역할 (키 없음) | 미도입 |
+
+`.env.example`이 필요한 환경 변수의 목록 역할을 한다. **`.env`는 커밋하지 않는다** (`.gitignore` 처리됨).
+
+### 프로파일
+
+| 프로파일 | 용도 | DB |
+|---|---|---|
+| (기본) | 로컬 실행·운영 | MySQL, `ddl-auto: none` |
+| `test` | 테스트 | H2 인메모리, `ddl-auto: create-drop` |
+
+`src/test/resources/application-test.yml`은 **파일명이 `application.yml`이면 안 된다.** 그러면 main의 설정을 통째로 가려버려 `spring.application.name`·springdoc 설정까지 사라진다. 프로파일 파일로 두고 `@ActiveProfiles("test")`로 덮어쓴다.
+
+> JWT 관련 설정은 **전부 제거했다.** 이 프로젝트는 인증을 두지 않는다(§6). 참조하는 코드가 없어 무해했지만, 남겨두면 "인증이 있는 줄" 알고 작업하는 사람이 생긴다. 나중에 인증을 도입하면 그때 다시 넣는다.
+
+### DDL 관리 — `ddl-auto: update`
+
+엔티티에서 스키마를 만들고 DDL 스크립트를 따로 두지 않는다. 해커톤 범위의 결정이다.
+
+**`update`의 한계 — 알고 써야 한다.**
+
+| 하는 것 | 하지 않는 것 |
+|---|---|
+| 없는 테이블 생성 (제약·인덱스 포함) | 컬럼 **이름 변경** 반영 |
+| 없는 컬럼 추가 | 컬럼 **타입 변경** 반영 |
+| | 컬럼·제약 **삭제** |
+
+즉 **더하기만 하고 빼거나 고치지는 않는다.** 필드명을 바꾸면 옛 컬럼이 그대로 남아 `NOT NULL` 위반으로 INSERT가 깨진다.
+
+**엔티티를 파괴적으로 바꿨으면 DB를 지우고 다시 만든다.**
+
+```bash
+docker compose down -v && docker compose up -d mysql
+```
+
+### ⚠️ 유니크 제약은 반드시 눈으로 확인한다
+
+이 프로젝트의 유니크 제약은 **장식이 아니라 정확성 장치**다.
+
+| 테이블 | 제약 | 지키는 것 |
+|---|---|---|
+| `sleep_session` | `(user_id, sleep_date)` | 같은 수면 데이터 중복 저장 차단 |
+| `skin_forecast` | `(user_id, base_date)` | 하루 1건 예보 — 검증의 단일 기준 |
+| `skin_measurement` | `(user_id, base_date)` | 하루 1회 검증 |
+| `personal_weight` | `(user_id, sleep_feature, skin_metric)` | 가중치 중복 학습 차단 |
+| `daily_todo` | `(user_id, base_date, action_master_id)` | 같은 항목 중복 추가 차단 |
+
+`@Table(uniqueConstraints = ...)`로 **엔티티에 명시**하고, 테이블이 처음 만들어진 뒤 한 번은 실제로 걸렸는지 확인한다.
+
+```sql
+SHOW CREATE TABLE sleep_session;
+```
+
+제약이 빠지면 중복 차단이 애플리케이션 코드에만 의존하게 되고, 동시 요청에서 조용히 뚫린다.
 
 ---
 
 ## 9. 배포
 
-AWS EC2 + Docker. CI/CD 파이프라인은 팀원이 별도 구축 중이다.
+AWS EC2 + Docker. **CI/CD 파이프라인 구축 완료.**
+
+| 파일 | 역할 |
+|---|---|
+| `Dockerfile` | 멀티스테이지 빌드 (JDK 21 빌드 → JRE 21 실행) |
+| `compose.yaml` | app + MySQL 로컬 스택. app은 MySQL healthcheck 통과 후 기동 |
+| `.github/workflows/ci.yml` | `dev`·`main` 대상 PR에서 `bootJar` + `test` + Docker 이미지 빌드 |
+
+CI는 MySQL service를 띄워 **실제 MySQL로도 테스트**한다. 로컬은 H2를 쓰므로 방언 차이는 CI에서 걸린다.
 
 ```
-git push (dev/main)
-   → CI: gradlew build + test
-   → Docker 이미지 빌드
+PR 생성 (dev/main 대상)
+   → CI: bootJar + test (MySQL service) + docker build
+   → 머지
    → EC2 배포
    → GET /api/v1/health 로 기동 확인
 ```
 
-`HealthCheckController`가 이미 이 용도로 만들어져 있다 — 로드밸런서·배포 파이프라인의 기동 확인 엔드포인트다.
+`HealthCheckController`가 이 용도로 만들어져 있다 — 로드밸런서·배포 파이프라인의 기동 확인 엔드포인트다. 응답은 공통 래퍼에 담기지만 **본문을 검사하는 곳은 없다**(상태 코드만 본다).
 
 ---
 

@@ -1,4 +1,4 @@
-package com.allday.sleep2skin_be.health.dto;
+package com.allday.sleep2skin_be.domain.health.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 

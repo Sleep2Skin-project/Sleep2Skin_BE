@@ -21,16 +21,18 @@ Swagger UI: http://localhost:8080/swagger-ui.html · 헬스체크: `/api/v1/heal
 
 ```
 com.allday.sleep2skin_be
-├── common/     config · response · exception · entity   (공통 인프라)
-├── user/       사용자 · 동의 이력 · 설정
-├── sleep/      수면 세션 수신 · 정규화 · 집계
-├── skin/       피부 예보 · 셀피 실측 · 검증 · 개인 모델
-├── todo/       추천 엔진 · TODO 리스트
-├── report/     일간 · 주간 · 월간 · 종합 리포트
-└── health/     헬스체크 (구현 완료 — 패턴 참고용)
+├── global/     config · response · exception · entity · infra   (공통 인프라)
+└── domain/
+    ├── user/     사용자 · 동의 이력 · 설정
+    ├── sleep/    수면 세션 수신 · 정규화 · 집계
+    ├── skin/     피부 예보 · 셀피 실측 · 검증 · 개인 모델
+    ├── todo/     추천 엔진 · TODO 리스트
+    ├── report/   일간 · 주간 · 월간 · 종합 리포트
+    └── health/   헬스체크 (구현 완료 — 패턴 참고용)
 ```
 
 도메인마다 `Controller / Service / repository / entity / dto`. Controller-Service-Repository 3계층.
+의존 방향은 **`domain → global` 한쪽뿐이다.** `global`이 `domain`을 참조하면 안 된다.
 
 ## 핵심 루프
 
@@ -84,7 +86,9 @@ ApiResponse.success(data)   // { success, data, error }
 ```
 
 에러는 `BusinessException(ErrorCode)` → `@RestControllerAdvice`가 처리.
-**빈 상태(수면 데이터 없음, 검증 이력 없음, 기록 부족)는 정상 흐름**이며 전부 `ErrorCode`로 관리한다.
+**빈 상태(수면 데이터 없음, 검증 이력 없음, 기록 부족)는 정상 흐름**이다.
+조회 API는 **200 + `{status, message, 페이로드}`**로 내보낸다. 4xx가 아니다 — 신규 사용자에게 일상적으로 발생하므로 에러로 취급하면 진짜 문제가 묻힌다.
+동작 API(셀피 검증 등)에서 필요한 것이 없으면 그건 진짜 에러이므로 `ErrorCode`로 4xx를 낸다.
 
 ### DTO는 record, Entity는 밖으로 안 나간다
 
@@ -121,18 +125,25 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 ## 현재 상태
 
-`GET /api/v1/health` 헬스체크만 구현됨. DB·JPA·AWS·OpenAI 의존성 미도입.
+**구현됨**
+- `GET /api/v1/health` 헬스체크
+- `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`
+- 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI
+
+**미도입**: AWS S3, OpenAI. 엔티티·Repository·Service는 아직 하나도 없음.
+
+**테스트**: `./gradlew test`는 MySQL 없이 돈다 (`test` 프로파일이 H2 사용). Controller는 `@WebMvcTest`.
 
 다음 착수 순서 (prd.md §8):
-1. 공통 기반 — 응답 래퍼, 전역 예외 처리, 에러 코드, MySQL 연결, 테스트 유저 시딩
-2. 수면 세션 수신 `POST /api/v1/sleep/sessions` (수면 일자 기준 upsert — 멱등 필수)
-3. 피부 예보 산출 (HOME-03)
+1. 테스트 유저 시딩 + DDL 관리 방식 결정 (`ddl-auto: none`이라 스키마를 직접 만들어야 함)
+2. 수면 세션 수신 `POST /api/v1/sleep/sessions` (페이로드 해시로 중복 차단 — 위 규칙 필수)
+3. 피부 예보 산출 (HOME-03) — B1·B2 확정 후
 
 ## 임시값 주의
 
 **수면 피처 → 피부 지표 매핑은 확정값이 아니다.** 문서를 완성하려 임시로 채운 것이고 팀 논의로 재확정된다 (prd.md §9.1). 예보 산출·리포트·학습이 전부 이 매핑에 의존하므로 바뀔 때 파급이 크다.
 
-임시값은 전부 `skin/ScoringPolicy` 한 곳에 모은다. **서비스 로직에 하드코딩하지 않는다.** 참조하는 코드에는 `// 임시값 (PRD §9.1)` 주석을 남긴다.
+임시값은 전부 `domain/skin/ScoringPolicy` 한 곳에 모은다. **서비스 로직에 하드코딩하지 않는다.** 참조하는 코드에는 `// 임시값 (PRD §9.1)` 주석을 남긴다.
 
 ## 착수 전 확정이 필요한 것
 

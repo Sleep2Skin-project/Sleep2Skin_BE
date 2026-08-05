@@ -1,4 +1,4 @@
-package com.allday.sleep2skin_be.common.config;
+package com.allday.sleep2skin_be.global.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
