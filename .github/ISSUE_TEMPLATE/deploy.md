@@ -1,10 +1,10 @@
-
 ---
 name: "🚀 Deploy"
 about: 배포 관련 작업 및 기록
 title: "🚀 Deploy: "
 labels: "🚀 Deploy"
 assignees: ''
+
 ---
 
 ## 📌 배포 목적
@@ -33,4 +33,4 @@ assignees: ''
 - (문제 발생 시 대응 방법)
 
 ## 📝 기타 메모
-- 
+-
