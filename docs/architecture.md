@@ -407,16 +407,45 @@ aws:
 
 `application.yml`에 `jwt.secret`·`jwt.expiration`이 있고 `compose.yaml`·`ci.yml`에도 `JWT_SECRET`·`JWT_EXPIRATION`이 있다. **이 프로젝트는 인증을 두지 않기로 확정했다** (§6). 참조하는 코드가 없어 지금은 무해하지만, 남겨두면 나중에 "인증이 있는 줄" 알고 작업하는 사람이 생긴다.
 
-### DDL 관리 — 미결정
+### DDL 관리 — `ddl-auto: update`
 
-`ddl-auto: none`이라 **Hibernate가 테이블을 만들어주지 않는다.** ERD 9개 테이블의 DDL을 직접 관리해야 한다.
+엔티티에서 스키마를 만들고 DDL 스크립트를 따로 두지 않는다. 해커톤 범위의 결정이다.
 
-| 방법 | 비고 |
+**`update`의 한계 — 알고 써야 한다.**
+
+| 하는 것 | 하지 않는 것 |
 |---|---|
-| `schema.sql` | 단순하지만 변경 이력이 남지 않는다 |
-| Flyway / Liquibase | 마이그레이션 이력 관리. 팀이 늘면 유리 |
+| 없는 테이블 생성 (제약·인덱스 포함) | 컬럼 **이름 변경** 반영 |
+| 없는 컬럼 추가 | 컬럼 **타입 변경** 반영 |
+| | 컬럼·제약 **삭제** |
 
-해커톤 범위에서는 `schema.sql`로 충분하나, **DDL 변경 시 팀원 DB를 어떻게 맞출지**는 정해야 한다.
+즉 **더하기만 하고 빼거나 고치지는 않는다.** 필드명을 바꾸면 옛 컬럼이 그대로 남아 `NOT NULL` 위반으로 INSERT가 깨진다.
+
+**엔티티를 파괴적으로 바꿨으면 DB를 지우고 다시 만든다.**
+
+```bash
+docker compose down -v && docker compose up -d mysql
+```
+
+### ⚠️ 유니크 제약은 반드시 눈으로 확인한다
+
+이 프로젝트의 유니크 제약은 **장식이 아니라 정확성 장치**다.
+
+| 테이블 | 제약 | 지키는 것 |
+|---|---|---|
+| `sleep_session` | `(user_id, sleep_date)` | 같은 수면 데이터 중복 저장 차단 |
+| `skin_forecast` | `(user_id, base_date)` | 하루 1건 예보 — 검증의 단일 기준 |
+| `skin_measurement` | `(user_id, base_date)` | 하루 1회 검증 |
+| `personal_weight` | `(user_id, sleep_feature, skin_metric)` | 가중치 중복 학습 차단 |
+| `daily_todo` | `(user_id, base_date, action_master_id)` | 같은 항목 중복 추가 차단 |
+
+`@Table(uniqueConstraints = ...)`로 **엔티티에 명시**하고, 테이블이 처음 만들어진 뒤 한 번은 실제로 걸렸는지 확인한다.
+
+```sql
+SHOW CREATE TABLE sleep_session;
+```
+
+제약이 빠지면 중복 차단이 애플리케이션 코드에만 의존하게 되고, 동시 요청에서 조용히 뚫린다.
 
 ---
 

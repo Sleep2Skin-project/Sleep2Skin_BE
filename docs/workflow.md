@@ -39,10 +39,18 @@ docker compose up -d mysql
 
 **테스트는 MySQL 없이 돈다.** `test` 프로파일이 H2를 물려주므로 `./gradlew test`만 치면 된다.
 
-| | 로컬 테스트 | CI | 운영 |
-|---|---|---|---|
-| DB | H2 (인메모리) | MySQL service | MySQL |
-| 스키마 | `ddl-auto: create-drop` | `ddl-auto: none` | `ddl-auto: none` |
+| | 로컬 테스트 | 로컬 실행 · 운영 |
+|---|---|---|
+| DB | H2 (인메모리) | MySQL |
+| 스키마 | `ddl-auto: create-drop` | `ddl-auto: update` |
+
+**엔티티를 파괴적으로 바꿨다면**(필드명·타입 변경, 삭제) `update`는 반영하지 못한다. DB를 지우고 다시 만든다.
+
+```bash
+docker compose down -v && docker compose up -d mysql
+```
+
+이때 테스트 유저 시딩도 다시 돌아야 한다. 팀원에게 **"DB 갈아엎어야 한다"고 알리는 것**을 잊지 말 것 — 조용히 바꾸면 상대는 원인 모를 `NOT NULL` 위반을 겪는다.
 
 ---
 
