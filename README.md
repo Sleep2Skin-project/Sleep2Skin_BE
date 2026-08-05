@@ -44,24 +44,25 @@ Get-Content .env | ForEach-Object {
 
 ## 로컬에서 테스트 실행 (`./gradlew test`)
 
-> ⚠️ JPA 의존성으로 인해 `@SpringBootTest` 테스트는 실제 MySQL 연결을 필요로 합니다. **MySQL이 실행 중이지 않거나 DB/JWT 환경변수가 현재 셸에 주입되어 있지 않으면 테스트가 실패합니다.**
+**MySQL도 환경변수도 필요 없습니다.** 그냥 실행하면 됩니다.
 
-1. MySQL 먼저 기동
-   ```bash
-   docker compose up -d mysql
-   ```
-2. 현재 셸에 `.env` 환경변수 주입 (위 "로컬에서 애플리케이션 실행" 항목의 Bash/PowerShell 스니펫과 동일)
-3. 테스트 실행
-   ```bash
-   # Bash
-   ./gradlew test --no-daemon
-   ```
-   ```powershell
-   # PowerShell
-   .\gradlew.bat test --no-daemon
-   ```
+```bash
+# Bash
+./gradlew test
+```
+```powershell
+# PowerShell
+.\gradlew.bat test
+```
 
-CI(GitHub Actions)에서는 위 과정을 GitHub Actions MySQL service + 워크플로 환경변수로 대체합니다 (`.github/workflows/ci.yml` 참고).
+테스트는 `test` 프로파일(`src/test/resources/application-test.yml`)이 H2 인메모리 DB를 물려줍니다. 컨테이너를 띄우지 않아도 되고 빠릅니다.
+
+- 컨텍스트 로딩 테스트 — `@SpringBootTest` + `@ActiveProfiles("test")` → H2 사용
+- Controller 테스트 — `@WebMvcTest` → 웹 계층만 뜨므로 DB 자체가 필요 없음
+
+> H2는 `MODE=MySQL`로 띄우지만 방언 차이가 완전히 사라지지는 않습니다. MySQL 고유 문법에 의존하는 쿼리를 쓰게 되면 그 테스트만 실제 MySQL로 돌리도록 따로 다뤄야 합니다.
+
+CI(GitHub Actions)는 MySQL service를 띄워 실제 MySQL로도 검증합니다 (`.github/workflows/ci.yml` 참고).
 
 ## Docker
 

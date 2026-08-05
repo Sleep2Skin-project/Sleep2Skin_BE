@@ -26,16 +26,23 @@ Windows PowerShell에서는 `.\gradlew.bat` 을 쓴다.
 | Swagger UI | http://localhost:8080/swagger-ui.html |
 | OpenAPI 스펙 | http://localhost:8080/v3/api-docs |
 
-### 로컬 환경 변수
+### 로컬 실행 준비
+
+`.env.example`을 복사해 `.env`를 만들고 값을 채운다. **`.env`는 커밋하지 않는다.**
 
 ```bash
-OPENAI_API_KEY=sk-...
-DB_URL=jdbc:mysql://localhost:3306/sleep2skin
-DB_USERNAME=...
-DB_PASSWORD=...
+cp .env.example .env
+docker compose up -d mysql
 ```
 
-`application-local.yml`에 값을 넣어 쓸 수도 있지만 **커밋하지 않는다.** `.gitignore`에 추가한다.
+`bootRun`은 셸에 `.env` 값이 주입돼 있어야 한다. 구체적인 명령은 [README.md](../README.md)를 본다 — **실행 방법은 README가 단일 출처**이고, 이 문서는 팀 규칙을 다룬다.
+
+**테스트는 MySQL 없이 돈다.** `test` 프로파일이 H2를 물려주므로 `./gradlew test`만 치면 된다.
+
+| | 로컬 테스트 | CI | 운영 |
+|---|---|---|---|
+| DB | H2 (인메모리) | MySQL service | MySQL |
+| 스키마 | `ddl-auto: create-drop` | `ddl-auto: none` | `ddl-auto: none` |
 
 ---
 

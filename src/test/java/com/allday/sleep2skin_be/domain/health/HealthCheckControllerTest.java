@@ -3,16 +3,20 @@ package com.allday.sleep2skin_be.domain.health;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
-@AutoConfigureMockMvc
+/**
+ * Controller 슬라이스 테스트.
+ *
+ * <p>{@code @WebMvcTest}는 웹 계층만 띄우므로 DataSource가 필요 없다.
+ * {@code @RestControllerAdvice}는 포함되므로 전역 예외 처리도 함께 검증된다.
+ */
+@WebMvcTest(HealthCheckController.class)
 class HealthCheckControllerTest {
 
     @Autowired

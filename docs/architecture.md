@@ -384,30 +384,63 @@ aws:
 
 ## 8. 설정과 시크릿
 
-| 항목 | 관리 방법 |
-|---|---|
-| DB 접속 정보 | 환경 변수 |
-| OpenAI API 키 | 환경 변수 `OPENAI_API_KEY` |
-| AWS 자격 증명 | EC2 IAM 역할 (키 없음) |
-| 프로파일 | `local` / `prod` |
+`application.yml`은 구조만 두고 값은 `${ENV_VAR}`로 주입한다. **구축 완료 상태다.**
 
-`application.yml`에는 기본값과 구조만 두고, 값은 `${ENV_VAR}`로 주입한다. **시크릿이 담긴 파일은 절대 커밋하지 않는다** — `.gitignore`에 `application-local.yml`을 추가한다.
+| 항목 | 관리 방법 | 상태 |
+|---|---|---|
+| DB 접속 정보 | 환경 변수 `DB_HOST`·`DB_PORT`·`DB_NAME`·`DB_USERNAME`·`DB_PASSWORD` | ✅ |
+| OpenAI API 키 | 환경 변수 `OPENAI_API_KEY` | 미도입 |
+| AWS 자격 증명 | EC2 IAM 역할 (키 없음) | 미도입 |
+
+`.env.example`이 필요한 환경 변수의 목록 역할을 한다. **`.env`는 커밋하지 않는다** (`.gitignore` 처리됨).
+
+### 프로파일
+
+| 프로파일 | 용도 | DB |
+|---|---|---|
+| (기본) | 로컬 실행·운영 | MySQL, `ddl-auto: none` |
+| `test` | 테스트 | H2 인메모리, `ddl-auto: create-drop` |
+
+`src/test/resources/application-test.yml`은 **파일명이 `application.yml`이면 안 된다.** 그러면 main의 설정을 통째로 가려버려 `spring.application.name`·springdoc 설정까지 사라진다. 프로파일 파일로 두고 `@ActiveProfiles("test")`로 덮어쓴다.
+
+### ⚠️ 정리가 필요한 설정
+
+`application.yml`에 `jwt.secret`·`jwt.expiration`이 있고 `compose.yaml`·`ci.yml`에도 `JWT_SECRET`·`JWT_EXPIRATION`이 있다. **이 프로젝트는 인증을 두지 않기로 확정했다** (§6). 참조하는 코드가 없어 지금은 무해하지만, 남겨두면 나중에 "인증이 있는 줄" 알고 작업하는 사람이 생긴다.
+
+### DDL 관리 — 미결정
+
+`ddl-auto: none`이라 **Hibernate가 테이블을 만들어주지 않는다.** ERD 9개 테이블의 DDL을 직접 관리해야 한다.
+
+| 방법 | 비고 |
+|---|---|
+| `schema.sql` | 단순하지만 변경 이력이 남지 않는다 |
+| Flyway / Liquibase | 마이그레이션 이력 관리. 팀이 늘면 유리 |
+
+해커톤 범위에서는 `schema.sql`로 충분하나, **DDL 변경 시 팀원 DB를 어떻게 맞출지**는 정해야 한다.
 
 ---
 
 ## 9. 배포
 
-AWS EC2 + Docker. CI/CD 파이프라인은 팀원이 별도 구축 중이다.
+AWS EC2 + Docker. **CI/CD 파이프라인 구축 완료.**
+
+| 파일 | 역할 |
+|---|---|
+| `Dockerfile` | 멀티스테이지 빌드 (JDK 21 빌드 → JRE 21 실행) |
+| `compose.yaml` | app + MySQL 로컬 스택. app은 MySQL healthcheck 통과 후 기동 |
+| `.github/workflows/ci.yml` | `dev`·`main` 대상 PR에서 `bootJar` + `test` + Docker 이미지 빌드 |
+
+CI는 MySQL service를 띄워 **실제 MySQL로도 테스트**한다. 로컬은 H2를 쓰므로 방언 차이는 CI에서 걸린다.
 
 ```
-git push (dev/main)
-   → CI: gradlew build + test
-   → Docker 이미지 빌드
+PR 생성 (dev/main 대상)
+   → CI: bootJar + test (MySQL service) + docker build
+   → 머지
    → EC2 배포
    → GET /api/v1/health 로 기동 확인
 ```
 
-`HealthCheckController`가 이미 이 용도로 만들어져 있다 — 로드밸런서·배포 파이프라인의 기동 확인 엔드포인트다.
+`HealthCheckController`가 이 용도로 만들어져 있다 — 로드밸런서·배포 파이프라인의 기동 확인 엔드포인트다. 응답은 공통 래퍼에 담기지만 **본문을 검사하는 곳은 없다**(상태 코드만 본다).
 
 ---
 

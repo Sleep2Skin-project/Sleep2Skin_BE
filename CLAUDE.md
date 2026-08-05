@@ -125,12 +125,19 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 ## 현재 상태
 
-`GET /api/v1/health` 헬스체크만 구현됨. DB·JPA·AWS·OpenAI 의존성 미도입.
+**구현됨**
+- `GET /api/v1/health` 헬스체크
+- `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`
+- 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI
+
+**미도입**: AWS S3, OpenAI. 엔티티·Repository·Service는 아직 하나도 없음.
+
+**테스트**: `./gradlew test`는 MySQL 없이 돈다 (`test` 프로파일이 H2 사용). Controller는 `@WebMvcTest`.
 
 다음 착수 순서 (prd.md §8):
-1. 공통 기반 — 응답 래퍼, 전역 예외 처리, 에러 코드, MySQL 연결, 테스트 유저 시딩
-2. 수면 세션 수신 `POST /api/v1/sleep/sessions` (수면 일자 기준 upsert — 멱등 필수)
-3. 피부 예보 산출 (HOME-03)
+1. 테스트 유저 시딩 + DDL 관리 방식 결정 (`ddl-auto: none`이라 스키마를 직접 만들어야 함)
+2. 수면 세션 수신 `POST /api/v1/sleep/sessions` (페이로드 해시로 중복 차단 — 위 규칙 필수)
+3. 피부 예보 산출 (HOME-03) — B1·B2 확정 후
 
 ## 임시값 주의
 
