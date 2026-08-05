@@ -392,7 +392,7 @@ POST /api/v1/sleep/sessions 수신
 
 ### 빈 상태 · 예외 처리
 
-이 서비스는 **빈 상태가 정상 흐름**이다. 에러 코드 체계로 일괄 관리한다 ([conventions.md](conventions.md) 참조).
+이 서비스는 **빈 상태가 정상 흐름**이다. 조회 API는 200 + 상태 필드로, 동작 API는 4xx + `ErrorCode`로 나눠 처리한다 ([conventions.md](conventions.md) §2 참조).
 
 | # | 이슈 | 관련 |
 |---|---|---|

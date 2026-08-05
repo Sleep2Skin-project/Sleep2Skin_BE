@@ -86,7 +86,9 @@ ApiResponse.success(data)   // { success, data, error }
 ```
 
 에러는 `BusinessException(ErrorCode)` → `@RestControllerAdvice`가 처리.
-**빈 상태(수면 데이터 없음, 검증 이력 없음, 기록 부족)는 정상 흐름**이며 전부 `ErrorCode`로 관리한다.
+**빈 상태(수면 데이터 없음, 검증 이력 없음, 기록 부족)는 정상 흐름**이다.
+조회 API는 **200 + `{status, message, 페이로드}`**로 내보낸다. 4xx가 아니다 — 신규 사용자에게 일상적으로 발생하므로 에러로 취급하면 진짜 문제가 묻힌다.
+동작 API(셀피 검증 등)에서 필요한 것이 없으면 그건 진짜 에러이므로 `ErrorCode`로 4xx를 낸다.
 
 ### DTO는 record, Entity는 밖으로 안 나간다
 
