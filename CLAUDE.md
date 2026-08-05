@@ -116,7 +116,8 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 | 문서 | 읽어야 할 때 |
 |---|---|
 | [docs/prd.md](docs/prd.md) | 기능 요구사항 확인, 기능 ID(HOME-03 등) 조회, 미결정 사항 확인, 구현 우선순위 |
-| [docs/architecture.md](docs/architecture.md) | 새 도메인·엔티티 설계, 핵심 플로우 파악, 외부 연동(S3·OpenAI) 구현 |
+| [docs/architecture.md](docs/architecture.md) | 새 도메인 설계, 핵심 플로우 파악, 외부 연동(S3·OpenAI) 구현 |
+| [docs/erd.md](docs/erd.md) | **엔티티 작성 직전** — 테이블 9개의 컬럼과 근거, 일부러 뺀 컬럼, 유니크 제약 |
 | [docs/conventions.md](docs/conventions.md) | 코드 작성 직전 — 응답 포맷, 에러 코드, DTO/Entity 규칙, API 경로, Swagger |
 | [docs/workflow.md](docs/workflow.md) | 브랜치 생성, PR, 팀 분담, 빌드 |
 

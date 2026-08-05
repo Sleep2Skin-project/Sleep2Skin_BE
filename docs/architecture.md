@@ -223,6 +223,8 @@ POST /api/v1/skin/selfie
 
 ## 4. 데이터 설계 원칙
 
+> 테이블 9개의 컬럼 전체와 각 판단의 근거는 [erd.md](erd.md)에 있다. 여기서는 원칙만 다룬다.
+
 ### 기준일(baseDate) 중심
 
 거의 모든 엔티티가 `(userId, baseDate)` 조합으로 하루 1건이다.
