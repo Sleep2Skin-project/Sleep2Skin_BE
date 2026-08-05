@@ -54,7 +54,8 @@ DB_PASSWORD=...
 | `main` | 배포된 상태. 항상 동작해야 함 | 영구 |
 | `dev` | 다음 배포에 들어갈 것들이 모이는 곳. **기본 브랜치** | 영구 |
 | `feature/*` | 기능 하나를 개발 | 머지 후 삭제 |
-| `hotfix/*` | 배포된 코드의 긴급 수정 | 머지 후 삭제 |
+| `fix/*` | `dev`에 이미 들어간 것의 버그 수정 | 머지 후 삭제 |
+| `hotfix/*` | **배포된** 코드의 긴급 수정 | 머지 후 삭제 |
 
 > 정통 Git Flow에는 `release/*` 브랜치도 있지만, 해커톤처럼 릴리스 주기가 짧으면 `dev` → `main` 직접 머지로 충분하다. 필요해지면 그때 추가한다.
 
@@ -86,7 +87,8 @@ feature/{도메인}-{작업}
 | `feature/sleep-session-upload` | 수면 세션 업로드 API |
 | `feature/skin-forecast` | 피부 예보 산출 |
 | `feature/common-exception-handler` | 전역 예외 처리 |
-| `hotfix/selfie-s3-delete` | 셀피 삭제 누락 긴급 수정 |
+| `fix/deploy-issue-template` | dev에 있는 배포 이슈 템플릿 버그 수정 |
+| `hotfix/selfie-s3-delete` | 배포 후 발견된 셀피 삭제 누락 긴급 수정 |
 
 소문자 + 하이픈. 한글을 쓰지 않는다.
 
