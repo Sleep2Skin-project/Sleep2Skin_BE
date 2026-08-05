@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  gradle-test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: sleep2skin_test
+          MYSQL_USER: sleep2skin
+          MYSQL_PASSWORD: test1234
+          MYSQL_ROOT_PASSWORD: test1234
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: sleep2skin_test
+      DB_USERNAME: sleep2skin
+      DB_PASSWORD: test1234
+      JWT_SECRET: ci-test-secret
+      JWT_EXPIRATION: 3600000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build verification (bootJar)
+        run: ./gradlew bootJar --no-daemon
+
+      - name: Test verification (MySQL service)
+        run: ./gradlew test --no-daemon
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image (without .env)
+        run: docker build -t sleep2skin-be:ci .
