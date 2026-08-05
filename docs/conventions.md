@@ -58,6 +58,23 @@ public ApiResponse<SkinForecastResponse> getForecast(@RequestParam Long userId) 
 
 `ResponseEntity`는 상태 코드를 직접 제어해야 할 때만 쓴다. 대부분의 경우 불필요하다.
 
+**헬스체크도 예외가 아니다.** `GET /api/v1/health`도 래퍼에 담아 반환한다.
+
+### ⚠️ Swagger `@ApiResponse`와 이름이 겹친다
+
+`io.swagger.v3.oas.annotations.responses.ApiResponse`와 우리 래퍼의 이름이 같다. 우리 것을 import하고 **Swagger 어노테이션을 완전 수식**한다.
+
+```java
+import com.allday.sleep2skin_be.global.response.ApiResponse;
+
+@Operation(summary = "오늘의 피부 예보 조회")
+@io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공")
+@GetMapping("/forecast")
+public ApiResponse<SkinForecastResponse> getForecast(...) { ... }
+```
+
+반환 타입이 매번 등장하는 쪽을 짧게 두는 게 낫다. 모든 Controller에서 반복되는 패턴이니 미리 알아두자.
+
 ---
 
 ## 2. 에러 처리
