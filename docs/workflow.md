@@ -39,16 +39,22 @@ docker compose up -d mysql
 
 **테스트는 MySQL 없이 돈다.** `test` 프로파일이 H2를 물려주므로 `./gradlew test`만 치면 된다.
 
-| | 로컬 테스트 | 로컬 실행 · 운영 |
-|---|---|---|
-| DB | H2 (인메모리) | MySQL |
-| 스키마 | `ddl-auto: create-drop` | `ddl-auto: update` |
+| | 로컬 테스트 | 로컬 실행 | 운영 |
+|---|---|---|---|
+| DB | H2 (인메모리) | MySQL 컨테이너 | **AWS RDS (MySQL)** |
+| 스키마 | `ddl-auto: create-drop` | `ddl-auto: update` | `ddl-auto: update` |
+
+**세 환경의 차이는 `DB_HOST` 값뿐이다.** 운영 전환은 환경 변수 교체로 끝나고 코드·프로파일은 그대로다.
+
+> ⚠️ **RDS는 아직 코드에 반영돼 있지 않다.** 지금 `compose.yaml`은 로컬 MySQL 컨테이너 기준이고, RDS 전환 시점과 로컬 DB를 어디로 둘지는 **팀 협의 후 확정**한다. ([architecture.md](architecture.md) §7 참조)
 
 **엔티티를 파괴적으로 바꿨다면**(필드명·타입 변경, 삭제) `update`는 반영하지 못한다. DB를 지우고 다시 만든다.
 
 ```bash
 docker compose down -v && docker compose up -d mysql
 ```
+
+**로컬 컨테이너에서만 쓰는 방법이다.** 운영 RDS에는 대응하는 조치가 없다 (architecture.md §8).
 
 이때 테스트 유저 시딩도 다시 돌아야 한다. 팀원에게 **"DB 갈아엎어야 한다"고 알리는 것**을 잊지 말 것 — 조용히 바꾸면 상대는 원인 모를 `NOT NULL` 위반을 겪는다.
 
@@ -116,7 +122,7 @@ feature/       ●──●            ●───●
 | `refactor/global-package` | common 패키지를 global로 통일 |
 | `fix/deploy-issue-template` | dev에 있는 배포 이슈 템플릿 버그 수정 |
 | `docs/add-claude-md` | CLAUDE.md 추가 |
-| `hotfix/selfie-s3-delete` | 배포 후 발견된 셀피 삭제 누락 긴급 수정 |
+| `hotfix/selfie-analyze-timeout` | 배포 후 발견된 셀피 분석 타임아웃 긴급 수정 |
 
 소문자 + 하이픈. 한글을 쓰지 않는다.
 
@@ -178,7 +184,7 @@ type(scope): 한국어 설명
 ```
 feat(sleep):    수면 세션 업로드 API 추가
 feat(skin):     피부 예보 가중합 스코어링 구현
-fix(skin):      셀피 분석 실패 시 S3 객체 삭제 누락 수정
+fix(skin):      셀피 분석 실패 시 예외 로그에 이미지가 남던 문제 수정
 refactor(global): 응답 래퍼를 record로 전환
 docs(prd):      셀피 이미지 취급 정책 상세화
 chore(build):   JPA/MySQL 연동 의존성 추가
@@ -216,7 +222,7 @@ fix(skin): 검증 완료한 날의 예보 재산출 차단
 
 | 파일 | 충돌 가능성 |
 |---|---|
-| `build.gradle` | 의존성 추가 시 (MySQL, JPA, AWS SDK, OpenAI) |
+| `build.gradle` | 의존성 추가 시 (MySQL, JPA, OpenAI) — **AWS SDK는 필요 없다.** S3를 쓰지 않고 RDS는 JDBC로만 붙는다 |
 | `application.yml` / `application.properties` | 프로파일·환경 변수 설정 |
 | `Dockerfile`, CI 설정 | CI/CD 담당 영역 |
 

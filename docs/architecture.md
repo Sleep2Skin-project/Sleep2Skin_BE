@@ -8,18 +8,20 @@ sleep2skin 백엔드의 구조와 설계 결정. 제품 요구사항은 [prd.md]
 
 ```
 ┌──────────────┐         ┌─────────────────────────┐         ┌──────────────┐
-│  iOS 앱      │  HTTPS  │  sleep2skin_be          │         │  OpenAI      │
+│  iOS 앱      │  HTTPS  │  sleep2skin_be          │  이미지  │  OpenAI      │
 │              │────────▶│  Spring Boot 4.1 / EC2  │────────▶│  Vision API  │
-│  HealthKit   │         │                         │         └──────────────┘
-│  카메라       │◀────────│  Docker 컨테이너         │         ┌──────────────┐
-└──────────────┘         │                         │────────▶│  AWS S3      │
-                         └────────────┬────────────┘         │  (임시)       │
-                                      │                      └──────────────┘
+│  HealthKit   │ 멀티파트 │                         │         └──────────────┘
+│  카메라       │◀────────│  Docker 컨테이너         │
+└──────────────┘         └────────────┬────────────┘
+                                      │ JDBC
                                       ▼
-                                 ┌─────────┐
-                                 │  MySQL  │
-                                 └─────────┘
+                              ┌────────────────┐
+                              │  AWS RDS       │
+                              │  (MySQL)       │
+                              └────────────────┘
 ```
+
+**셀피는 어디에도 파일로 착지하지 않는다.** 멀티파트로 받은 바이트를 그대로 OpenAI Vision에 실어 보내고, RDS에는 0~100 점수 3개만 남는다. 오브젝트 스토리지(S3)를 경유하지 않는다 — §5 참조.
 
 ### 서버가 하지 않는 것
 
@@ -45,7 +47,6 @@ com.allday.sleep2skin_be
 │   ├── config/
 │   │   ├── SwaggerConfig       (구현 완료)
 │   │   ├── JpaConfig           @EnableJpaAuditing
-│   │   ├── S3Config            S3Client 빈
 │   │   └── OpenAiConfig        HTTP 클라이언트 빈 + 타임아웃
 │   ├── response/
 │   │   ├── ApiResponse         { success, data, error }
@@ -58,7 +59,6 @@ com.allday.sleep2skin_be
 │   │   ├── BaseTimeEntity      createdAt + updatedAt
 │   │   └── BaseCreatedEntity   createdAt만 (append-only 이력용)
 │   └── infra/                  외부 연동 — 교체 가능하게 감싼다
-│       ├── s3/                 SelfieStorage (업로드 + 삭제)
 │       └── openai/             SkinVisionClient 인터페이스 + 구현체
 │
 └── domain/                     비즈니스 도메인
@@ -191,11 +191,11 @@ public SleepUploadResponse upload(Long userId, SleepSessionUploadRequest request
 ```
 POST /api/v1/skin/selfie
    │
-   ├─ SelfieAnalysisService
-   │     ├─ S3 임시 업로드   selfie/tmp/{uuid}.jpg
+   ├─ SelfieAnalysisService                 (multipart/form-data)
+   │     ├─ MultipartFile → byte[]          메모리에서만 다룬다. 디스크·버킷에 쓰지 않는다
    │     ├─ OpenAI Vision 호출 (Structured Outputs로 지표 3종 강제)
-   │     ├─ 0~100 정규화 → SkinMeasurement 저장
-   │     └─ finally { S3 객체 삭제 }        ← 예외·타임아웃에도 반드시 실행
+   │     ├─ 0~100 정규화 → SkinMeasurement 저장 (RDS — 숫자 3개)
+   │     └─ 바이트 참조 해제                  ← 메서드를 벗어나면 남는 참조가 없다
    │
    ├─ SkinVerificationService
    │     ├─ 오늘자 예보 조회 (없으면 SKIN_FORECAST_NOT_FOUND)
@@ -302,29 +302,26 @@ public abstract class BaseTimeEntity {
 
 | # | 장치 | 코드 위치 |
 |---|---|---|
-| 1 | S3 Lifecycle 정책 — `selfie/tmp/` 1일 자동 만료 | 인프라 설정 (Terraform/콘솔) |
-| 2 | `finally` 블록 삭제 — 예외·타임아웃에도 실행 | `SelfieAnalysisService` |
-| 3 | **DB 스키마에 이미지 경로 컬럼 없음** | `SkinMeasurement` 엔티티 |
-| 4 | 버킷 퍼블릭 액세스 전면 차단, EC2 IAM 역할로만 접근 | 인프라 설정 |
+| 1 | **오브젝트 스토리지를 쓰지 않는다** — 멀티파트 → 메모리 → LLM. 업로드할 버킷이 없다 | `SelfieAnalysisService` |
+| 2 | **DB 스키마에 이미지 경로·URL 컬럼 없음** | `SkinMeasurement` 엔티티 |
+| 3 | 이미지 바이트를 필드·정적 변수·캐시에 담지 않는다 (메서드 지역 변수만) | `SelfieAnalysisService` |
+| 4 | 예외 로그에 바이트·base64를 찍지 않는다 | `SelfieAnalysisService`, `GlobalExceptionHandler` |
 
-장치 3이 가장 강력하다. 이미지를 참조할 컬럼이 없으면 실수로도 보관할 수 없다.
+**장치 1과 2가 본체다.** 저장할 곳도, 저장한 것을 가리킬 컬럼도 없으면 실수로도 보관할 수 없다.
 
 ```java
 public SkinMeasurement analyze(Long userId, MultipartFile selfie) {
-    String key = "selfie/tmp/" + UUID.randomUUID() + ".jpg";
-    try {
-        s3Client.upload(key, selfie);
-        SkinMetricScores scores = visionClient.analyze(key);   // OpenAI Vision
-        return measurementRepository.save(SkinMeasurement.of(userId, scores));
-    } finally {
-        s3Client.delete(key);   // 어떤 경로로 빠져나가도 실행
-    }
+    byte[] image = selfie.getBytes();                          // 메모리에만 존재
+    SkinMetricScores scores = visionClient.analyze(image);     // OpenAI Vision
+    return measurementRepository.save(SkinMeasurement.of(userId, scores));
 }
 ```
 
-**미확인 사항**: OpenAI API 요청 로그에 이미지가 남는지 확인이 필요하다. 사용자 고지 문구를 확정하기 전에 반드시 검증한다. ([prd.md](prd.md) §7 블로커 B5)
+S3를 경유하던 초안에서 바뀐 부분이다. 임시 업로드가 사라지면서 `finally` 삭제 블록 · Lifecycle 정책 · 버킷 접근제어가 **전부 불필요해졌다.** 지켜야 할 장치가 줄어든 만큼 정책이 깨질 경로도 줄었다.
 
-**재검토 여지**: S3를 경유하지 않고 요청 본문에 이미지를 직접 실어 보내면 우리 인프라에는 이미지가 전혀 남지 않는다. 설명이 더 단순해지므로 S3 경유가 정말 필요한지 재검토할 만하다.
+**표현 주의**: 이미지가 우리 인프라에 파일로 남지는 않지만, 처리 중 서버 메모리를 거치고 OpenAI로 전송된다. "저장하지 않습니다"보다 **"분석 직후 즉시 삭제하며, 얼굴을 복원할 수 있는 데이터를 보관하지 않습니다"**가 정확하다.
+
+**미확인 사항**: OpenAI API 요청 로그에 이미지가 남는지 확인이 필요하다. S3를 뺀 뒤에도 이 항목은 그대로 남는다 — 우리 인프라가 아니라 **제공자 쪽 보관**의 문제이기 때문이다. 사용자 고지 문구를 확정하기 전에 반드시 검증한다. ([prd.md](prd.md) §7 블로커 B4)
 
 ---
 
@@ -359,6 +356,7 @@ public SkinForecastResponse getForecast(Long userId, LocalDate date)
 |---|---|
 | 모델 | `gpt-5.6-terra` (기본값) |
 | API | Responses API + `input_image` |
+| 이미지 전달 | 요청 본문에 **base64 인라인**. URL을 넘기지 않는다(넘길 URL이 없다 — §5) |
 | 출력 강제 | Structured Outputs — 지표 3종 정수 스키마 |
 | 대체 모델 | `gpt-5.6-luna` (비용 문제 시) |
 
@@ -385,18 +383,30 @@ Structured Outputs로 응답 스키마를 강제하면 파싱 실패가 사라�
 
 > 프롬프트 수정 시 회귀 확인: 눈 밑이 뚜렷하게 어두운 샘플에서 `darkCircle`이 **낮게** 나오는지 본다. 스텁이 아닌 실제 호출로 한 번은 확인해야 한다.
 
-**인터페이스로 감싼다** — 제공자를 바꿀 가능성이 있으므로 `SkinVisionClient` 인터페이스를 두고 `OpenAiSkinVisionClient`로 구현한다. 테스트에서는 고정값을 반환하는 스텁으로 대체한다.
+**인터페이스로 감싼다** — 제공자를 바꿀 가능성이 있으므로 `SkinVisionClient` 인터페이스를 두고 `OpenAiSkinVisionClient`로 구현한다. **인터페이스는 `byte[]`(또는 `MultipartFile`)를 받는다 — 스토리지 키를 받지 않는다.** 테스트에서는 고정값을 반환하는 스텁으로 대체한다.
 
-### AWS S3
+### AWS RDS (MySQL)
+
+운영 DB는 EC2 인스턴스 안이 아니라 **관리형 RDS**에 둔다. 배포로 컨테이너를 갈아끼워도 데이터가 살아남고, 백업·장애 조치를 직접 만들지 않아도 된다.
 
 ```yaml
-aws:
-  s3:
-    bucket: sleep2skin-selfie-tmp
-    region: ap-northeast-2
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
 ```
 
-인증은 EC2 IAM 역할을 사용한다. **액세스 키를 코드나 설정 파일에 넣지 않는다.**
+접속 정보는 전부 환경 변수다. **엔드포인트·비밀번호를 코드나 설정 파일에 넣지 않는다.**
+
+| 항목 | 방침 |
+|---|---|
+| 엔진 | MySQL 8.0.16 이상 (`CHECK` 제약이 실제로 동작하는 최소 버전 — [erd.md](erd.md) §3) |
+| 네트워크 | 퍼블릭 액세스 차단. **EC2 보안 그룹에서만** 3306 인바운드 허용 |
+| 자격 증명 | 마스터 계정을 앱에 쓰지 않고 앱 전용 계정을 별도로 만든다 |
+| 백업 | 자동 백업 기본값 유지 (해커톤 범위에서 별도 튜닝 없음) |
+
+> ⚠️ **아직 코드에 반영되지 않았다.** 현재 `compose.yaml`·`application.yml`은 로컬 MySQL 컨테이너 기준이다. RDS 전환 시점과 로컬 개발 DB를 어디로 둘지(컨테이너 유지 vs 공용 RDS)는 **팀 협의 후 확정**한다. 이 문서는 목표 구성을 먼저 적어둔 것이다.
 
 ---
 
@@ -406,9 +416,10 @@ aws:
 
 | 항목 | 관리 방법 | 상태 |
 |---|---|---|
-| DB 접속 정보 | 환경 변수 `DB_HOST`·`DB_PORT`·`DB_NAME`·`DB_USERNAME`·`DB_PASSWORD` | ✅ |
+| DB 접속 정보 | 환경 변수 `DB_HOST`·`DB_PORT`·`DB_NAME`·`DB_USERNAME`·`DB_PASSWORD` | ✅ (값만 RDS 엔드포인트로 교체하면 된다) |
 | OpenAI API 키 | 환경 변수 `OPENAI_API_KEY` | 미도입 |
-| AWS 자격 증명 | EC2 IAM 역할 (키 없음) | 미도입 |
+
+**RDS로 옮겨도 코드는 바뀌지 않는다.** `DB_HOST`가 `localhost`에서 RDS 엔드포인트로 바뀔 뿐이다. 이 변수 이름들을 이미 쓰고 있는 덕분에 전환 비용이 설정값 하나로 끝난다.
 
 `.env.example`이 필요한 환경 변수의 목록 역할을 한다. **`.env`는 커밋하지 않는다** (`.gitignore` 처리됨).
 
@@ -416,8 +427,10 @@ aws:
 
 | 프로파일 | 용도 | DB |
 |---|---|---|
-| (기본) | 로컬 실행·운영 | MySQL, `ddl-auto: none` |
+| (기본) | 로컬 실행 · 운영 | MySQL — 로컬은 컨테이너, 운영은 RDS. `ddl-auto: update` |
 | `test` | 테스트 | H2 인메모리, `ddl-auto: create-drop` |
+
+프로파일을 나누지 않고 `DB_HOST`만 바꾼다. **운영용 프로파일을 따로 만들지 않는다** — 접속 대상만 다르고 나머지 설정이 같으므로, 파일이 늘면 두 곳이 어긋날 여지만 생긴다.
 
 `src/test/resources/application-test.yml`은 **파일명이 `application.yml`이면 안 된다.** 그러면 main의 설정을 통째로 가려버려 `spring.application.name`·springdoc 설정까지 사라진다. 프로파일 파일로 두고 `@ActiveProfiles("test")`로 덮어쓴다.
 
@@ -443,6 +456,8 @@ aws:
 docker compose down -v && docker compose up -d mysql
 ```
 
+> ⚠️ **이 방법은 로컬 컨테이너에서만 쓴다.** 운영 RDS에는 `-v`에 해당하는 안전한 대응이 없다. RDS 전환 후 파괴적 스키마 변경이 필요하면 `DROP TABLE` 후 재기동하거나 마이그레이션 도구 도입을 논의한다 — 팀 협의 대상이다.
+
 ### ⚠️ 유니크 제약은 반드시 눈으로 확인한다
 
 이 프로젝트의 유니크 제약은 **장식이 아니라 정확성 장치**다.
@@ -467,13 +482,17 @@ SHOW CREATE TABLE sleep_session;
 
 ## 9. 배포
 
-AWS EC2 + Docker. **CI/CD 파이프라인 구축 완료.**
+AWS EC2 + Docker, DB는 **RDS(MySQL)**. **CI/CD 파이프라인 구축 완료.**
 
 | 파일 | 역할 |
 |---|---|
 | `Dockerfile` | 멀티스테이지 빌드 (JDK 21 빌드 → JRE 21 실행) |
 | `compose.yaml` | app + MySQL 로컬 스택. app은 MySQL healthcheck 통과 후 기동 |
 | `.github/workflows/ci.yml` | `dev`·`main` 대상 PR에서 `bootJar` + `test` + Docker 이미지 빌드 |
+
+**운영에서 DB 컨테이너를 띄우지 않는다.** EC2에는 앱 컨테이너만 올리고 DB는 RDS를 바라본다 — 배포로 컨테이너를 교체해도 데이터가 남는다. `compose.yaml`의 `mysql` 서비스는 **로컬 개발 전용**이 된다.
+
+> 현재 `compose.yaml`은 아직 로컬·운영 구분 없이 하나다. 분리 방식(프로파일 지정 vs 파일 분리)은 팀 협의 후 결정한다.
 
 CI는 MySQL service를 띄워 **실제 MySQL로도 테스트**한다. 로컬은 H2를 쓰므로 방언 차이는 CI에서 걸린다.
 
