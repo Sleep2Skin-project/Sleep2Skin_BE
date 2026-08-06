@@ -64,4 +64,4 @@ jobs:
               $ECR_REGISTRY/sleep2skin-api:$IMAGE_TAG
             docker image prune -f
             sleep 15
-            curl -f http://localhost:8080/actuator/health || exit 1
+            curl -f http://localhost:8080/api/v1/health || exit 1
