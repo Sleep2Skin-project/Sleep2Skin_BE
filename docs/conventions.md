@@ -514,7 +514,7 @@ SkinForecast forecast = forecastRepository.findByUserIdAndBaseDate(...)
 
 - 스코어링·판정·학습 로직은 **단위 테스트 필수** — 숫자가 틀리면 제품 전체가 틀린다
 - Controller는 `@WebMvcTest`로 요청·응답 계약 검증
-- 외부 연동(OpenAI, S3)은 스텁으로 대체. 실제 API를 테스트에서 호출하지 않는다
+- 외부 연동(OpenAI Vision)은 스텁으로 대체. 실제 API를 테스트에서 호출하지 않는다 — `SkinVisionClient` 인터페이스가 그 자리다
 
 ```
 src/test/java/com/allday/sleep2skin_be/

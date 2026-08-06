@@ -5,7 +5,8 @@
 ## 기술 스택
 
 Java 21 · Spring Boot 4.1.0 · Gradle 9.5.1 · MySQL + Spring Data JPA · springdoc-openapi
-배포: AWS EC2 + Docker · 외부 연동: OpenAI Vision(`gpt-5.6-terra`), AWS S3
+배포: AWS EC2 + Docker · DB: AWS RDS(MySQL) · 외부 연동: OpenAI Vision(`gpt-5.6-terra`)
+**S3는 쓰지 않는다.** 셀피는 멀티파트로 받아 메모리에서 바로 LLM에 넘기고 지표만 저장한다.
 
 ## 명령어
 
@@ -56,9 +57,10 @@ enum SkinMetric { DARK_CIRCLE, COMPLEXION, BARRIER }   // 다크서클 회복 ·
 
 ### 셀피 원본은 보관하지 않는다
 
-S3 임시 업로드 → 분석 → **`finally` 블록에서 즉시 삭제**. DB에는 숫자 지표만 남는다.
-**엔티티에 이미지 경로·URL 컬럼을 두지 않는다.** 이게 정책을 지키는 가장 강한 장치다.
-표현 주의: "저장하지 않습니다"(X) → "분석 직후 즉시 삭제하며 얼굴 복원 가능한 데이터를 보관하지 않습니다"(O)
+멀티파트 수신 → **메모리에서 바로 LLM 호출** → 지표 숫자만 RDS 저장. **이미지를 어디에도 쓰지 않는다** — S3·디스크·캐시 전부.
+**엔티티에 이미지 경로·URL 컬럼을 두지 않는다.** 이게 정책을 지키는 가장 강한 장치다 (저장할 곳이 없으니 넣을 값도 없다).
+`SkinVisionClient`는 `byte[]`/`MultipartFile`을 받는다 — **스토리지 키를 받는 시그니처를 만들지 말 것.** 그 순간 업로드가 필요해진다.
+표현 주의: "저장하지 않습니다"(X) → "분석 직후 즉시 삭제하며 얼굴 복원 가능한 데이터를 보관하지 않습니다"(O) — 메모리를 거치고 OpenAI로 전송되기 때문이다.
 
 ### 서버가 하지 않는 것
 
@@ -117,7 +119,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 | 문서 | 읽어야 할 때 |
 |---|---|
 | [docs/prd.md](docs/prd.md) | 기능 요구사항 확인, 기능 ID(HOME-03 등) 조회, 미결정 사항 확인, 구현 우선순위, **확정된 정책값(§10 등급 컷오프·판정 구간)** |
-| [docs/architecture.md](docs/architecture.md) | 새 도메인 설계, 핵심 플로우 파악, 외부 연동(S3·OpenAI) 구현 |
+| [docs/architecture.md](docs/architecture.md) | 새 도메인 설계, 핵심 플로우 파악, 외부 연동(OpenAI) 구현, RDS 구성 |
 | [docs/erd.md](docs/erd.md) | **엔티티 작성 직전** — 테이블 9개의 컬럼과 근거, 일부러 뺀 컬럼, 유니크 제약 |
 | [docs/conventions.md](docs/conventions.md) | 코드 작성 직전 — 응답 포맷, 에러 코드, DTO/Entity 규칙, API 경로, Swagger |
 | [docs/workflow.md](docs/workflow.md) | 브랜치 생성, PR, 팀 분담, 빌드 |
@@ -132,7 +134,9 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`
 - 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI
 
-**미도입**: AWS S3, OpenAI. 엔티티·Repository·Service는 아직 하나도 없음.
+**미도입**: OpenAI, AWS RDS. 엔티티·Repository·Service는 아직 하나도 없음.
+
+**DB는 현재 로컬 MySQL 컨테이너다.** 운영 RDS 전환은 문서(architecture.md §7)에만 반영돼 있고 `compose.yaml`·`application.yml`은 그대로다 — **팀 협의 후 수정한다. 먼저 손대지 말 것.** 접속 정보가 이미 `DB_HOST` 등 환경 변수라서 전환은 값 교체로 끝난다.
 
 **테스트**: `./gradlew test`는 MySQL 없이 돈다 (`test` 프로파일이 H2 사용). Controller는 `@WebMvcTest`.
 
