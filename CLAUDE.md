@@ -136,10 +136,13 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 **테스트**: `./gradlew test`는 MySQL 없이 돈다 (`test` 프로파일이 H2 사용). Controller는 `@WebMvcTest`.
 
+**스키마는 엔티티에서 만든다.** `ddl-auto: update`로 결정됐고 DDL 스크립트를 따로 두지 않는다 (근거는 `application.yml` 주석). `update`는 컬럼 추가만 반영하므로 **엔티티를 파괴적으로 바꿨다면 DB를 지우고 다시 만든다** — `docker compose down -v && docker compose up -d mysql`.
+
 다음 착수 순서 (prd.md §8):
-1. 테스트 유저 시딩 + DDL 관리 방식 결정 (`ddl-auto: none`이라 스키마를 직접 만들어야 함)
-2. 수면 세션 수신 `POST /api/v1/sleep/sessions` (페이로드 해시로 중복 차단 — 위 규칙 필수)
-3. 피부 예보 산출 (HOME-03) — B1·B2 확정 후
+1. **엔티티 9개 + Repository** — 컬럼이 전부 확정돼 있어 아래 미결정 값과 **무관하게 지금 만들 수 있다** (erd.md §6)
+2. 테스트 유저 시딩 — 인증이 없으므로 DB에 직접 넣는다
+3. 수면 세션 수신 `POST /api/v1/sleep/sessions` (페이로드 해시로 중복 차단 — 위 규칙 필수)
+4. 피부 예보 산출 (HOME-03) — B1·B2·B7 확정 후
 
 ## 임시값 주의
 
@@ -147,9 +150,11 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 임시값은 전부 `domain/skin/ScoringPolicy` 한 곳에 모은다. **서비스 로직에 하드코딩하지 않는다.** 참조하는 코드에는 `// 임시값 (PRD §9.1)` 주석을 남긴다.
 
-## 착수 전 확정이 필요한 것
+## 확정이 필요한 것
 
-예보 산출(HOME-03)을 구현하려면 코드로 정할 수 없는 값이 먼저 필요하다:
+**아래 값들이 막는 것은 예보 산출(HOME-03)과 검증(HOME-07)뿐이다.** 엔티티·Repository·수면 세션 수신은 막지 않으므로 확정을 기다리며 멈추지 말 것 — 전부 스키마가 아니라 `ScoringPolicy` 안의 값이다 (erd.md §6).
+
+예보 산출을 구현하려면 코드로 정할 수 없는 값이 먼저 필요하다:
 
 - **B1** 가중합 스코어링 공식과 초기(일반) 가중치 — §9.1 임시 매핑 재확정 포함
 - **B2** 등급 컷오프 구간 (0~100 → 등급 라벨)
@@ -159,3 +164,5 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 스코어링 피처는 **7종**이다 (§9.1). `sleep_session`에 저장하는 10항목과 다르다 — 코어 수면·기상 시각은 저장하되 피처가 아니고, `BEDTIME_REGULARITY`는 컬럼이 아니라 `sleep_onset_time`에서 파생된다. 매핑은 `personal_weight` 7행 = §9.1의 7쌍.
 
 이 값들을 임의로 정하지 말고 사용자에게 확인할 것. 전체 미결정 목록은 prd.md §7 (B=블로커, L=로직, E=빈상태, S=화면, P=정책).
+
+**B5는 성격이 다르다** — `asleepUnspecified`를 앱이 `CORE`로 합쳐 보낼지는 **앱 팀과의 계약**이라 서버가 정할 수 없고 답을 받는 데 시간이 걸린다. 개발을 막지는 않으니(양쪽 다 받게 짜면 된다) 병렬로 물어두고 진행한다. 각성 판정 5분 임계값은 이미 확정됐다 (prd.md §4.1).
