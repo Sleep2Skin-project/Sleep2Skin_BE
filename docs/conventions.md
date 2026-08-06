@@ -205,13 +205,13 @@ public class GlobalExceptionHandler {
 @Schema(description = "오늘의 피부 예보")
 public record SkinForecastResponse(
 
-        @Schema(description = "다크서클 점수", example = "44")
+        @Schema(description = "다크서클 회복 점수 (0~100, 높을수록 맑음)", example = "44")
         int darkCircle,
 
-        @Schema(description = "혈색 점수", example = "72")
+        @Schema(description = "혈색 점수 (0~100, 높을수록 생기 있음)", example = "72")
         int complexion,
 
-        @Schema(description = "장벽 점수", example = "78")
+        @Schema(description = "장벽 점수 (0~100, 높을수록 튼튼함)", example = "78")
         int barrier,
 
         @Schema(description = "산출 기준일", example = "2026-08-04")
@@ -253,10 +253,12 @@ public record SleepSessionUploadRequest(
         @NotNull(message = "수면 일자는 필수입니다.")
         LocalDate sleepDate,
 
-        @Min(value = 0, message = "각성 횟수는 0 이상이어야 합니다.")
-        int awakeningCount
+        @Min(value = 0, message = "깊은 수면 시간은 0 이상이어야 합니다.")
+        int deepSleepMinutes
 ) {}
 ```
+
+> 각성 횟수·각성 총 시간은 **요청 DTO에 넣지 않는다.** 앱이 보낸 단계 구간에서 서버가 5분 임계값으로 계산한다 ([erd.md](erd.md) §3.3).
 
 Controller에서 `@Valid`를 붙인다. Service에서 다시 null 체크하지 않는다.
 
@@ -441,13 +443,35 @@ DTO 필드에는 `@Schema(description = ..., example = ...)`를 붙인다. **exa
 
 ```java
 public enum SkinMetric {
-    DARK_CIRCLE,   // 다크서클
+    DARK_CIRCLE,   // 다크서클 회복
     COMPLEXION,    // 혈색
     BARRIER        // 장벽
 }
 ```
 
+**셋 다 0~100이고 높을수록 좋은 상태다.** `DARK_CIRCLE`은 "다크서클이 심한 정도"가 아니라 **"회복된 정도"**다 — 각성이 많은 밤일수록 점수가 내려간다. UI 표시명이 "다크서클 회복"인 이유다. 예보·실측 양쪽이 같은 방향이어야 HOME-07 대조가 성립한다.
+
 **3종 고정이다.** 유분(sebum), 칙칙함(dullness), 색소침착(pigmentation)은 기능명세서 초안에 등장하지만 최종 확정에서 제외됐다. 코드에 추가하지 않는다.
+
+### 피처 enum
+
+```java
+public enum SleepFeature {
+    AWAKE_COUNT,          // 야간 각성 횟수      → DARK_CIRCLE
+    TOTAL_SLEEP,          // 총 수면 시간        → DARK_CIRCLE
+    DEEP_SLEEP,           // 깊은 수면 시간      → BARRIER
+    REM_SLEEP,            // REM 수면 시간       → BARRIER
+    BEDTIME_REGULARITY,   // 취침 규칙성         → COMPLEXION
+    HRV,                  // 심박변이도          → COMPLEXION  (결측 가능)
+    RESTING_HEART_RATE    // 안정시 심박         → COMPLEXION  (결측 가능)
+}
+```
+
+**저장하는 값과 피처는 다르다.** 코어 수면·기상 시각은 `sleep_session`에 저장하지만 피처가 아니다. 반대로 `BEDTIME_REGULARITY`는 컬럼이 아니라 `sleep_onset_time`에서 파생된다. → [prd.md](prd.md) §4.1 세 층위 표
+
+**피처 → 지표 매핑은 임시값이다** (PRD §9.1). `SleepFeature`에 지표를 필드로 박지 말고 `ScoringPolicy`에서 매핑을 들고 있게 한다 — 매핑이 바뀔 때 enum이 아니라 정책 한 파일만 바뀌어야 한다.
+
+**`AWAKE_MINUTES`(각성 총 시간)는 아직 없다.** 수집·저장은 하지만 지표 배정이 미정이라 피처가 아니다. 배정되면 여기에 추가한다.
 
 ---
 
