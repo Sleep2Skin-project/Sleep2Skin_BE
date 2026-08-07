@@ -142,6 +142,17 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 **없다.** 테스트 유저를 DB에 직접 주입한다. Spring Security를 추가하지 않는다.
 단, Service는 항상 `userId`를 파라미터로 받는다 — 나중에 JWT를 붙여도 Controller만 바뀌게.
 
+**`userId`는 `X-User-Id` 헤더로 받는다** (conventions.md §8). 경로 변수나 쿼리 파라미터가 아니다 — JWT를 붙일 때 **헤더를 읽던 자리 한 곳만** 바뀐다.
+
+## API 공통 규약 (conventions.md §8)
+
+- **`X-User-Id` 헤더** — 모든 API 공통
+- **`baseDate` 쿼리 파라미터** — 날짜가 필요한 조회 API는 전부 받는다. **서버는 "오늘"을 모른다** (`users`에 `time_zone`이 없다). 서버 시각으로 계산하면 한국 시간 오전 9시 이전에 하루 밀린다
+- **모든 시각은 ISO 8601 오프셋 포함** — 오프셋이 없으면 `sleepDate`가 밀리고 예보·검증 조인이 전부 어긋난다
+- 경로에 동사를 넣지 않는다. 상태 변경은 `PATCH /todo/{id}` + 본문 `{status}`
+
+**`POST /api/v1/sleep/sessions`는 앱이 단계 구간 배열만 보내고 서버가 집계를 전부 계산한다** (architecture.md §3.1). 서버가 세션을 첫 기상에서 자르므로 앱이 보고한 총합은 쓸 수 없다. **앱은 `UNSPECIFIED`를 `CORE`로 바꿔 보내면 안 된다** — 비율 분모가 오염된다.
+
 ## 문서
 
 작업에 필요한 것만 읽는다.
@@ -151,7 +162,8 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 | [docs/prd.md](docs/prd.md) | 기능 요구사항 확인, 기능 ID(HOME-03 등) 조회, 미결정 사항 확인, 구현 우선순위, **확정된 정책값(§10 등급 컷오프·판정 구간)** |
 | [docs/architecture.md](docs/architecture.md) | 새 도메인 설계, 핵심 플로우 파악, 외부 연동(OpenAI) 구현, RDS 구성 |
 | [docs/erd.md](docs/erd.md) | **엔티티 작성 직전** — 테이블 9개의 컬럼과 근거, 일부러 뺀 컬럼, 유니크 제약 |
-| [docs/conventions.md](docs/conventions.md) | 코드 작성 직전 — 응답 포맷, 에러 코드, DTO/Entity 규칙, API 경로, Swagger |
+| [docs/api.md](docs/api.md) | **엔드포인트 작업 직전** — 경로·요청·응답의 **유일한 출처**. 도메인별 API 19개, `POST /sleep/sessions` 상세 규격, 1단계 구현 순서, **MVP에서 만들지 않는 것** |
+| [docs/conventions.md](docs/conventions.md) | 코드 작성 직전 — 응답 포맷, 에러 코드, DTO/Entity 규칙, 경로 명명 규칙, Swagger |
 | [docs/workflow.md](docs/workflow.md) | 브랜치 생성, PR, 팀 분담, 빌드 |
 
 기능 ID는 `ONB-01~05` / `HOME-01~09` / `TODO-01~07` / `REP-01~12` / `MY-01~05`.

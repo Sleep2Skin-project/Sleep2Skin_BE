@@ -376,20 +376,29 @@ public class SkinForecastService {
 /api/v1/{도메인}/{리소스}
 ```
 
-| 기능 | 메서드 | 경로 |
-|---|---|---|
-| 헬스체크 | GET | `/api/v1/health` |
-| 수면 세션 업로드 | POST | `/api/v1/sleep/sessions` |
-| 오늘의 예보 | GET | `/api/v1/skin/forecast` |
-| 셀피 분석·검증 | POST | `/api/v1/skin/selfie` |
-| 오늘의 TODO | GET | `/api/v1/todo` |
-| TODO 체크 | PATCH | `/api/v1/todo/{id}/complete` |
-| 일간 리포트 | GET | `/api/v1/report/daily` |
-| 주간 리포트 | GET | `/api/v1/report/weekly` |
-
 - 리소스는 복수형 (`sessions`), 단일 개념은 단수 (`forecast`)
-- 동사를 경로에 넣지 않는다 — 상태 변경은 HTTP 메서드로 표현
+- **동사를 경로에 넣지 않는다** — 상태 변경은 HTTP 메서드와 본문으로 표현한다
 - `@RequestMapping("/api/v1/skin")`을 클래스에 두고 메서드에 하위 경로를 붙인다
+
+### 공통 규약
+
+| 규약 | 내용 |
+|---|---|
+| **사용자 식별** | `X-User-Id` 헤더 — 모든 API 공통 |
+| **기준일** | `baseDate` 쿼리 파라미터 — 날짜가 필요한 조회 API 전부 |
+| **시각 형식** | ISO 8601 **오프셋 포함** (`2026-08-07T07:10:00+09:00`) |
+
+**헤더로 받는 이유는 JWT 도입 비용이다.** 나중에 토큰에서 `userId`를 꺼내게 되면 **헤더를 읽던 자리만 바뀌고** 경로·시그니처·DTO는 그대로다. 쿼리 파라미터로 받으면 API마다 파라미터를 지워야 하고, 경로 변수로 받으면 전 경로를 갈아야 한다. Swagger에는 전역 헤더 파라미터로 등록해 UI에서 한 번만 입력하게 한다.
+
+**`baseDate`를 받는 이유는 서버가 "오늘"을 모르기 때문이다.** `users`에 `time_zone`을 두지 않기로 했으므로([erd.md](erd.md) §3.1) 서버 시각(UTC)으로 계산하면 한국 시간 오전 9시 이전에 날짜가 하루 밀린다. `LocalDate`로 받는다.
+
+**시각에 오프셋이 없으면** 서버가 UTC로 해석해 `sleepDate`가 밀리고, 그 날짜로 조인되는 예보·검증이 전부 어긋난다.
+
+### 엔드포인트 목록은 [api.md](api.md)에 있다
+
+**경로·요청·응답의 유일한 출처는 [api.md](api.md)다.** 이 문서에는 옮겨 적지 않는다 — 두 곳에 두면 어긋난다.
+
+api.md에 있는 것: 도메인별 엔드포인트 19개 · 각 API 설명 · `POST /sleep/sessions` 상세 규격 · 1단계 구현 순서 · **MVP에서 만들지 않는 것**
 
 ### Swagger 문서화
 
