@@ -972,7 +972,7 @@ REP-07(상관 강도)과 REP-12(개인 vs 일반)가 충돌하는 것처럼 보�
 - Notion 기능명세서: https://app.notion.com/p/3aff18125428805fa7c2ec191eb58387
 - 상위 페이지: 멋사 14기 중앙해커톤 > 기능명세서 작성
 - 현재 구현 상태: `GET /api/v1/health` 헬스체크만 존재
-- 관련 문서: [architecture.md](architecture.md) · [erd.md](erd.md) · [conventions.md](conventions.md) · [workflow.md](workflow.md)
+- 관련 문서: [api.md](api.md) · [architecture.md](architecture.md) · [erd.md](erd.md) · [conventions.md](conventions.md) · [workflow.md](workflow.md)
 
 ### 11.1 스코어링 근거 문헌
 
