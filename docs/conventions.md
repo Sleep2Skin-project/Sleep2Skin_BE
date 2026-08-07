@@ -445,8 +445,8 @@ GET /api/v1/skin/forecast?baseDate=2026-08-07
 |---|---|---|
 | 오늘의 TODO 목록 | GET | `/api/v1/todo?baseDate=` |
 | TODO 상태 변경 | PATCH | `/api/v1/todo/{id}` |
-| 항목 직접 추가 | POST | `/api/v1/todo` |
-| 저녁 수면 가이드 | GET | `/api/v1/todo/sleep-guide?baseDate=` |
+
+> **TODO 도메인은 엔드포인트 2개뿐이다.** 항목 직접 추가(TODO-06)와 저녁 수면 가이드(TODO-07)는 **MVP에서 제외**됐다 ([prd.md](prd.md) §4.3). 추가하지 말 것.
 
 **`report` — 누적 분석**
 
