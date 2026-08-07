@@ -144,8 +144,116 @@ POST /api/v1/sleep/sessions
    │                           → 지표 3종 가중합 스코어링 → 0~100 정규화
    │                           → 등급 컷오프 매핑 (25/50/75 — prd.md §10.1)
    │                           → 오늘자 예보 저장 (HOME-07 대조 기준)
-   └─ 응답: { processed, 예보 3종, 수면 통역 헤드라인 }
+   └─ 응답: { processed, sleepDate, 수면 집계, 예보 3종 }
 ```
+
+#### 앱↔서버 페이로드 규격 (2026-08-07 확정)
+
+**앱은 단계 구간 배열만 보낸다. 집계는 서버가 전부 계산한다.**
+
+```jsonc
+POST /api/v1/sleep/sessions
+X-User-Id: 1
+
+{
+  "segments": [
+    { "stage": "AWAKE", "startTime": "2026-08-06T23:35:00+09:00", "endTime": "2026-08-06T23:40:00+09:00" },
+    { "stage": "CORE",  "startTime": "2026-08-06T23:40:00+09:00", "endTime": "2026-08-07T00:55:00+09:00" },
+    { "stage": "DEEP",  "startTime": "2026-08-07T00:55:00+09:00", "endTime": "2026-08-07T01:32:00+09:00" }
+  ],
+  "hrv": 41.2,
+  "restingHeartRate": 63
+}
+```
+
+| 필드 | 타입 | 필수 | 비고 |
+|---|---|---|---|
+| `segments[].stage` | enum | ✅ | `AWAKE` · `CORE` · `DEEP` · `REM` · `UNSPECIFIED` |
+| `segments[].startTime` · `endTime` | ISO 8601 | ✅ | **오프셋 필수** |
+| `hrv` | number | ❌ | ms. 워치 미착용 시 `null` |
+| `restingHeartRate` | number | ❌ | bpm. 워치 미착용 시 `null` |
+
+**집계값을 앱이 보내지 않는 이유는 서버가 세션을 자르기 때문이다.** 연속 `AWAKE` 60분에서 첫 기상으로 보고 끊는데([prd.md](prd.md) §4.1), 앱이 보고한 총 수면에는 그 뒤의 낮잠이 섞여 있을 수 있다. **서버가 자를 거면 서버가 세는 것이 맞다.** 각성 횟수를 앱에서 받지 않기로 한 것과 같은 이유다.
+
+**앱 팀에 반드시 전달할 세 가지**
+
+| # | 내용 | 어기면 |
+|---|---|---|
+| 1 | **`UNSPECIFIED`를 `CORE`로 바꿔 보내지 말 것** | 비율 분모가 오염되어 **장벽 점수만 조용히 틀린다** ([prd.md](prd.md) §10.5) |
+| 2 | **시각에 오프셋을 반드시 포함할 것** | `sleepDate`가 하루 밀리고, 그 날짜로 조인되는 예보·검증이 전부 어긋난다 |
+| 3 | **`inBed`는 보내지 말 것** | 서버가 무시한다. `inBed` 의존 지표는 명세에서 제외됐다 |
+
+**서버가 하는 일**
+
+```
+1. 시간순 정렬 · 구간 겹침 검사
+2. 세션 경계 자르기    연속 AWAKE 60분 이상 → 첫 기상. 이후 구간 전부 버림
+3. 집계               총 수면 = asleep 구간 합 (UNSPECIFIED 포함)
+                      deep/rem/core = 단계별 합
+                      각성 = 5분~60분 구간의 개수와 합
+4. sleepDate 결정      wake_time의 날짜 (오프셋 기준)
+5. 해시 계산·비교      ← 저장 전에
+```
+
+**응답과 상태 코드**
+
+| 상황 | 코드 | `processed` | 동작 |
+|---|---|---|---|
+| 그날 첫 수신 | `201` | `true` | 저장 + 스코어링 |
+| 해시 동일 | `200` | `false` | **아무것도 하지 않고** 기존 예보 반환 |
+| 해시 다름 + 검증 완료 | `200` | `false` | 갱신하지 않고 기존 예보 반환 |
+| 해시 다름 + 검증 전 | `200` | `true` | 갱신 + 재산출 |
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "processed": true,
+    "sleepDate": "2026-08-07",
+    "sleep": {
+      "sleepOnsetTime": "2026-08-06T23:40:00+09:00",
+      "wakeTime": "2026-08-07T07:10:00+09:00",
+      "totalSleepMinutes": 402,
+      "deepSleepMinutes": 54,
+      "remSleepMinutes": 71,
+      "coreSleepMinutes": 277,
+      "awakeCount": 3,
+      "awakeMinutes": 21
+    },
+    "forecast": {
+      "darkCircle": { "score": 68, "grade": "NORMAL" },
+      "complexion": { "score": 69, "grade": "NORMAL" },
+      "barrier":    { "score": 98, "grade": "STABLE" },
+      "unavailable": []
+    }
+  },
+  "error": null
+}
+```
+
+**지표가 비면 `null`과 함께 이유를 준다.** `null`만 주면 앱이 문구를 고를 수 없다.
+
+```jsonc
+"complexion": null,
+"unavailable": [ { "metric": "COMPLEXION", "reason": "INSUFFICIENT_HISTORY" } ]
+```
+
+| `reason` | 언제 |
+|---|---|
+| `MISSING_FEATURES` | 워치 미착용 — HRV·안정시 심박 없음 |
+| `INSUFFICIENT_HISTORY` | 취침 규칙성 이력 3일 미만 (신규 사용자) |
+| `NO_SLEEP_STAGES` | 단계 합 0 — 장벽 산출 불가 |
+
+**이건 에러가 아니라 정상 응답이다.** 신규 사용자에게 일상적으로 발생한다.
+
+**에러 응답**
+
+| 코드 | `ErrorCode` | 언제 |
+|---|---|---|
+| `400` | `SLEEP_STAGE_INVALID` | 알 수 없는 `stage`, 구간 겹침, 오프셋 누락 |
+| `400` | `SLEEP_TIME_INVALID` | `startTime >= endTime` |
+| `400` | `INVALID_INPUT` | `segments`가 비어 있음 |
+| `404` | `USER_NOT_FOUND` | `X-User-Id`가 없는 사용자 |
 
 `SkinForecast`는 **하루 1건**이며, 나중에 셀피 검증(HOME-07)이 이 값을 기준으로 대조한다. 예보 없이는 검증이 성립하지 않으므로, 검증 API는 오늘자 예보 존재 여부를 먼저 확인한다.
 
@@ -334,8 +442,10 @@ S3를 경유하던 초안에서 바뀐 부분이다. 임시 업로드가 사라�
 해커톤 범위에서 로그인 체계를 두지 않는다. 테스트 유저를 DB에 직접 주입해 사용한다.
 
 - `data.sql` 또는 `CommandLineRunner`로 테스트 유저 시딩
-- API는 `userId`를 경로 변수 또는 쿼리 파라미터로 받는다
+- **API는 `userId`를 `X-User-Id` 헤더로 받는다** (2026-08-07 확정 — [conventions.md](conventions.md) §8)
 - Spring Security 의존성을 **추가하지 않는다** — 없는 인증을 위한 설정 파일이 늘어날 뿐이다
+
+**헤더로 받는 이유는 아래 "인증을 붙일 때를 위한 준비"와 같은 목적이다.** 경로 변수로 받으면 JWT 도입 시 전 경로를 갈아야 하고, 쿼리 파라미터로 받으면 API마다 파라미터를 하나씩 지워야 한다. 헤더면 **읽던 자리 한 곳만** 바뀐다.
 
 ### 나중에 인증을 붙일 때를 위한 준비
 

@@ -142,6 +142,17 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 **없다.** 테스트 유저를 DB에 직접 주입한다. Spring Security를 추가하지 않는다.
 단, Service는 항상 `userId`를 파라미터로 받는다 — 나중에 JWT를 붙여도 Controller만 바뀌게.
 
+**`userId`는 `X-User-Id` 헤더로 받는다** (conventions.md §8). 경로 변수나 쿼리 파라미터가 아니다 — JWT를 붙일 때 **헤더를 읽던 자리 한 곳만** 바뀐다.
+
+## API 공통 규약 (conventions.md §8)
+
+- **`X-User-Id` 헤더** — 모든 API 공통
+- **`baseDate` 쿼리 파라미터** — 날짜가 필요한 조회 API는 전부 받는다. **서버는 "오늘"을 모른다** (`users`에 `time_zone`이 없다). 서버 시각으로 계산하면 한국 시간 오전 9시 이전에 하루 밀린다
+- **모든 시각은 ISO 8601 오프셋 포함** — 오프셋이 없으면 `sleepDate`가 밀리고 예보·검증 조인이 전부 어긋난다
+- 경로에 동사를 넣지 않는다. 상태 변경은 `PATCH /todo/{id}` + 본문 `{status}`
+
+**`POST /api/v1/sleep/sessions`는 앱이 단계 구간 배열만 보내고 서버가 집계를 전부 계산한다** (architecture.md §3.1). 서버가 세션을 첫 기상에서 자르므로 앱이 보고한 총합은 쓸 수 없다. **앱은 `UNSPECIFIED`를 `CORE`로 바꿔 보내면 안 된다** — 비율 분모가 오염된다.
+
 ## 문서
 
 작업에 필요한 것만 읽는다.

@@ -376,20 +376,105 @@ public class SkinForecastService {
 /api/v1/{도메인}/{리소스}
 ```
 
+- 리소스는 복수형 (`sessions`), 단일 개념은 단수 (`forecast`)
+- **동사를 경로에 넣지 않는다** — 상태 변경은 HTTP 메서드와 본문으로 표현한다
+- `@RequestMapping("/api/v1/skin")`을 클래스에 두고 메서드에 하위 경로를 붙인다
+
+### 공통 규약 (2026-08-07 확정)
+
+**① 사용자 식별 — `X-User-Id` 헤더**
+
+```
+X-User-Id: 1
+```
+
+인증이 없으므로 클라이언트가 사용자를 직접 알려준다. **모든 API가 같은 방식을 쓴다.**
+
+경로 변수나 쿼리 파라미터가 아니라 **헤더로 받는 이유**는 JWT 도입 비용 때문이다. 나중에 토큰에서 `userId`를 꺼내게 되면 **헤더를 읽던 자리만 바뀌고 경로·시그니처·DTO는 그대로다.** 쿼리 파라미터로 받으면 API마다 파라미터를 하나씩 지워야 하고, 경로 변수로 받으면 전 경로를 갈아야 한다.
+
+Swagger에는 전역 헤더 파라미터로 등록해 UI에서 한 번만 입력하게 한다.
+
+**② 기준일 — `baseDate` 쿼리 파라미터**
+
+```
+GET /api/v1/skin/forecast?baseDate=2026-08-07
+```
+
+**서버는 "오늘"이 언제인지 모른다.** `users`에 `time_zone`을 두지 않기로 했으므로([erd.md](erd.md) §3.1) 날짜가 필요한 조회 API는 전부 기준일을 받는다. 서버 시각(UTC)으로 계산하면 한국 시간 오전 9시 이전에 날짜가 하루 밀린다.
+
+형식은 `YYYY-MM-DD`이며 `LocalDate`로 받는다.
+
+**③ 시각은 오프셋을 포함한다**
+
+요청·응답의 모든 시각은 ISO 8601 **오프셋 포함**(`2026-08-07T07:10:00+09:00`)으로 주고받는다. 오프셋이 없으면 서버가 UTC로 해석해 `sleepDate`가 하루 밀리고, 그 날짜로 예보와 검증이 조인되므로 전부 어긋난다.
+
+### 전체 엔드포인트
+
+★ = 핵심 루프. 굵은 것이 1단계 구현 대상이다.
+
+**`sleep` — 수면 수집·해석**
+
+| 기능 | 메서드 | 경로 |
+|---|---|---|
+| ★ **수면 세션 업로드 → 예보 응답** | POST | `/api/v1/sleep/sessions` |
+| **어젯밤 수면 통역 카드** | GET | `/api/v1/sleep/interpretation?baseDate=` |
+
+**`skin` — 예보·검증·개인 모델**
+
+| 기능 | 메서드 | 경로 |
+|---|---|---|
+| ★ **오늘의 피부 예보** | GET | `/api/v1/skin/forecast?baseDate=` |
+| ★ **셀피 분석·검증·학습** | POST | `/api/v1/skin/selfie` |
+| 적중률·연속 검증 배너 | GET | `/api/v1/skin/verification/summary?baseDate=` |
+| 내 모델 (일반 vs 개인화) | GET | `/api/v1/skin/model` |
+
+**`user` — 사용자·동의·설정**
+
+| 기능 | 메서드 | 경로 |
+|---|---|---|
+| **개인정보 동의 저장** | POST | `/api/v1/users/me/consents` |
+| **온보딩 완료 처리** | PATCH | `/api/v1/users/me/onboarding` |
+| 프로필 · 검증 횟수 · 연속 횟수 | GET | `/api/v1/users/me?baseDate=` |
+| 데이터 연결 상태 | GET | `/api/v1/users/me/data-status` |
+| 기록 내보내기 | GET | `/api/v1/users/me/export` |
+| 전체 삭제 (영구) | DELETE | `/api/v1/users/me` |
+
+**`todo` — 행동 처방**
+
+| 기능 | 메서드 | 경로 |
+|---|---|---|
+| 오늘의 TODO 목록 | GET | `/api/v1/todo?baseDate=` |
+| TODO 상태 변경 | PATCH | `/api/v1/todo/{id}` |
+| 항목 직접 추가 | POST | `/api/v1/todo` |
+| 저녁 수면 가이드 | GET | `/api/v1/todo/sleep-guide?baseDate=` |
+
+**`report` — 누적 분석**
+
+| 기능 | 메서드 | 경로 |
+|---|---|---|
+| 일간 리포트 | GET | `/api/v1/report/daily?baseDate=` |
+| 수면 단계 타임라인 | GET | `/api/v1/report/daily/timeline?baseDate=` |
+| 주간 리포트 | GET | `/api/v1/report/weekly?baseDate=` |
+| 월간 리포트 | GET | `/api/v1/report/monthly?yearMonth=` |
+| 종합 리포트 (트리아지) | GET | `/api/v1/report/overall` |
+
+**`health`**
+
 | 기능 | 메서드 | 경로 |
 |---|---|---|
 | 헬스체크 | GET | `/api/v1/health` |
-| 수면 세션 업로드 | POST | `/api/v1/sleep/sessions` |
-| 오늘의 예보 | GET | `/api/v1/skin/forecast` |
-| 셀피 분석·검증 | POST | `/api/v1/skin/selfie` |
-| 오늘의 TODO | GET | `/api/v1/todo` |
-| TODO 체크 | PATCH | `/api/v1/todo/{id}/complete` |
-| 일간 리포트 | GET | `/api/v1/report/daily` |
-| 주간 리포트 | GET | `/api/v1/report/weekly` |
 
-- 리소스는 복수형 (`sessions`), 단일 개념은 단수 (`forecast`)
-- 동사를 경로에 넣지 않는다 — 상태 변경은 HTTP 메서드로 표현
-- `@RequestMapping("/api/v1/skin")`을 클래스에 두고 메서드에 하위 경로를 붙인다
+### 설계 판단 몇 가지
+
+**`/users/me`로 잡았다.** `/users/{userId}`가 아니다. 인증을 붙이면 경로는 그대로 두고 헤더를 읽던 자리만 바뀐다.
+
+**TODO 상태 변경은 `PATCH /todo/{id}` + 본문 `{ "status": "DONE" }`이다.** `/complete` 같은 동사를 경로에 넣지 않는다. 상태가 `PENDING`/`DONE` 2종뿐이라 **되돌리기도 같은 엔드포인트로** 처리된다.
+
+**일간 리포트는 화면 4개(REP-02·04·05)를 한 응답에 담는다.** 한 화면에서 같이 보이고 전부 같은 날짜의 `sleep_session` + `skin_forecast` 조인이라, 나누면 같은 쿼리를 세 번 돈다. **타임라인만 분리했다** — `sleep_stage_segment`를 수백 행 읽어야 해 응답이 크고 이 테이블을 쓰는 기능이 하나뿐이다.
+
+**TODO 목록은 `피하세요`/`이렇게`를 한 응답에 담는다.** 원천 로직(TODO-02)이 하나라 나누면 같은 계산을 두 번 한다.
+
+**`POST /skin/selfie` 하나가 분석·검증·학습을 모두 한다** (HOME-06 → 07 → 08). 셋이 한 트랜잭션이고 화면도 자동 전환된다.
 
 ### Swagger 문서화
 

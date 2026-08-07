@@ -236,7 +236,9 @@ SHOW CREATE TABLE sleep_session;
 
 > **이 두 컬럼은 스코어링 피처이기도 하다**(`HRV`·`RESTING_HEART_RATE` → `COMPLEXION`). 즉 **결측되는 피처가 존재한다.** 둘은 같은 워치 착용 여부에 의존해 **함께 결측되므로**, 그 밤의 `COMPLEXION`은 피처 3개 중 1개(취침 규칙성)만 남는다. **결측 피처를 빼고 지표 내 가중치를 재정규화한다** — 기본값을 대입하지 않는다. [prd.md](prd.md) §10.6.
 
-**`total_sleep_minutes`는 저장한다.** `deep + rem + core`로 구할 수 있어 보이지만, HealthKit에 `asleepUnspecified`(단계 미상) 구간이 있어 **셋의 합이 총 수면 시간보다 적을 수 있다.** 앱이 보고한 값을 그대로 둔다.
+**`total_sleep_minutes`는 저장한다.** `deep + rem + core`로 구할 수 있어 보이지만, HealthKit에 `asleepUnspecified`(단계 미상) 구간이 있어 **셋의 합이 총 수면 시간보다 적을 수 있다.**
+
+**값은 서버가 단계 구간에서 계산한다** (2026-08-07 확정 — [architecture.md](architecture.md) §3.1). 앱이 보고한 총합을 쓰지 않는다. **서버가 세션을 첫 기상에서 자르기 때문**이다 — 앱이 보고한 총합에는 그 뒤의 낮잠이 섞여 있을 수 있다. 각성 횟수를 앱에서 받지 않기로 한 것과 같은 이유다.
 
 > **MVP는 단계 미상 구간이 없다고 가정한다**([prd.md](prd.md) §2). 그래도 이 컬럼은 유지한다 — 전제가 깨지는 순간 합이 어긋나는 것을 **확인할 수 있는 유일한 수단**이고, `total − (deep+rem+core)`가 곧 미상 구간의 길이가 된다. 지금 빼면 그때 백필할 방법이 없다.
 >
