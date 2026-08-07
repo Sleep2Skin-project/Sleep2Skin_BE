@@ -436,8 +436,9 @@ GET /api/v1/skin/forecast?baseDate=2026-08-07
 | **온보딩 완료 처리** | PATCH | `/api/v1/users/me/onboarding` |
 | 프로필 · 검증 횟수 · 연속 횟수 | GET | `/api/v1/users/me?baseDate=` |
 | 데이터 연결 상태 | GET | `/api/v1/users/me/data-status` |
-| 기록 내보내기 | GET | `/api/v1/users/me/export` |
 | 전체 삭제 (영구) | DELETE | `/api/v1/users/me` |
+
+> **기록 내보내기(MY-04의 절반)는 MVP에서 제외**됐다 ([prd.md](prd.md) §4.5). 전체 삭제만 남긴다 — 셀피 미저장 정책을 **실제로 실행 가능한 지점**으로 뒷받침하는 기능이라 제품 서사와 직접 연결된다.
 
 **`todo` — 행동 처방**
 
