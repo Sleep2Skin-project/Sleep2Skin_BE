@@ -1,4 +1,4 @@
-name: CD - Deploy to EC2 (dev)
+name: CD - Deploy to EC2 (main)
 
 on:
   push:
