@@ -176,11 +176,13 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`
 - 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI
 
-**미도입**: OpenAI, AWS RDS. 엔티티·Repository·Service는 아직 하나도 없음.
+**미도입**: OpenAI. 엔티티·Repository·Service는 아직 하나도 없음.
 
-**DB는 현재 로컬 MySQL 컨테이너다.** 운영 RDS 전환은 문서(architecture.md §7)에만 반영돼 있고 `compose.yaml`·`application.yml`은 그대로다 — **팀 협의 후 수정한다. 먼저 손대지 말 것.** 접속 정보가 이미 `DB_HOST` 등 환경 변수라서 전환은 값 교체로 끝난다.
+**로컬은 MySQL 컨테이너, 운영은 RDS다.** 로컬 스택은 `docker-compose.local.yml`이고 `.env`의 `COMPOSE_FILE`이 이 파일을 가리킨다. 운영은 Compose를 쓰지 않는다 — CD가 EC2에서 `docker run --env-file`로 띄운다.
 
-**테스트**: `./gradlew test`는 MySQL 없이 돈다 (`test` 프로파일이 H2 사용). Controller는 `@WebMvcTest`.
+⚠️ **로컬 `.env`의 `DB_HOST`에 RDS 주소를 넣지 말 것.** `ddl-auto: update`라서 앱이 뜨는 순간 작업 중인 엔티티가 운영 스키마에 반영되고, `update`는 컬럼을 지우지 않으므로 되돌릴 수 없다. 로컬에서 쓰는 `docker compose down -v`에 대응하는 조치가 RDS에는 없다 (workflow.md §1).
+
+**테스트**: `./gradlew test`는 DB 없이 돈다 (`test` 프로파일이 H2 사용). Controller는 `@WebMvcTest`. **CI도 DB 서비스를 띄우지 않는다** — 유니크 제약처럼 실제 MySQL이 필요한 검증이 생기면 그때 다시 붙인다.
 
 **스키마는 엔티티에서 만든다.** `ddl-auto: update`로 결정됐고 DDL 스크립트를 따로 두지 않는다 (근거는 `application.yml` 주석). `update`는 컬럼 추가만 반영하므로 **엔티티를 파괴적으로 바꿨다면 DB를 지우고 다시 만든다** — `docker compose down -v && docker compose up -d mysql`.
 

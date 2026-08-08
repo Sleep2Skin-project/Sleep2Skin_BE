@@ -35,6 +35,10 @@ cp .env.example .env
 docker compose up -d mysql
 ```
 
+로컬 스택 파일은 **`docker-compose.local.yml`** 이다. 자동 인식되는 이름이 아니라서 `.env`의 `COMPOSE_FILE`이 이 파일을 가리킨다 — **`.env`를 먼저 만들어야 `docker compose` 명령이 `-f` 없이 동작한다.**
+
+**이름을 `compose.yaml`로 두지 않은 이유**는 이 파일이 로컬 전용이기 때문이다. 운영은 Compose를 쓰지 않는다 — CD가 EC2에서 `docker run --env-file`로 직접 띄우고 DB는 RDS를 바라본다. 파일명이 그 사실을 드러내야 **"이거 운영에서도 쓰나?"를 매번 다시 확인하지 않는다.**
+
 `bootRun`은 셸에 `.env` 값이 주입돼 있어야 한다. 구체적인 명령은 [README.md](../README.md)를 본다 — **실행 방법은 README가 단일 출처**이고, 이 문서는 팀 규칙을 다룬다.
 
 **테스트는 MySQL 없이 돈다.** `test` 프로파일이 H2를 물려주므로 `./gradlew test`만 치면 된다.
