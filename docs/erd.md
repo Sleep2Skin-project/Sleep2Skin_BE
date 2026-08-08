@@ -200,6 +200,28 @@ SHOW CREATE TABLE sleep_session;
 
 **엔티티 필드는 `OffsetDateTime`으로 쓴다.** `BaseTimeEntity`·`BaseCreatedEntity`가 이미 그렇게 돼 있고, 도메인 시각 컬럼도 같은 타입을 따른다 — `LocalDateTime`으로 받으면 요청의 오프셋이 컨트롤러 단계에서 이미 버려져 위 설정이 개입할 여지가 없다.
 
+#### ⚠️ 타입만 `OffsetDateTime`이면 충분하지 않다 — 역직렬화가 세 번째 층이다 (2026-08-09)
+
+**`LocalDateTime`을 쓰지 않았는데도 오프셋이 버려지는 경로가 하나 더 있었다.** Jackson은 기본으로 `OffsetDateTime`을 **컨텍스트 타임존(UTC)으로 옮긴다**(`ADJUST_DATES_TO_CONTEXT_TIME_ZONE`). 타입은 그대로고 가리키는 순간도 같지만 **벽시계 날짜가 바뀐다.**
+
+```
+앱이 보낸 값      2026-08-07T07:10:00+09:00
+역직렬화 후       2026-08-06T22:10:00Z        ← 같은 순간, 다른 날짜
+sleep_date        2026-08-06                  ← 하루 밀렸다
+```
+
+**한국의 기상 시각은 거의 전부 09:00 이전이라 사실상 매번 밀린다.** `sleep_date`는 `skin_forecast.base_date`와 같은 값이어야 하므로 예보 조회·셀피 검증·리포트가 전부 하루씩 어긋난다.
+
+```yaml
+spring.jackson.datatype.datetime.adjust-dates-to-context-time-zone: false
+```
+
+> Jackson 3(Spring Boot 4)에서 이 옵션이 `DeserializationFeature` → `DateTimeFeature`로 옮겨졌다. `spring.jackson.deserialization` 아래에 두면 **기동 자체가 실패한다.**
+
+**저장 층과 다른 층이다.** `NORMALIZE_UTC`는 "DB에 넣을 때 무슨 숫자를 쓰나"를 정하고, 이 설정은 **"오프셋에서 날짜를 정하는" 단계**를 지킨다. 앞엣것만 고쳐도 `sleep_date`는 계속 밀린다.
+
+**테스트가 이 경로를 비워두면 못 잡는다.** 정규화 단위 테스트는 자바에서 만든 `OffsetDateTime`을 쓰고 컨트롤러 테스트는 서비스를 목으로 막아서, **JSON에서 나온 값이 정규화에 닿는 구간만 아무도 보지 않았다.** 새 엔드포인트가 시각을 받으면 요청 본문에서 시작하는 검증을 하나 둔다.
+
 > **남는 한계** — `baseDate`가 틀렸는지는 **서버가 알 수 없다.** 대조할 다른 날짜 정보가 요청에 없다. 규약 문서가 유일한 방어선이고 컴파일러도 테스트도 잡아주지 않는다.
 
 ### 3.2 `consent_history` — 동의 이력
