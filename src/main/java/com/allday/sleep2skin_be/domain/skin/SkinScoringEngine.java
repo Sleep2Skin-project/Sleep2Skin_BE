@@ -3,7 +3,6 @@ package com.allday.sleep2skin_be.domain.skin;
 import com.allday.sleep2skin_be.domain.skin.dto.ScoringCommand;
 import com.allday.sleep2skin_be.domain.skin.dto.SkinForecastScore;
 import com.allday.sleep2skin_be.domain.skin.dto.SkinForecastScore.UnavailableMetric;
-import com.allday.sleep2skin_be.domain.skin.dto.UnavailableReason;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
 import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
 import org.springframework.stereotype.Component;
@@ -51,7 +50,8 @@ public class SkinScoringEngine {
                     .toList();
 
             if (scored.isEmpty()) {
-                unavailable.add(new UnavailableMetric(metric, reasonFor(metric, command)));
+                unavailable.add(new UnavailableMetric(metric,
+                        ScoringPolicy.reasonFor(metric, command.isWatchDataMissing())));
                 continue;
             }
             metricScores.put(metric, weightedScore(metric, scored, featureScores, command));
@@ -131,23 +131,6 @@ public class SkinScoringEngine {
         return command.personalWeights()
                 .getOrDefault(feature, ScoringPolicy.DEFAULT_PERSONAL_WEIGHT)
                 .doubleValue();
-    }
-
-    /**
-     * 지표가 빈 이유. 여기 오는 것은 <b>그 지표의 피처가 전부 결측</b>인 경우뿐이다.
-     *
-     * <p>{@code DARK_CIRCLE}은 피처 둘 다 결측되지 않으므로 도달하지 않는다 — 그래도 분기를
-     * 남긴 것은 매핑이 바뀌었을 때 조용히 틀린 사유가 나가는 것보다 낫기 때문이다.
-     */
-    private UnavailableReason reasonFor(SkinMetric metric, ScoringCommand command) {
-        if (metric == SkinMetric.BARRIER) {
-            return UnavailableReason.NO_SLEEP_STAGES;
-        }
-        // COMPLEXION 전멸은 워치 미착용과 이력 부족이 겹친 상태다. 워치 쪽을 사유로 삼는 것은
-        // 오늘 밤 차고 자면 내일 바로 피처 둘이 살아나기 때문이다 — 규칙성은 3일을 더 기다려야 한다
-        return command.isWatchDataMissing()
-                ? UnavailableReason.MISSING_FEATURES
-                : UnavailableReason.INSUFFICIENT_HISTORY;
     }
 
 }

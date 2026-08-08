@@ -3,6 +3,7 @@ package com.allday.sleep2skin_be.global.exception;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -42,6 +43,22 @@ public class GlobalExceptionHandler {
         log.info("요청 검증 실패 {}", detail);
         return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
                 .body(ApiResponse.fail(ErrorCode.INVALID_INPUT, detail));
+    }
+
+    /**
+     * 요청 본문을 읽지 못했다 — 깨진 JSON, 알 수 없는 enum 값, 오프셋 없는 시각 등.
+     *
+     * <p>이 핸들러가 없으면 <b>페이로드 형식 오류가 500으로 나간다.</b> 서버 잘못이 아니라
+     * 클라이언트가 계약을 어긴 것이므로 400이 맞다.
+     *
+     * <p><b>어느 필드가 틀렸는지로 에러 코드를 나누지 않는다.</b> 그러려면 도메인 타입
+     * (수면 단계 enum 등)을 여기서 알아야 하는데, 의존 방향이 {@code domain → global}
+     * 한쪽이라 그 반대가 성립하지 않는다. 상세 사유는 로그로 남긴다.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnreadableBody(HttpMessageNotReadableException e) {
+        log.info("요청 본문을 읽을 수 없음 {}", e.getMostSpecificCause().getMessage());
+        return toResponse(ErrorCode.INVALID_INPUT);
     }
 
     /**

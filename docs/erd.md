@@ -339,15 +339,25 @@ awake_count = 1,  awake_minutes = 7
 | `id` | BIGINT | PK, AUTO_INCREMENT | |
 | `user_id` | BIGINT | NOT NULL, FK → `users.id` CASCADE | |
 | `base_date` | DATE | NOT NULL | `sleep_session.sleep_date`와 같은 값 |
-| `dark_circle` | INT | NOT NULL, CHECK 0~100 | 다크서클 회복 — **높을수록 맑음** |
-| `complexion` | INT | NOT NULL, CHECK 0~100 | 혈색 — **높을수록 생기 있음** |
-| `barrier` | INT | NOT NULL, CHECK 0~100 | 장벽 — **높을수록 튼튼함** |
+| `dark_circle` | INT | **NOT NULL**, CHECK 0~100 | 다크서클 회복 — **높을수록 맑음** |
+| `complexion` | INT | **NULL 허용**, CHECK 0~100 | 혈색 — **높을수록 생기 있음** |
+| `barrier` | INT | **NULL 허용**, CHECK 0~100 | 장벽 — **높을수록 튼튼함** |
 | `created_at` | DATETIME(6) | NOT NULL | |
 | `updated_at` | DATETIME(6) | NOT NULL | 재산출 시 변경 |
 
 **UNIQUE `(user_id, base_date)`** — HOME-07 대조의 단일 기준.
 
 **등급 라벨 컬럼이 없다** (원칙 ①).
+
+#### 지표 두 개만 `NULL`을 허용한다 (2026-08-09 확정)
+
+**지표 하나를 산출하지 못해도 행은 만든다.** 워치를 안 찬 밤은 혈색만, 단계가 하나도 안 잡힌 밤은 장벽만 빈 상태이고 나머지는 정상 발급된다([prd.md](prd.md) §10.6). 그 행이 셀피 검증의 대조 기준이므로 **행 자체를 안 만드는 선택지가 없다.**
+
+`0`으로 채우면 없는 위험을 경고하게 되고, 그 값이 실측과 대조되어 개인 가중치까지 오염된다. **`NULL`과 `0`은 다르다.**
+
+**`dark_circle`만 `NOT NULL`이다.** 피처 둘(`AWAKE_COUNT`·`TOTAL_SLEEP`)이 세션이 존재하는 이상 결측되지 않아 이 지표는 빈 상태가 될 수 없다(§10.3). 제약이 그 불변식을 증명한다 — 매핑이 바뀌어 깨지면 조용히 틀린 값이 저장되는 대신 즉시 실패한다.
+
+> `CHECK`는 `NULL`을 통과시킨다 — SQL `CHECK`는 결과가 `FALSE`일 때만 거부하고 `NULL`은 미지값으로 본다. 범위 검사는 값이 있을 때만 걸리므로 제약을 그대로 둬도 된다.
 
 **`sleep_session_id` FK가 없다.** `base_date`가 곧 `sleep_date`라 `(user_id, base_date)`로 바로 조인된다.
 

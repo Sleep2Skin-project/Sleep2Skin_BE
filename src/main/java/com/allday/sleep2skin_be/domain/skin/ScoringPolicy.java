@@ -1,6 +1,7 @@
 package com.allday.sleep2skin_be.domain.skin;
 
 import com.allday.sleep2skin_be.domain.skin.dto.SkinGrade;
+import com.allday.sleep2skin_be.domain.skin.dto.UnavailableReason;
 import com.allday.sleep2skin_be.domain.skin.dto.VerificationVerdict;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
 import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
@@ -171,6 +172,34 @@ public final class ScoringPolicy {
 
     /** 개인 가중치가 없는 사용자(첫 검증 전)의 배수. 이때 {@code w'}는 일반 가중치와 같다. */
     public static final BigDecimal DEFAULT_PERSONAL_WEIGHT = BigDecimal.ONE;
+
+    // ===== §10.6 취침 규칙성 이력 =====
+
+    /** 최근 며칠의 {@code sleep_onset_time}으로 표준편차를 내는가. 7일은 SRI 연구의 표준 관측 창이다. */
+    public static final int BEDTIME_REGULARITY_WINDOW_DAYS = 7;
+
+    /** 이보다 적으면 계산하지 않는다 — 2점으로 낸 표준편차는 두 밤의 차이일 뿐 규칙성이 아니다. */
+    public static final int BEDTIME_REGULARITY_MIN_DAYS = 3;
+
+    /**
+     * 지표가 빈 사유. <b>스코어링 시점과 재수신 응답이 같은 규칙을 쓰게 하려고 여기 뒀다</b> —
+     * 두 곳에 따로 적으면 어긋나고, 어긋나면 앱이 같은 상황에 다른 문구를 띄운다.
+     *
+     * <p>{@code BARRIER}가 비는 원인은 단계 합 0 하나뿐이다. {@code COMPLEXION}은 워치 미착용과
+     * 이력 부족이 <b>항상 함께 성립</b>하는데(피처가 하나라도 있으면 지표가 산출되므로),
+     * 워치 쪽이 훨씬 빨리 해소되므로 그쪽을 사유로 고른다 — 오늘 밤 차고 자면 내일 바로 피처 둘이
+     * 살아나지만 규칙성은 3일을 더 기다려야 한다.
+     *
+     * @param watchDataMissing {@code HRV}와 안정시 심박이 <b>둘 다</b> 없는가
+     */
+    public static UnavailableReason reasonFor(SkinMetric metric, boolean watchDataMissing) {
+        if (metric == SkinMetric.BARRIER) {
+            return UnavailableReason.NO_SLEEP_STAGES;
+        }
+        return watchDataMissing
+                ? UnavailableReason.MISSING_FEATURES
+                : UnavailableReason.INSUFFICIENT_HISTORY;
+    }
 
     /**
      * 꺾인점 목록으로 정의한 구간선형 곡선.

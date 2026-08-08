@@ -28,6 +28,13 @@ import java.time.LocalDate;
  *
  * <p><b>예보 이력 테이블을 만들지 않는다.</b> "검증을 마친 날의 예보는 재산출하지 않는다"는
  * 정책 덕분이다 — 검증에 쓰인 예보는 절대 바뀌지 않으므로 이력이 필요 없다.
+ *
+ * <p><b>지표 하나가 비어도 행은 만든다.</b> 혈색이나 장벽을 산출하지 못한 밤에도 나머지 지표는
+ * 정상 발급되고, 그 행이 셀피 검증의 대조 기준이 된다(prd.md §10.6). 그래서 두 컬럼만
+ * {@code NULL}을 허용한다.
+ *
+ * <p>{@code CHECK} 제약은 {@code NULL}을 통과시킨다 — SQL {@code CHECK}는 결과가 {@code FALSE}일
+ * 때만 거부하고 {@code NULL}은 미지값으로 본다. 범위 검사는 값이 있을 때만 걸린다.
  */
 @Entity
 @Getter
@@ -58,20 +65,35 @@ public class SkinForecast extends BaseTimeEntity {
     @Column(nullable = false)
     private LocalDate baseDate;
 
-    /** 다크서클 회복 — 높을수록 맑음. */
+    /**
+     * 다크서클 회복 — 높을수록 맑음.
+     *
+     * <p><b>셋 중 유일하게 NOT NULL이다.</b> 피처 둘({@code AWAKE_COUNT}·{@code TOTAL_SLEEP})이
+     * 세션이 존재하는 이상 결측되지 않아 이 지표는 빈 상태가 될 수 없다(prd.md §10.3).
+     * 제약이 그 불변식을 증명한다 — 매핑이 바뀌어 깨지면 조용히 틀린 값이 아니라 즉시 실패한다.
+     */
     @Column(nullable = false)
     private int darkCircle;
 
-    /** 혈색 — 높을수록 생기 있음. */
-    @Column(nullable = false)
-    private int complexion;
+    /**
+     * 혈색 — 높을수록 생기 있음. <b>{@code null}은 "0점"이 아니라 "산출하지 못했다"이다.</b>
+     *
+     * <p>워치를 안 찬 신규 사용자는 {@code COMPLEXION} 피처 3개가 전부 없어 산출할 수 없다.
+     * 0점으로 채우면 없는 위험을 경고하게 되고, 그 값이 셀피 검증과 대조되어 개인 가중치까지
+     * 오염된다(prd.md §10.6).
+     */
+    private Integer complexion;
 
-    /** 장벽 — 높을수록 튼튼함. */
-    @Column(nullable = false)
-    private int barrier;
+    /**
+     * 장벽 — 높을수록 튼튼함. 단계 합({@code deep + rem + core})이 0인 밤은 {@code null}이다.
+     *
+     * <p>비율의 분모가 0이라 계산 자체가 성립하지 않는다. 그대로 두면 0점 = "위험"이 나가는데
+     * 이건 "장벽이 위험하다"가 아니라 "측정하지 못했다"이다.
+     */
+    private Integer barrier;
 
     @Builder
-    private SkinForecast(Long userId, LocalDate baseDate, int darkCircle, int complexion, int barrier) {
+    private SkinForecast(Long userId, LocalDate baseDate, int darkCircle, Integer complexion, Integer barrier) {
         this.userId = userId;
         this.baseDate = baseDate;
         this.darkCircle = darkCircle;
@@ -85,7 +107,7 @@ public class SkinForecast extends BaseTimeEntity {
      * <p><b>그날 셀피 검증을 마쳤으면 호출하면 안 된다.</b> 이미 끝난 검증의 대조 기준이 사후에
      * 달라져 적중률이 훼손되고 개인 가중치가 중복 학습된다. 성능이 아니라 정확성 문제다.
      */
-    public void updateScores(int darkCircle, int complexion, int barrier) {
+    public void updateScores(int darkCircle, Integer complexion, Integer barrier) {
         this.darkCircle = darkCircle;
         this.complexion = complexion;
         this.barrier = barrier;

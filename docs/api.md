@@ -251,8 +251,8 @@ Content-Type: application/json
     "processed": true,
     "sleepDate": "2026-08-07",
     "sleep": {
-      "sleepOnsetTime": "2026-08-06T23:40:00+09:00",
-      "wakeTime": "2026-08-07T07:10:00+09:00",
+      "sleepOnsetTime": "2026-08-06T14:40:00Z",
+      "wakeTime": "2026-08-06T22:10:00Z",
       "totalSleepMinutes": 402,
       "deepSleepMinutes": 54,
       "remSleepMinutes": 71,
@@ -269,6 +269,8 @@ Content-Type: application/json
   }
 }
 ```
+
+**응답의 시각은 UTC(`Z`)로 나간다** (2026-08-09 확정). 요청은 어떤 오프셋으로 보내도 되지만 응답 표기는 한 가지로 고정한다 — 저장 직후에는 요청 오프셋이, 재수신 조회에서는 UTC가 나와 **같은 API가 경로마다 다른 표기를 내보내는** 것을 막기 위해서다. 가리키는 순간은 같으므로 앱이 자기 타임존으로 변환해 표시한다.
 
 **앱은 시작할 때마다 호출한다.** 하루에 다섯 번 켜면 같은 데이터가 다섯 번 온다.
 
@@ -300,10 +302,14 @@ Content-Type: application/json
 
 | 코드 | `ErrorCode` | 언제 |
 |---|---|---|
-| `400` | `SLEEP_STAGE_INVALID` | 알 수 없는 `stage`, 구간 겹침, 오프셋 누락 |
+| `400` | `INVALID_INPUT` | `segments`가 비어 있음 · **알 수 없는 `stage`** · **시각에 오프셋 누락** · 깨진 JSON |
 | `400` | `SLEEP_TIME_INVALID` | `startTime >= endTime` |
-| `400` | `INVALID_INPUT` | `segments`가 비어 있음 |
+| `400` | `SLEEP_STAGE_INVALID` | 구간 겹침 |
 | `404` | `USER_NOT_FOUND` | `X-User-Id`가 없는 사용자 |
+
+> **알 수 없는 `stage`와 오프셋 누락이 `SLEEP_STAGE_INVALID`가 아닌 이유** (2026-08-09 수정) — 둘 다 **역직렬화 단계에서 실패**해 컨트롤러에 도달하지 못한다. 어느 필드가 문제였는지로 코드를 나누려면 전역 예외 처리기가 수면 단계 enum 같은 도메인 타입을 알아야 하는데, 의존 방향이 `domain → global` 한쪽이라 그 반대가 성립하지 않는다. 상세 사유는 로그로 남긴다.
+>
+> `SLEEP_STAGE_INVALID`는 **서버가 직접 판정하는 구간 겹침**에만 쓴다.
 
 ---
 
