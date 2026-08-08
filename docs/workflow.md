@@ -35,6 +35,10 @@ cp .env.example .env
 docker compose up -d mysql
 ```
 
+로컬 스택 파일은 **`docker-compose.local.yml`** 이다. 자동 인식되는 이름이 아니라서 `.env`의 `COMPOSE_FILE`이 이 파일을 가리킨다 — **`.env`를 먼저 만들어야 `docker compose` 명령이 `-f` 없이 동작한다.**
+
+**이름을 `compose.yaml`로 두지 않은 이유**는 이 파일이 로컬 전용이기 때문이다. 운영은 Compose를 쓰지 않는다 — CD가 EC2에서 `docker run --env-file`로 직접 띄우고 DB는 RDS를 바라본다. 파일명이 그 사실을 드러내야 **"이거 운영에서도 쓰나?"를 매번 다시 확인하지 않는다.**
+
 `bootRun`은 셸에 `.env` 값이 주입돼 있어야 한다. 구체적인 명령은 [README.md](../README.md)를 본다 — **실행 방법은 README가 단일 출처**이고, 이 문서는 팀 규칙을 다룬다.
 
 **테스트는 MySQL 없이 돈다.** `test` 프로파일이 H2를 물려주므로 `./gradlew test`만 치면 된다.
@@ -46,7 +50,29 @@ docker compose up -d mysql
 
 **세 환경의 차이는 `DB_HOST` 값뿐이다.** 운영 전환은 환경 변수 교체로 끝나고 코드·프로파일은 그대로다.
 
-> ⚠️ **RDS는 아직 코드에 반영돼 있지 않다.** 지금 `compose.yaml`은 로컬 MySQL 컨테이너 기준이고, RDS 전환 시점과 로컬 DB를 어디로 둘지는 **팀 협의 후 확정**한다. ([architecture.md](architecture.md) §7 참조)
+### ⚠️ 로컬 `.env`에 운영 RDS 주소를 넣지 않는다
+
+**설정 파일은 하나뿐이고, 어느 DB를 물지는 전적으로 `DB_HOST`가 결정한다.** `application.yml`에 운영용 프로파일이 따로 없다.
+
+그런데 `ddl-auto: update`이므로 **앱이 뜨는 순간 작업 중인 엔티티가 그대로 스키마에 반영된다.** 로컬 `.env`의 `DB_HOST`만 RDS로 바꾸면 `bootRun` 한 번이 운영 스키마를 바꾼다.
+
+| | 로컬 | 운영 |
+|---|---|---|
+| 환경 변수 출처 | `.env` (gitignore) | EC2의 `/home/{user}/app.env` · GitHub Secrets |
+| 스키마 되돌리기 | `docker compose down -v` | **대응하는 조치가 없다** |
+
+**`update`는 컬럼을 추가만 하고 지우지 않는다.** 실험하다 만 엔티티가 한 번 닿으면 그 컬럼은 RDS에 영구히 남는다.
+
+> **주의할 것은 "Hibernate가 RDS를 건드리는 것" 자체가 아니다.** 운영도 `ddl-auto: update`라 RDS 스키마는 원래부터 엔티티가 관리한다. 위험한 건 **머지되지 않은, 작업 중인 로컬 엔티티가 RDS에 닿는 것**이다.
+
+**지켜야 할 것**
+
+- `.env`의 `DB_HOST`는 **항상 `localhost`**다. RDS 주소를 넣지 않는다
+- 운영 값을 `.env`나 `.env.example`에 복사해두지 않는다
+- 운영 DB를 봐야 하면 **그때 bastion/SSM으로 열고 평소엔 닫아 둔다**
+- **RDS 보안그룹은 EC2 보안그룹만 3306을 허용한다** — 개발자 IP를 막아두면 실수해도 접속 자체가 안 된다. 이게 유일하게 사람에 기대지 않는 방어다
+
+**사고가 났다면** — 아직 운영 데이터가 없는 동안은 RDS를 비우고 재배포하면 복구된다. 검증 이력이 쌓인 뒤에는 개인 가중치를 되살릴 방법이 없으므로(셀피를 다시 찍어야 한다) **데이터가 쌓이기 전에 보안그룹을 막아두는 것이 맞다.**
 
 **엔티티를 파괴적으로 바꿨다면**(필드명·타입 변경, 삭제) `update`는 반영하지 못한다. DB를 지우고 다시 만든다.
 

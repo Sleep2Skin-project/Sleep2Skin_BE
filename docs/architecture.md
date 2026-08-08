@@ -442,7 +442,9 @@ spring:
 | 자격 증명 | 마스터 계정을 앱에 쓰지 않고 앱 전용 계정을 별도로 만든다 |
 | 백업 | 자동 백업 기본값 유지 (해커톤 범위에서 별도 튜닝 없음) |
 
-> ⚠️ **아직 코드에 반영되지 않았다.** 현재 `compose.yaml`·`application.yml`은 로컬 MySQL 컨테이너 기준이다. RDS 전환 시점과 로컬 개발 DB를 어디로 둘지(컨테이너 유지 vs 공용 RDS)는 **팀 협의 후 확정**한다. 이 문서는 목표 구성을 먼저 적어둔 것이다.
+> **반영 완료.** RDS가 구축됐고 CD가 EC2에 배포한다. **로컬 개발 DB는 컨테이너를 유지**하기로 했다 — 공용 RDS를 개발에 쓰면 `ddl-auto: update` 때문에 작업 중인 엔티티가 운영 스키마에 반영된다 ([workflow.md](workflow.md) §1).
+>
+> 로컬 스택 파일은 **`docker-compose.local.yml`** 로 분리했다 (2026-08-08). 운영은 Compose를 쓰지 않는다.
 
 ---
 
@@ -523,18 +525,26 @@ AWS EC2 + Docker, DB는 **RDS(MySQL)**. **CI/CD 파이프라인 구축 완료.**
 | 파일 | 역할 |
 |---|---|
 | `Dockerfile` | 멀티스테이지 빌드 (JDK 21 빌드 → JRE 21 실행) |
-| `compose.yaml` | app + MySQL 로컬 스택. app은 MySQL healthcheck 통과 후 기동 |
+| `docker-compose.local.yml` | **로컬 전용** app + MySQL 스택. app은 MySQL healthcheck 통과 후 기동 |
 | `.github/workflows/ci.yml` | `dev`·`main` 대상 PR에서 `bootJar` + `test` + Docker 이미지 빌드 |
 
-**운영에서 DB 컨테이너를 띄우지 않는다.** EC2에는 앱 컨테이너만 올리고 DB는 RDS를 바라본다 — 배포로 컨테이너를 교체해도 데이터가 남는다. `compose.yaml`의 `mysql` 서비스는 **로컬 개발 전용**이 된다.
+**운영에서 DB 컨테이너를 띄우지 않는다.** EC2에는 앱 컨테이너만 올리고 DB는 RDS를 바라본다 — 배포로 컨테이너를 교체해도 데이터가 남는다.
 
-> 현재 `compose.yaml`은 아직 로컬·운영 구분 없이 하나다. 분리 방식(프로파일 지정 vs 파일 분리)은 팀 협의 후 결정한다.
+**그래서 Compose 파일은 통째로 로컬 전용이다.** 운영 배포는 Compose를 거치지 않고 CD가 EC2에서 `docker run --env-file`로 직접 실행한다.
 
-CI는 MySQL service를 띄워 **실제 MySQL로도 테스트**한다. 로컬은 H2를 쓰므로 방언 차이는 CI에서 걸린다.
+> **파일 분리로 결정했다** (2026-08-08). `compose.yaml` → **`docker-compose.local.yml`**.
+> 프로파일 지정 방식도 검토했지만, **파일명 자체가 용도를 드러내는 쪽**을 골랐다. `compose.yaml`이라는 이름은 "운영에서도 쓰나?"를 계속 다시 확인하게 만든다.
+> 자동 인식되는 이름이 아니므로 `.env`의 `COMPOSE_FILE`이 이 파일을 가리킨다 — `.env`가 있어야 `docker compose` 명령이 `-f` 없이 동작한다.
+
+**CI는 DB 서비스를 띄우지 않는다.** 테스트가 전부 H2(`test` 프로파일) 아니면 `@WebMvcTest`라 DataSource가 필요 없고, `bootJar`는 컴파일만 한다.
+
+> 원래 CI에 MySQL service가 있었지만 **아무도 쓰지 않았다.** 테스트는 `@ActiveProfiles("test")`로 H2를 물고 있었고, MySQL 컨테이너는 매번 기동·헬스체크 시간만 쓰고 있었다. 2026-08-08에 제거했다.
+>
+> ⚠️ **방언 차이는 지금 어디서도 걸리지 않는다.** H2를 `MODE=MySQL`로 띄워도 완전히 같지 않다. 특히 **유니크 제약이 실제로 걸렸는지 확인하는 것**([erd.md](erd.md) §2.4)은 H2에서 의미가 없다. 엔티티 작업에서 이 검증이 필요해지면 그때 MySQL service를 다시 붙이고 해당 테스트만 실제 MySQL로 돌린다.
 
 ```
 PR 생성 (dev/main 대상)
-   → CI: bootJar + test (MySQL service) + docker build
+   → CI: bootJar + test (H2) + docker build
    → 머지
    → EC2 배포
    → GET /api/v1/health 로 기동 확인

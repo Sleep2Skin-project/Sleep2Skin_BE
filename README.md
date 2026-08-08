@@ -20,6 +20,12 @@ Copy-Item .env.example .env
 docker compose up -d mysql
 ```
 
+로컬 스택은 **`docker-compose.local.yml`** 입니다. 자동 인식되는 이름이 아니라서 `.env`의 `COMPOSE_FILE`이 이 파일을 가리키고, 덕분에 `-f` 없이 위 명령이 동작합니다.
+
+> `no configuration file provided` 오류가 나면 **`.env`를 아직 안 만드신 겁니다.** 위의 `cp .env.example .env`를 먼저 하시거나, `-f docker-compose.local.yml`을 직접 붙이세요.
+
+**이 파일은 로컬 전용입니다.** 운영 배포는 Compose를 쓰지 않고 CD가 EC2에서 `docker run --env-file`로 직접 실행하며, DB도 컨테이너가 아니라 AWS RDS를 바라봅니다.
+
 ## 로컬에서 애플리케이션 실행 (`./gradlew bootRun`)
 
 `application.yml`이 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` 환경변수를 참조하므로, 실행 전 현재 셸에 `.env` 값을 주입해야 합니다.
@@ -62,7 +68,7 @@ Get-Content .env | ForEach-Object {
 
 > H2는 `MODE=MySQL`로 띄우지만 방언 차이가 완전히 사라지지는 않습니다. MySQL 고유 문법에 의존하는 쿼리를 쓰게 되면 그 테스트만 실제 MySQL로 돌리도록 따로 다뤄야 합니다.
 
-CI(GitHub Actions)는 MySQL service를 띄워 실제 MySQL로도 검증합니다 (`.github/workflows/ci.yml` 참고).
+CI(GitHub Actions)도 **DB 없이 돕니다.** 테스트가 전부 H2 아니면 `@WebMvcTest`라 DB 서비스가 필요 없습니다 (`.github/workflows/ci.yml` 참고).
 
 ## Docker
 

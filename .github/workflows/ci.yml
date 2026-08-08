@@ -7,29 +7,13 @@ on:
       - main
 
 jobs:
+  # DB 서비스 컨테이너를 띄우지 않는다.
+  #   - 단위/컨텍스트 테스트는 test 프로파일이 H2(인메모리)를 물려준다
+  #   - Controller 테스트는 @WebMvcTest 라 DataSource 자체가 없다
+  #   - bootJar 는 컴파일만 하므로 DB 가 필요 없다
+  # 실제 MySQL 이 필요한 검증(유니크 제약 등)이 생기면 그때 다시 붙인다.
   gradle-test:
     runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_DATABASE: sleep2skin_test
-          MYSQL_USER: sleep2skin
-          MYSQL_PASSWORD: test1234
-          MYSQL_ROOT_PASSWORD: test1234
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h localhost"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=10
-    env:
-      DB_HOST: 127.0.0.1
-      DB_PORT: 3306
-      DB_NAME: sleep2skin_test
-      DB_USERNAME: sleep2skin
-      DB_PASSWORD: test1234
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,7 +30,7 @@ jobs:
       - name: Build verification (bootJar)
         run: ./gradlew bootJar --no-daemon
 
-      - name: Test verification (MySQL service)
+      - name: Test verification (H2)
         run: ./gradlew test --no-daemon
 
   docker-build:
