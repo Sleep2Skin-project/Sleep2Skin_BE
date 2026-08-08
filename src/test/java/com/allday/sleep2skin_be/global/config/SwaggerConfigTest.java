@@ -8,157 +8,174 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.hasItem;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * OpenAPI 문서가 실제로 나가는 응답과 같은 모양인지 확인한다.
+ * 도메인과 무관하게 <b>모든 API가 지켜야 하는</b> 문서 규칙.
  *
- * <p><b>이 검증이 없으면 어긋나도 아무도 모른다.</b> 문서는 앱 팀만 보고 서버 테스트는 통과하므로,
- * 틀린 스키마는 앱이 그걸 보고 잘못 구현한 뒤에야 드러난다.
+ * <p><b>경로를 짚지 않고 문서 전체를 순회한다.</b> 특정 경로를 하드코딩하면 API가 늘 때마다 이
+ * 파일이 커지고, 도메인을 나눠 작업할 때 여러 사람이 같은 파일을 건드리게 된다(workflow.md §4).
+ * 순회로 두면 새 도메인이 추가돼도 여기는 손댈 필요가 없고 자동으로 검증 대상이 된다.
  *
- * <p>슬라이스가 아니라 {@code @SpringBootTest}인 이유는 springdoc이 전체 컨텍스트를 훑어
- * 문서를 만들기 때문이다 — 컨트롤러 하나만 띄우면 검증할 문서 자체가 나오지 않는다.
+ * <p>도메인별 문서 검증(경로·설명·예시 선택)은 각 도메인의 {@code *ApiDocsTest}에 둔다.
+ *
+ * <p><b>문서가 어긋나도 서버 테스트는 전부 통과한다.</b> 문서는 프론트만 보기 때문에 앱이 잘못
+ * 구현된 뒤에야 드러난다. 그래서 문서 자체를 검증한다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class SwaggerConfigTest {
 
-    private static final String CONSENTS_POST = "$.paths.['/api/v1/users/me/consents'].post";
+    private static final String ERROR_WRAPPER_REF = "#/components/schemas/ErrorApiResponse";
+    private static final String APPLICATION_JSON = "application/json";
 
     @Autowired
     private MockMvc mockMvc;
 
+    /** Spring Boot 4가 등록하는 것은 Jackson 3({@code tools.jackson})의 ObjectMapper다. */
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Test
-    @DisplayName("성공 스키마에는 error가 없고 실패 응답은 실패 전용 스키마를 가리킨다")
-    void 문서의_응답_모양이_실제_응답과_같다() throws Exception {
-        mockMvc.perform(get("/v3/api-docs"))
-                .andExpect(status().isOk())
+    @DisplayName("모든 실패 응답은 실패 전용 스키마를 가리킨다")
+    void 모든_4xx_5xx가_실패_래퍼를_가리킨다() throws Exception {
+        List<String> checked = new ArrayList<>();
 
-                // 성공 래퍼 — data는 있고 error는 없다. @JsonInclude(NON_NULL)로 실제로 나가지 않는다.
-                .andExpect(jsonPath("$.components.schemas.ApiResponseConsentAgreeResponse.properties.data").exists())
-                .andExpect(jsonPath("$.components.schemas.ApiResponseConsentAgreeResponse.properties.error").doesNotExist())
+        forEachResponse(apiDocs(), (operationId, statusCode, response) -> {
+            if (!statusCode.startsWith("4") && !statusCode.startsWith("5")) {
+                return;
+            }
+            // springdoc은 @ApiResponse에 content가 없으면 성공 타입으로 채운다. 그대로 두면
+            // 404를 펼쳤을 때 data가 들어찬 성공 예시가 나온다.
+            Map<String, Object> json = asMap(asMap(response.get("content")).get(APPLICATION_JSON));
+            assertThat(asMap(json.get("schema")).get("$ref"))
+                    .as("%s 의 %s 응답", operationId, statusCode)
+                    .isEqualTo(ERROR_WRAPPER_REF);
+            checked.add(operationId + " " + statusCode);
+        });
 
-                // 실패 래퍼 — success와 error만 있다.
-                .andExpect(jsonPath("$.components.schemas.ErrorApiResponse.properties.success").exists())
-                .andExpect(jsonPath("$.components.schemas.ErrorApiResponse.properties.error").exists())
-                .andExpect(jsonPath("$.components.schemas.ErrorApiResponse.properties.data").doesNotExist())
-
-                // 4xx가 성공 스키마를 가리키면 앱이 없는 data를 기대하게 된다.
-                .andExpect(jsonPath(CONSENTS_POST + ".responses.['404'].content.['application/json'].schema.['$ref']")
-                        .value("#/components/schemas/ErrorApiResponse"))
-                .andExpect(jsonPath(CONSENTS_POST + ".responses.['400'].content.['application/json'].schema.['$ref']")
-                        .value("#/components/schemas/ErrorApiResponse"))
-
-                // 성공 코드는 스키마를 건드리지 않는다. 미디어 타입은 성공·실패가 같아야 한다 —
-                // springdoc 기본값(*/*)을 그대로 두면 성공만 다른 모양으로 문서화된다.
-                .andExpect(jsonPath(CONSENTS_POST + ".responses.['201'].content.['application/json'].schema.['$ref']")
-                        .value("#/components/schemas/ApiResponseConsentAgreeResponse"))
-                .andExpect(jsonPath(CONSENTS_POST + ".responses.['200'].content.['application/json'].schema.['$ref']")
-                        .value("#/components/schemas/ApiResponseConsentAgreeResponse"))
-                .andExpect(jsonPath("$.paths.['/api/v1/health'].get.responses.['200'].content.['application/json']").exists());
-    }
-
-    /**
-     * 문서를 {@code *ControllerSpec} 인터페이스에 두는 구조가 실제로 동작하는지 본다.
-     *
-     * <p>springdoc이 인터페이스의 어노테이션을 못 찾으면 <b>설명만 조용히 사라지고 API는 그대로
-     * 뜬다.</b> 컴파일도 테스트도 통과하므로 프론트가 빈 문서를 보기 전까지 아무도 모른다.
-     */
-    @Test
-    @DisplayName("ControllerSpec 인터페이스에 붙인 설명이 문서에 실린다")
-    void 인터페이스의_문서가_반영된다() throws Exception {
-        mockMvc.perform(get("/v3/api-docs"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath(CONSENTS_POST + ".summary").value(containsString("동의")))
-                .andExpect(jsonPath(CONSENTS_POST + ".description").value(containsString("멱등")))
-                .andExpect(jsonPath("$.paths.['/api/v1/users/me/onboarding'].patch.summary")
-                        .value(containsString("온보딩")))
-                .andExpect(jsonPath("$.paths.['/api/v1/users/me/onboarding'].patch.description")
-                        .value(containsString("ONB-02")))
-
-                // 상태 코드별 설명도 인터페이스에서 온다.
-                .andExpect(jsonPath(CONSENTS_POST + ".responses.['201'].description")
-                        .value(containsString("newlyAgreed")));
-    }
-
-    /**
-     * {@code @Tag} 설명은 Swagger UI에서 태그를 접어도 계속 펼쳐진 채 목록 맨 위를 차지한다.
-     * 공통 규약을 거기 넣으면 API 목록을 훑기가 불편해져, 태그는 한 줄로 두고 규약은 각 API 설명에
-     * 되풀이해 적기로 했다.
-     */
-    @Test
-    @DisplayName("공통 규약은 태그가 아니라 각 API 설명에 들어 있다")
-    void 공통_규약이_API마다_적혀_있다() throws Exception {
-        String onboardingPatch = "$.paths.['/api/v1/users/me/onboarding'].patch";
-
-        mockMvc.perform(get("/v3/api-docs"))
-                .andExpect(status().isOk())
-
-                // 태그는 목록에서 한 줄로만 보인다.
-                .andExpect(jsonPath("$.tags[?(@.name == 'User')].description")
-                        .value(hasItem("사용자 · 동의 · 온보딩 API")))
-
-                // 규약은 API를 펼치면 그 안에 다 있다.
-                .andExpect(jsonPath(CONSENTS_POST + ".description").value(containsString("X-User-Id")))
-                .andExpect(jsonPath(CONSENTS_POST + ".description").value(containsString("USER_NOT_FOUND")))
-                .andExpect(jsonPath(onboardingPatch + ".description").value(containsString("X-User-Id")))
-                .andExpect(jsonPath(onboardingPatch + ".description").value(containsString("USER_NOT_FOUND")));
-    }
-
-    /**
-     * 예시 문구를 손으로 적으면 {@link ErrorCode}가 바뀌어도 문서만 조용히 틀린 채 남는다.
-     * 실제로 그런 적이 있어서 생성으로 바꿨고, 그 생성이 계속 유지되는지를 여기서 본다.
-     */
-    @Test
-    @DisplayName("에러 예시는 ErrorCode에서 생성되어 상황별로 다르게 붙는다")
-    void 에러_예시가_상황별로_다르다() throws Exception {
-        mockMvc.perform(get("/v3/api-docs"))
-                .andExpect(status().isOk())
-
-                // 예시의 메시지는 enum에서 나온다 — 손으로 적은 문구와 대조하지 않는다.
-                .andExpect(jsonPath("$.components.examples.USER_NOT_FOUND.value.error.code")
-                        .value(ErrorCode.USER_NOT_FOUND.name()))
-                .andExpect(jsonPath("$.components.examples.USER_NOT_FOUND.value.error.message")
-                        .value(ErrorCode.USER_NOT_FOUND.getMessage()))
-                .andExpect(jsonPath("$.components.examples.USER_NOT_FOUND.value.success").value(false))
-                .andExpect(jsonPath("$.components.examples.USER_NOT_FOUND.value.data").doesNotExist())
-
-                // ErrorCode를 추가하면 예시도 저절로 생긴다.
-                .andExpect(jsonPath("$.components.examples.length()").value(ErrorCode.values().length))
-
-                // 상태 코드마다 다른 예시가 붙는다.
-                .andExpect(jsonPath(CONSENTS_POST + ".responses.['404'].content.['application/json'].examples.USER_NOT_FOUND.['$ref']")
-                        .value("#/components/examples/USER_NOT_FOUND"))
-                .andExpect(jsonPath(CONSENTS_POST + ".responses.['400'].content.['application/json'].examples.USER_ID_HEADER_INVALID.['$ref']")
-                        .value("#/components/examples/USER_ID_HEADER_INVALID"))
-
-                // 예시를 붙여도 스키마는 실패 래퍼여야 한다 — 커스터마이저가 둘 다 챙기는지 본다.
-                .andExpect(jsonPath(CONSENTS_POST + ".responses.['404'].content.['application/json'].schema.['$ref']")
-                        .value("#/components/schemas/ErrorApiResponse"));
+        // 순회가 비어 있으면 위 단언은 한 번도 실행되지 않고 통과한다.
+        assertThat(checked).as("검사한 실패 응답").isNotEmpty();
     }
 
     @Test
-    @DisplayName("@CurrentUserId를 쓰는 API에만 X-User-Id 헤더가 문서에 붙는다")
-    void 헤더_파라미터가_문서에_붙는다() throws Exception {
-        mockMvc.perform(get("/v3/api-docs"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath(CONSENTS_POST + ".parameters[0].name").value("X-User-Id"))
-                .andExpect(jsonPath(CONSENTS_POST + ".parameters[0].in").value("header"))
-                .andExpect(jsonPath(CONSENTS_POST + ".parameters[0].required").value(true))
+    @DisplayName("모든 응답의 미디어 타입이 application/json이다")
+    void 모든_응답이_JSON이다() throws Exception {
+        List<String> checked = new ArrayList<>();
 
-                // 헬스체크는 사용자와 무관하므로 붙지 않는다. userId가 쿼리 파라미터로
-                // 새어 나오지 않는지도 여기서 걸린다.
-                //
-                // 아래 doesNotExist는 경로 표현식이 틀려도 통과하므로, 경로가 실제로 잡히는지를
-                // 먼저 확인한다. 이게 없으면 오타 하나로 검증이 조용히 무력해진다.
-                .andExpect(jsonPath("$.paths.['/api/v1/health'].get.operationId").exists())
-                .andExpect(jsonPath("$.paths.['/api/v1/health'].get.parameters").doesNotExist());
+        forEachResponse(apiDocs(), (operationId, statusCode, response) -> {
+            if (!response.containsKey("content")) {
+                return;
+            }
+            // produces 미선언 시 springdoc이 */* 로 문서화한다. 실제로는 전부 JSON이라
+            // springdoc.default-produces-media-type 으로 기본값을 잡아뒀다.
+            assertThat(asMap(response.get("content")).keySet())
+                    .as("%s 의 %s 응답 미디어 타입", operationId, statusCode)
+                    .containsExactly(APPLICATION_JSON);
+            checked.add(operationId + " " + statusCode);
+        });
+
+        assertThat(checked).as("검사한 응답").isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("성공 래퍼 스키마에는 error가 없고 실패 래퍼에는 data가 없다")
+    void 래퍼_스키마가_실제_응답과_같다() throws Exception {
+        Map<String, Object> schemas = asMap(asMap(apiDocs().get("components")).get("schemas"));
+
+        List<String> successWrappers = schemas.keySet().stream()
+                .filter(name -> name.startsWith("ApiResponse"))
+                .toList();
+
+        // @JsonInclude(NON_NULL)은 런타임 직렬화만 바꾸고 springdoc은 읽지 않는다.
+        assertThat(successWrappers).as("성공 래퍼 스키마").isNotEmpty();
+        successWrappers.forEach(name ->
+                assertThat(properties(schemas, name))
+                        .as("%s 의 프로퍼티", name)
+                        .contains("success", "data")
+                        .doesNotContain("error"));
+
+        assertThat(properties(schemas, "ErrorApiResponse")).containsExactly("success", "error");
+    }
+
+    @Test
+    @DisplayName("에러 예시는 ErrorCode에서 생성된다")
+    void 에러_예시가_ErrorCode에서_나온다() throws Exception {
+        Map<String, Object> examples = asMap(asMap(apiDocs().get("components")).get("examples"));
+
+        // 손으로 적으면 ErrorCode가 바뀌어도 문서만 조용히 틀린 채 남는다. 실제로 그런 적이 있다.
+        assertThat(examples.keySet())
+                .as("등록된 에러 예시")
+                .containsExactlyInAnyOrderElementsOf(
+                        Arrays.stream(ErrorCode.values()).map(Enum::name).toList());
+
+        for (ErrorCode errorCode : ErrorCode.values()) {
+            Map<String, Object> value = asMap(asMap(examples.get(errorCode.name())).get("value"));
+            Map<String, Object> error = asMap(value.get("error"));
+
+            assertThat(value.get("success")).isEqualTo(false);
+            assertThat(value).doesNotContainKey("data");
+            assertThat(error.get("code")).isEqualTo(errorCode.name());
+            assertThat(error.get("message")).isEqualTo(errorCode.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("사용자와 무관한 API에는 X-User-Id 헤더가 붙지 않는다")
+    void 헬스체크에는_헤더가_붙지_않는다() throws Exception {
+        Map<String, Object> paths = asMap(apiDocs().get("paths"));
+
+        // 없는 것을 단언하는 검사는 경로가 틀려도 통과한다. 경로가 잡히는지 먼저 확인한다.
+        assertThat(paths).as("문서의 경로 목록").containsKey("/api/v1/health");
+
+        Map<String, Object> health = asMap(asMap(paths.get("/api/v1/health")).get("get"));
+        assertThat(health).as("헬스체크 오퍼레이션").doesNotContainKey("parameters");
+    }
+
+    private Map<String, Object> apiDocs() throws Exception {
+        String body = mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        return asMap(objectMapper.readValue(body, Map.class));
+    }
+
+    /** 문서에 있는 모든 오퍼레이션의 모든 응답을 훑는다. */
+    private void forEachResponse(Map<String, Object> apiDocs, ResponseVisitor visitor) {
+        asMap(apiDocs.get("paths")).forEach((path, pathItem) ->
+                asMap(pathItem).forEach((method, operation) -> {
+                    Map<String, Object> responses = asMap(asMap(operation).get("responses"));
+                    if (responses == null) {
+                        return;
+                    }
+                    String operationId = method.toUpperCase() + " " + path;
+                    responses.forEach((statusCode, response) ->
+                            visitor.visit(operationId, statusCode, asMap(response)));
+                }));
+    }
+
+    private List<String> properties(Map<String, Object> schemas, String schemaName) {
+        return List.copyOf(asMap(asMap(schemas.get(schemaName)).get("properties")).keySet());
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> asMap(Object node) {
+        return (Map<String, Object>) node;
+    }
+
+    @FunctionalInterface
+    private interface ResponseVisitor {
+        void visit(String operationId, String statusCode, Map<String, Object> response);
     }
 
 }
