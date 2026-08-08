@@ -1,0 +1,76 @@
+spring:
+  application:
+    name: sleep2skin_be
+  jackson:
+    datatype:
+      datetime:
+        # 요청에 실려 온 오프셋(+09:00)을 그대로 둔다.
+        #
+        # Jackson 기본값(true)은 OffsetDateTime 을 컨텍스트 타임존(UTC)으로 옮긴다.
+        # 가리키는 순간은 같지만 벽시계 날짜가 바뀌어, 07:10+09:00 기상이
+        # 08-06T22:10Z 가 되고 sleepDate 가 하루 전으로 잡힌다.
+        #
+        # 한국의 기상 시각은 거의 전부 09:00 이전이라 사실상 매번 밀린다.
+        # sleepDate 는 skin_forecast.base_date 와 같은 값이어야 하므로
+        # 예보 조회·셀피 검증·리포트가 전부 하루씩 어긋난다 (docs/api.md §1).
+        #
+        # ⚠️ 저장 기준과는 다른 층이다. DB 에 넣을 때 UTC 로 맞추는 것은
+        #    아래 hibernate.timezone.default_storage 가 하고, 이 설정은
+        #    "오프셋으로부터 날짜를 정하는" 단계를 지킨다.
+        #
+        # ⚠️ Jackson 3 에서 이 옵션이 DeserializationFeature 에서 DateTimeFeature 로
+        #    옮겨졌다. spring.jackson.deserialization 아래에 두면 기동에 실패한다.
+        adjust-dates-to-context-time-zone: false
+  datasource:
+    # serverTimezone 은 아래 hibernate.timezone.default_storage 및 Dockerfile 의 TZ=UTC 와
+    # 같은 값이어야 한다. 시각 저장 기준은 이 셋이 함께 정하므로(docs/erd.md §3.1)
+    # 하나만 어긋나도 환경마다 DATETIME 에 들어가는 벽시계 숫자가 달라진다.
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      # 해커톤 범위 결정. 엔티티에서 스키마를 만들고 DDL 스크립트를 따로 두지 않는다.
+      # update는 컬럼을 추가할 뿐 이름 변경·타입 변경·삭제를 반영하지 않는다.
+      # 엔티티를 파괴적으로 바꿨다면 DB를 지우고 다시 만든다.
+      #   docker compose down -v && docker compose up -d mysql   (docker-compose.local.yml)
+      #
+      # ⚠️ 위 명령은 로컬 컨테이너 전용이다. RDS에는 대응하는 조치가 없다.
+      #    그래서 로컬 .env 의 DB_HOST 에 RDS 주소를 넣으면 안 된다 — 작업 중인
+      #    엔티티가 운영 스키마에 그대로 반영되고 되돌릴 수 없다 (docs/workflow.md §1).
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        # OffsetDateTime 을 DATETIME 컬럼에 넣을 때의 기준을 못 박는다.
+        #
+        # MySQL DATETIME 에는 타임존 정보가 없다. 요청에 실려 온 오프셋(+09:00)은
+        # sleepDate 를 정하는 데 쓰이고 저장 시점에 사라지며, 남는 벽시계 숫자가
+        # 어느 존 기준인지는 이 설정이 정한다. 명시하지 않으면 JVM 기본 타임존이나
+        # 라이브러리 기본값을 타므로 환경·버전에 따라 기준이 흔들린다.
+        #
+        # 흔들리면 sleep_onset_time 이 밤마다 다른 기준을 가리키고,
+        # 그 7일 표준편차인 취침 규칙성이 틀어져 혈색 점수만 조용히 틀린다
+        # (docs/erd.md §3.3, PRD §10.3). 값 범위는 정상이라 아무 제약에도 안 걸린다.
+        timezone:
+          default_storage: NORMALIZE_UTC
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  # 컨트롤러에 produces 를 선언하지 않으면 springdoc 이 */* 로 문서화한다.
+  # 실제로는 전부 JSON 으로 나가고(응답이 모두 ApiResponse 래퍼다), 에러 응답은
+  # SwaggerConfig 가 application/json 으로 지정하고 있어 성공만 */* 로 남아 어긋난다.
+  #
+  # 컨트롤러마다 produces 를 붙이지 않고 여기서 기본값을 정한다 — API 가 19개까지
+  # 늘어나는데 한 곳이라도 빠뜨리면 그 API 만 조용히 다른 모양으로 문서화된다.
+  default-produces-media-type: application/json
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:8081}

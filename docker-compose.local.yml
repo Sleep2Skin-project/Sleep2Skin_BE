@@ -1,0 +1,49 @@
+# 로컬 개발 전용 스택. 운영은 이 파일을 쓰지 않는다.
+#
+#   운영 배포는 CD 가 EC2 에서 직접 실행한다 (.github/workflows/cd.yml)
+#     docker run --env-file /home/{user}/app.env ...
+#   DB 도 컨테이너가 아니라 AWS RDS 를 바라본다.
+#
+# 파일명이 compose.yaml 이 아니므로 자동 인식되지 않는다.
+# .env 의 COMPOSE_FILE 이 이 파일을 가리키므로 아래처럼 짧게 쓸 수 있다.
+#
+#   docker compose up -d mysql       DB 만 (bootRun 개발용)
+#   docker compose up --build        전체 스택 (배포 이미지 확인용)
+#
+# .env 를 안 만들었다면 -f docker-compose.local.yml 을 직접 붙인다.
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    ports:
+      - "${DB_PORT}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql-data:

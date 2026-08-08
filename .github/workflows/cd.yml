@@ -1,0 +1,174 @@
+name: CD - Deploy to EC2 (main)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: sleep2skin-api
+  CONTAINER_NAME: sleep2skin-api
+  # 교체 전에 새 이미지를 검증하는 임시 컨테이너. 이름·포트가 운영과 겹치면 안 된다.
+  CANARY_NAME: sleep2skin-api-canary
+  CANARY_PORT: 18080
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # 배포는 네 단계다. 앞의 두 단계에서 실패하면 기존 컨테이너를 건드리기 전이라
+      # 서비스가 그대로 살아 있고, 마지막 단계에서 실패하면 이전 이미지로 되돌린다.
+      #
+      #   1. 선검사    app.env 에 필수 값이 있는가            — 아무것도 건드리기 전
+      #   2. 선검증    새 이미지가 실제로 뜨는가 (임시 포트)   — 기존 컨테이너는 살아 있다
+      #   3. 교체      기존을 내리고 새 것을 올린다
+      #   4. 롤백      교체가 실패하면 이전 이미지로 복구
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
+          CANARY_NAME: ${{ env.CANARY_NAME }}
+          CANARY_PORT: ${{ env.CANARY_PORT }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: ECR_REGISTRY,IMAGE_TAG,CONTAINER_NAME,CANARY_NAME,CANARY_PORT
+          script: |
+            set -euo pipefail
+
+            ENV_FILE=/home/${{ secrets.EC2_USERNAME }}/app.env
+            IMAGE=$ECR_REGISTRY/sleep2skin-api:$IMAGE_TAG
+
+            # 헬스체크가 통과할 때까지 기다린다. sleep 한 번으로 재던 것을 바꾼 이유는
+            # 첫 배포가 테이블 9개를 만들고 시딩까지 돌기 때문이다 — 고정값은 짧으면
+            # 멀쩡한 배포를 실패로 잡고, 길면 실패를 늦게 안다.
+            wait_healthy() {
+              local port=$1
+              for _ in $(seq 1 45); do
+                if curl -fs "http://localhost:${port}/api/v1/health" > /dev/null 2>&1; then
+                  return 0
+                fi
+                sleep 2
+              done
+              return 1
+            }
+
+            cleanup_canary() {
+              docker rm -f "$CANARY_NAME" > /dev/null 2>&1 || true
+            }
+
+            # ── 1. 선검사 ────────────────────────────────────────────────
+            # 값이 아니라 키 이름만 본다. 시크릿을 워크플로 출력에 찍지 않는다.
+            if [ ! -f "$ENV_FILE" ]; then
+              echo "::error::$ENV_FILE 이 없다"
+              exit 1
+            fi
+            MISSING=""
+            for KEY in DB_HOST DB_PORT DB_NAME DB_USERNAME DB_PASSWORD; do
+              grep -q "^${KEY}=" "$ENV_FILE" || MISSING="$MISSING $KEY"
+            done
+            if [ -n "$MISSING" ]; then
+              echo "::error::app.env 에 다음 값이 없어 앱이 기동할 수 없다:$MISSING"
+              exit 1
+            fi
+
+            aws ecr get-login-password --region ap-northeast-2 \
+              | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+            docker pull "$IMAGE"
+
+            # 교체 전에 기록해둔다. 롤백할 대상이며, 첫 배포에는 비어 있다.
+            PREVIOUS_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || echo "")
+
+            # ── 2. 선검증 ────────────────────────────────────────────────
+            # 기존 컨테이너를 살려둔 채 임시 포트에서 띄워본다. DB 연결·스키마 생성·시딩이
+            # 전부 여기서 검증되고, 실패해도 서비스는 그대로 살아 있다.
+            # 127.0.0.1 에만 바인딩한다 — 검증용 인스턴스가 외부에 열리면 안 된다.
+            cleanup_canary
+            docker run -d \
+              --name "$CANARY_NAME" \
+              -p "127.0.0.1:${CANARY_PORT}:8080" \
+              --env-file "$ENV_FILE" \
+              "$IMAGE" > /dev/null
+
+            if ! wait_healthy "$CANARY_PORT"; then
+              echo "::error::새 이미지가 기동하지 못했다. 기존 컨테이너는 그대로 살아 있다."
+              docker logs --tail 100 "$CANARY_NAME" || true
+              cleanup_canary
+              exit 1
+            fi
+            cleanup_canary
+
+            # ── 3. 교체 ──────────────────────────────────────────────────
+            docker stop "$CONTAINER_NAME" > /dev/null 2>&1 || true
+            docker rm "$CONTAINER_NAME" > /dev/null 2>&1 || true
+            docker run -d \
+              --name "$CONTAINER_NAME" \
+              --restart unless-stopped \
+              -p 127.0.0.1:8080:8080 \
+              --env-file "$ENV_FILE" \
+              "$IMAGE" > /dev/null
+
+            if wait_healthy 8080; then
+              docker image prune -f > /dev/null 2>&1 || true
+              echo "배포 완료 image=$IMAGE_TAG"
+              exit 0
+            fi
+
+            # ── 4. 롤백 ──────────────────────────────────────────────────
+            # 2단계를 통과한 이미지가 여기서 실패하는 것은 드물다(포트 충돌 등).
+            # 그래도 되돌릴 수 있으면 되돌린다.
+            echo "::error::교체 후 헬스체크에 실패했다"
+            docker logs --tail 100 "$CONTAINER_NAME" || true
+            docker rm -f "$CONTAINER_NAME" > /dev/null 2>&1 || true
+
+            if [ -z "$PREVIOUS_IMAGE" ]; then
+              echo "::error::이전 이미지가 없어 롤백할 수 없다 (첫 배포)"
+              exit 1
+            fi
+
+            echo "이전 이미지로 롤백한다: $PREVIOUS_IMAGE"
+            docker run -d \
+              --name "$CONTAINER_NAME" \
+              --restart unless-stopped \
+              -p 127.0.0.1:8080:8080 \
+              --env-file "$ENV_FILE" \
+              "$PREVIOUS_IMAGE" > /dev/null
+
+            if wait_healthy 8080; then
+              echo "::error::롤백으로 서비스는 복구했다. 배포는 실패다."
+            else
+              echo "::error::롤백도 실패했다. 수동 확인이 필요하다."
+            fi
+            exit 1

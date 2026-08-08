@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  # DB 서비스 컨테이너를 띄우지 않는다.
+  #   - 단위/컨텍스트 테스트는 test 프로파일이 H2(인메모리)를 물려준다
+  #   - Controller 테스트는 @WebMvcTest 라 DataSource 자체가 없다
+  #   - bootJar 는 컴파일만 하므로 DB 가 필요 없다
+  # 실제 MySQL 이 필요한 검증(유니크 제약 등)이 생기면 그때 다시 붙인다.
+  gradle-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build verification (bootJar)
+        run: ./gradlew bootJar --no-daemon
+
+      - name: Test verification (H2)
+        run: ./gradlew test --no-daemon
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image (without .env)
+        run: docker build -t sleep2skin-be:ci .

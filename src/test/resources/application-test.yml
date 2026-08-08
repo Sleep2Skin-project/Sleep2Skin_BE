@@ -1,0 +1,19 @@
+# 테스트 전용 설정.
+#
+# 로컬에 MySQL이 없어도 ./gradlew test 가 돌아야 한다.
+# 파일명을 application.yml 로 두면 main 의 설정을 통째로 가려버리므로
+# 프로파일 파일로 두고 @ActiveProfiles("test") 로 덮어쓴다.
+spring:
+  datasource:
+    url: jdbc:h2:mem:sleep2skin;MODE=MySQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      # 로컬·운영은 ddl-auto: update 로 스키마를 누적하지만,
+      # 테스트는 매번 새로 만들고 끝나면 버린다.
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
