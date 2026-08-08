@@ -26,6 +26,7 @@ public enum ErrorCode {
 
     // ===== 사용자 =====
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
+    USER_ID_HEADER_INVALID(HttpStatus.BAD_REQUEST, "사용자 식별 헤더(X-User-Id)가 없거나 올바르지 않습니다."),
 
     // ===== 수면 =====
     SLEEP_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "수면 데이터가 없습니다. 앱에서 수면 기록을 동기화해주세요."),

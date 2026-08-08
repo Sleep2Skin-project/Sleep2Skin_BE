@@ -144,6 +144,8 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 **`userId`는 `X-User-Id` 헤더로 받는다** (conventions.md §8). 경로 변수나 쿼리 파라미터가 아니다 — JWT를 붙일 때 **헤더를 읽던 자리 한 곳만** 바뀐다.
 
+**컨트롤러는 그 헤더를 직접 읽지 않는다.** `@CurrentUserId Long userId`로 받고, 헤더를 읽는 코드는 `CurrentUserIdArgumentResolver` 한 곳뿐이다 — JWT를 붙이면 그 안쪽만 바뀌고 컨트롤러 시그니처는 전부 그대로다. `@RequestHeader`로 직접 받지 말 것.
+
 ## API 공통 규약 (conventions.md §8)
 
 - **`X-User-Id` 헤더** — 모든 API 공통
@@ -172,11 +174,31 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 ## 현재 상태
 
 **구현됨**
+- **엔티티 9개 + Repository 9개** — erd.md의 테이블 전부
+- **테스트 유저 시딩** — `TestUserSeeder`(`CommandLineRunner`). 멱등하며 운영 포함 전 환경에서 돈다. 사용자가 한 명이라도 있으면 건너뛴다
 - `GET /api/v1/health` 헬스체크
-- `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`
+- **`POST /api/v1/users/me/consents`** (ONB-02) · **`PATCH /api/v1/users/me/onboarding`** (ONB-05)
+- `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)
 - 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI
 
-**미도입**: OpenAI. 엔티티·Repository·Service는 아직 하나도 없음.
+**미도입**: OpenAI. `sleep`·`skin`·`todo`·`report`의 Service·Controller는 아직 없다.
+
+### 굳어진 패턴 — 이후 API가 그대로 복제한다
+
+`user` 도메인의 두 API가 기준이다. 새 도메인을 시작하기 전에 그 코드를 먼저 본다.
+
+| 패턴 | 기준 구현 |
+|---|---|
+| `userId`는 `@CurrentUserId Long userId`로 받는다 — 컨트롤러가 헤더를 직접 읽지 않는다 | `CurrentUserIdArgumentResolver` |
+| 사용자 존재 검증은 **Service**가 `USER_NOT_FOUND`로 한다 — `global`이 `domain`을 참조할 수 없어 리졸버는 DB를 보지 않는다 | `ConsentService`·`UserService` |
+| Swagger 문서는 `{도메인}ControllerSpec` 인터페이스에 둔다 | `UserControllerSpec` |
+| 응답 래퍼는 비어 있는 쪽을 직렬화하지 않는다 (성공엔 `error` 키가, 실패엔 `data` 키가 없다) | `ApiResponse` |
+| 에러 예시는 `ErrorCode`에서 생성해 `ref`로 참조한다 — 손으로 적지 않는다 | `SwaggerConfig` |
+| 문서 자체를 테스트로 지킨다 — 새 API를 추가하면 여기에도 추가 | `SwaggerConfigTest` |
+
+**함정과 근거는 conventions.md §8·§11에 전부 적혀 있다.** 전부 한 번씩 실제로 어긋났던 자리이고, 값 범위는 정상이라 아무 제약에도 안 걸린다.
+
+**약관 버전은 `ConsentPolicy.CURRENT_TERMS_VERSION = "1.0"`으로 시작했다.** 서버 상수이며 클라이언트가 보내지 않는다. P4(약관 원문)가 확정되면 **이 값만 올리면 된다** — 그 다음 동의부터 새 이력이 append된다.
 
 **로컬은 MySQL 컨테이너, 운영은 RDS다.** 로컬 스택은 `docker-compose.local.yml`이고 `.env`의 `COMPOSE_FILE`이 이 파일을 가리킨다. 운영은 Compose를 쓰지 않는다 — CD가 EC2에서 `docker run --env-file`로 띄운다.
 
@@ -186,11 +208,13 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 **스키마는 엔티티에서 만든다.** `ddl-auto: update`로 결정됐고 DDL 스크립트를 따로 두지 않는다 (근거는 `application.yml` 주석). `update`는 컬럼 추가만 반영하므로 **엔티티를 파괴적으로 바꿨다면 DB를 지우고 다시 만든다** — `docker compose down -v && docker compose up -d mysql`.
 
-다음 착수 순서 (prd.md §8):
-1. **엔티티 9개 + Repository** — 컬럼이 전부 확정돼 있어 아래 미결정 값과 **무관하게 지금 만들 수 있다** (erd.md §6)
-2. 테스트 유저 시딩 — 인증이 없으므로 DB에 직접 넣는다
-3. 수면 세션 수신 `POST /api/v1/sleep/sessions` (페이로드 해시로 중복 차단 — 위 규칙 필수)
-4. 피부 예보 산출 (HOME-03) — **블로커 없음.** 스코어링 명세가 prd.md §10.3~§10.6으로 확정됐다
+다음 착수 순서 (api.md §4 · prd.md §8) — **1단계 6개 중 2개가 끝났다.**
+
+1. ~~엔티티 9개 + Repository~~ · ~~테스트 유저 시딩~~ · ~~동의 저장(ONB-02)~~ · ~~온보딩 완료(ONB-05)~~ — 완료
+2. **수면 세션 수신 `POST /api/v1/sleep/sessions`** ← 여기부터 (페이로드 해시로 중복 차단 — 위 규칙 필수)
+3. 피부 예보 산출 (HOME-03) — **블로커 없음.** 스코어링 명세가 prd.md §10.3~§10.6으로 확정됐다
+4. 수면 통역 카드 `GET /api/v1/sleep/interpretation` (HOME-02)
+5. 셀피 분석·검증·학습 `POST /api/v1/skin/selfie` (HOME-06→07→08)
 
 ## 스코어링 명세 (prd.md §10 — 확정)
 

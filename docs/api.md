@@ -19,6 +19,8 @@ X-User-Id: 1                       ← 모든 API 필수
 
 **`X-User-Id` 헤더로 사용자를 식별한다.** 인증이 없으므로 클라이언트가 직접 알려준다. 경로 변수나 쿼리 파라미터가 아니라 헤더인 이유는 **JWT를 붙일 때 헤더를 읽던 자리 한 곳만 바뀌기 때문**이다. 쿼리 파라미터면 API마다 지워야 하고, 경로 변수면 전 경로를 갈아야 한다.
 
+헤더가 없거나 숫자가 아니면 **`400 USER_ID_HEADER_INVALID`**다. 사용자가 실제로 존재하는지는 각 API가 확인해 `404 USER_NOT_FOUND`를 낸다 — 헤더를 읽는 계층은 DB를 보지 않는다(의존 방향이 `domain → global` 한쪽이라 그 반대가 안 된다).
+
 **`baseDate`는 날짜가 필요한 API가 전부 받는다.** 서버는 "오늘"이 언제인지 모른다 — `users`에 `time_zone`을 두지 않기로 했다([erd.md](erd.md) §3.1). 서버 시각(UTC)으로 계산하면 한국 시간 오전 9시 이전에 날짜가 하루 밀린다. 형식은 `YYYY-MM-DD`.
 
 **조회 API만의 규칙이 아니다.** 동작 API도 날짜가 필요하면 같은 자리에서 받는다 — `POST /skin/selfie`가 유일한 예다(§2.3). 멀티파트 요청이라도 폼 필드로 내리지 않는다.
@@ -28,8 +30,13 @@ X-User-Id: 1                       ← 모든 API 필수
 ### 응답
 
 ```jsonc
-{ "success": true, "data": { ... }, "error": null }
+{ "success": true,  "data":  { ... } }     // 성공
+{ "success": false, "error": { "code": "...", "message": "..." } }   // 실패
 ```
+
+**비어 있는 쪽은 응답에 나오지 않는다.** 성공 응답에 `error` 키가, 실패 응답에 `data` 키가 없다 — `success`가 이미 같은 정보를 담고 있어 중복이다. 클라이언트는 `success`로 분기한다.
+
+**단, `data` 안쪽의 `null`은 그대로 나온다.** 페이로드의 `null`은 의미 있는 값이다 — `"complexion": null`은 "그 지표를 산출할 수 없었다"는 뜻이고 `unavailable`의 사유와 짝을 이룬다(§3 지표가 빈 경우). 생략되는 것은 래퍼의 두 필드뿐이다.
 
 **빈 상태 처리가 이 서비스의 핵심 규칙이다.**
 
@@ -56,7 +63,33 @@ X-User-Id: 1                       ← 모든 API 필수
 
 **1. 개인정보 동의 저장** (ONB-02) — 약관 버전과 동의 시각을 `consent_history`에 **append**한다. 재동의는 UPDATE가 아니라 **새 행**이다. 그래야 "언제 어느 버전에 동의했는가"가 남는다.
 
-**2. 온보딩 완료 처리** (ONB-05) — `users.onboarding_completed`를 `true`로. 상태 하나만 바꾸므로 `PATCH`다.
+**요청 본문이 없다.** 약관 버전은 서버 상수(`ConsentPolicy.CURRENT_TERMS_VERSION`, 현재 `"1.0"`)다 — 클라이언트가 임의 문자열을 보내면 이력에 섞여 재동의 판정(`WHERE terms_version <> ?`)이 무의미해진다. 약관이 개정되면 서버가 상수를 올리고, 그 다음 호출부터 새 버전으로 새 행이 쌓인다.
+
+**같은 버전에 대해 멱등하다.** 앱은 재설치·재실행으로 온보딩을 다시 밟으며 같은 호출을 반복하는데, 그때마다 append하면 이력에 의미 없는 행이 쌓인다.
+
+| 상황 | 코드 | `newlyAgreed` | 동작 |
+|---|---|---|---|
+| 이 버전에 첫 동의 | `201` | `true` | 새 이력 저장 |
+| 같은 버전에 이미 동의 | `200` | `false` | **저장하지 않고** 기존 이력 반환 |
+
+```jsonc
+{ "success": true,
+  "data": { "consentId": 1, "termsVersion": "1.0",
+            "agreedAt": "2026-08-08T11:28:19Z", "newlyAgreed": true } }
+```
+
+`agreedAt`은 `consent_history.created_at`이다. 행이 생기는 순간이 곧 동의하는 순간이라 별도 컬럼을 두지 않았다([erd.md](erd.md) §3.2).
+
+**2. 온보딩 완료 처리** (ONB-05) — `users.onboarding_completed`를 `true`로. 상태 하나만 바꾸므로 `PATCH`이고 **요청 본문이 없다.**
+
+**멱등하다 — 이미 완료된 사용자도 `200`이다.** 되돌리는 경로가 없어 다시 불러도 상태가 달라질 여지가 없다. 이번 요청으로 바뀌었는지는 `newlyCompleted`로 알린다.
+
+```jsonc
+{ "success": true,
+  "data": { "userId": 2, "onboardingCompleted": true, "newlyCompleted": true } }
+```
+
+**동의 이력이 있는지 서버가 확인하지 않는다.** ONB-02 → ONB-05 순서를 지키는 것은 클라이언트 몫이다. 서버가 막으면 시연용 데이터를 파이프라인에 주입하는 경로가 좁아진다.
 
 **3. 프로필 · 검증 횟수 · 연속 횟수** (MY-01) — **등급이 아니라 숫자를 반환한다.** 신뢰도 해석은 클라이언트가 한다. 등급만 내려주면 원본 숫자가 가려져 REP-12와 어긋나도 알아채기 어렵다. 연속 횟수 계산에 "오늘"이 필요하므로 `baseDate`를 받는다.
 
@@ -233,8 +266,7 @@ Content-Type: application/json
       "barrier":    { "score": 98, "grade": "STABLE" },
       "unavailable": []
     }
-  },
-  "error": null
+  }
 }
 ```
 

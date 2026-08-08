@@ -8,26 +8,28 @@ sleep2skin 백엔드의 코드 규칙. 구조 설계는 [architecture.md](archit
 
 ### 공통 래퍼
 
-모든 응답은 `ApiResponse<T>`로 감싼다. 성공과 실패의 모양이 같아야 프론트가 분기를 하나만 두면 된다.
+모든 응답은 `ApiResponse<T>`로 감싼다. 프론트는 `success` 하나로 분기한다.
 
 ```json
 // 성공
 {
   "success": true,
-  "data": { "darkCircle": 44, "complexion": 72, "barrier": 78 },
-  "error": null
+  "data": { "darkCircle": 44, "complexion": 72, "barrier": 78 }
 }
 
 // 실패
 {
   "success": false,
-  "data": null,
   "error": {
     "code": "SLEEP_SESSION_NOT_FOUND",
     "message": "수면 데이터가 없어 예보를 산출할 수 없습니다."
   }
 }
 ```
+
+**비어 있는 쪽은 직렬화하지 않는다.** `success`가 이미 같은 정보를 담고 있어 `"error": null`은 중복이다. `ApiResponse`에 붙은 `@JsonInclude(NON_NULL)`이 이 동작을 만든다.
+
+⚠️ **이 설정을 전역(`spring.jackson.default-property-inclusion`)으로 올리지 말 것.** 그러면 중첩 DTO의 `null`까지 사라지는데, 이 서비스에서 페이로드의 `null`은 의미 있는 값이다 — 아래 빈 상태 예시의 `"forecast": null`·`"message": null`이 그렇고, 예보 응답의 `"complexion": null`은 "그 지표를 산출할 수 없었다"는 뜻이라 `unavailable`의 사유와 짝을 이룬다([api.md](api.md) §3). 키가 통째로 없어지면 클라이언트가 **산출 불가와 키 이름 오류를 구분할 수 없다.** 클래스 단위 어노테이션이라 래퍼의 두 필드에만 적용된다.
 
 ```java
 public record ApiResponse<T>(
@@ -125,8 +127,7 @@ public enum ErrorCode {
     "message": "수면 데이터가 없어 오늘은 예보가 없습니다.",
     "baseDate": "2026-08-05",
     "forecast": null
-  },
-  "error": null
+  }
 }
 
 // 조회 — 정상 (200)
@@ -137,10 +138,11 @@ public enum ErrorCode {
     "message": null,
     "baseDate": "2026-08-05",
     "forecast": { "darkCircle": 44, "complexion": 72, "barrier": 78 }
-  },
-  "error": null
+  }
 }
 ```
+
+두 예시 안쪽의 `"forecast": null`·`"message": null`은 **그대로 나온다.** 사라지는 것은 래퍼의 `error`뿐이다.
 
 **모든 조회 API가 `{status, message, 페이로드}` 형태를 공유한다.** 리포트(REP-06 기록 7일 미만), 배너(HOME-09 검증 이력 없음)도 같은 모양을 쓴다. 화면마다 다른 스키마가 생기지 않게 하는 것이 이 규칙의 핵심이다.
 
@@ -404,26 +406,66 @@ api.md에 있는 것: 도메인별 엔드포인트 19개 · 각 API 설명 · `P
 
 ### Swagger 문서화
 
-모든 Controller와 DTO에 문서화 어노테이션을 붙인다. **한국어로 쓴다.**
+**프론트는 Swagger UI만 보고 개발한다.** 그래서 문서가 틀리면 앱이 틀리게 만들어진다. 아래 규칙은 전부 실제로 한 번씩 어긋났던 자리다 — `UserControllerSpec`과 `SwaggerConfig`가 기준 구현이다.
+
+한국어로 쓴다.
+
+#### 문서는 `{도메인}ControllerSpec` 인터페이스에 둔다
+
+Controller는 매핑과 위임만 갖고, `@Tag`·`@Operation`·`@ApiResponse`는 인터페이스로 뺀다. 설명이 길어질 수밖에 없어서 컨트롤러에 두면 실제 코드가 어노테이션에 파묻힌다.
 
 ```java
-@Tag(name = "Skin", description = "피부 예보 및 셀피 검증 API")
-@RestController
-@RequestMapping("/api/v1/skin")
-public class SkinController {
+@Tag(name = "User", description = "사용자 · 동의 · 온보딩 API")
+public interface UserControllerSpec {
+    @Operation(summary = "...", description = "...")
+    ApiResponse<Xxx> doSomething(@CurrentUserId Long userId);
+}
 
-    @Operation(summary = "오늘의 피부 예보 조회",
-               description = "직전 수면 데이터를 기반으로 산출된 지표 3종을 반환한다.")
-    @ApiResponse(responseCode = "200", description = "조회 성공")
-    @ApiResponse(responseCode = "404", description = "수면 데이터 없음")
-    @GetMapping("/forecast")
-    public ApiResponse<SkinForecastResponse> getForecast(...) { ... }
+@RestController
+public class UserController implements UserControllerSpec {
+    @Override @PostMapping("/me/consents")
+    public ApiResponse<Xxx> doSomething(@CurrentUserId Long userId) { ... }   // ← 다시 붙인다
 }
 ```
 
-DTO 필드에는 `@Schema(description = ..., example = ...)`를 붙인다. **example을 반드시 채운다** — 프론트가 Swagger UI만 보고 개발할 수 있어야 한다.
+⚠️ **`@CurrentUserId`는 구현체에도 반드시 붙인다.** 파라미터 어노테이션은 **인터페이스에서 상속되지 않아** 인터페이스에만 두면 리졸버가 파라미터를 인식하지 못하고 헤더가 주입되지 않는다.
 
-`SwaggerConfig`와 `HealthCheckController`가 이 패턴의 기준이다.
+⚠️ **springdoc이 인터페이스 어노테이션을 못 찾으면 설명만 사라지고 API는 멀쩡히 뜬다.** 컴파일도 테스트도 통과하므로 프론트가 빈 문서를 볼 때까지 아무도 모른다. `SwaggerConfigTest`가 이걸 지킨다.
+
+#### `@Tag` 설명은 한 줄이다
+
+`@Tag` 설명은 Swagger UI에서 태그를 접어도 **계속 펼쳐진 채 목록 맨 위를 차지한다.** 공통 규약을 거기 넣으면 API 목록을 훑기가 불편해진다.
+
+**공통 규약도 API마다 되풀이해 `@Operation` 설명에 적는다.** 읽는 사람은 자기가 쓸 API 하나만 펼치므로 그 안에 다 있는 편이 낫다. 중복이지만 이건 의도된 중복이다.
+
+`@Operation` 설명에 넣을 것: **언제 호출하나 · 요청(헤더·본문) · 응답(코드별 의미) · 재호출 안전성 · 예외 표**.
+
+#### 에러 예시는 손으로 적지 않는다
+
+`SwaggerConfig`가 `ErrorCode`를 순회해 코드별 예시를 `components.examples`에 등록해 둔다. 각 API는 **어떤 코드가 나오는지만** 고른다.
+
+```java
+@ApiResponse(responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+        content = @Content(mediaType = "application/json",
+                examples = @ExampleObject(name = "USER_NOT_FOUND",
+                        ref = "#/components/examples/USER_NOT_FOUND")))
+```
+
+⚠️ **`ErrorResponse`에 `@Schema(example = ...)`를 다시 넣지 말 것.** 이 레코드는 모든 API가 공유하는 스키마 하나라, 예시를 박으면 도메인·상황과 무관하게 전부 같은 값이 나온다. 실제로 user API 문서에 `SLEEP_SESSION_NOT_FOUND`가 떴었고, **그 메시지는 `ErrorCode`의 실제 문구와 달라 서버가 한 번도 보낸 적 없는 문장이었다.**
+
+같은 이유로 `@ExampleObject`에 JSON을 직접 쓰지 않는다. 메시지를 복붙하는 순간 `ErrorCode`가 바뀌면 문서만 조용히 틀린다.
+
+#### springdoc이 알아서 해주지 않는 것
+
+| 함정 | 무슨 일이 나나 | 대응 |
+|---|---|---|
+| `@ApiResponse`에 `content`가 없다 | **선언한 상태 코드 전부를 메서드 반환 타입으로 채운다.** 404를 펼치면 `data`가 채워진 성공 예시가 나온다 | 에러 응답에 예시 `ref`를 붙인다. `SwaggerConfig`가 스키마도 실패 래퍼로 맞춘다 |
+| `@JsonInclude(NON_NULL)` | **런타임 직렬화만 바꾸고 springdoc은 읽지 않는다.** 실제로 안 나가는 필드가 스키마에 남는다 | `SwaggerConfig`에서 스키마를 손본다 |
+| `produces` 미선언 | 응답 미디어 타입이 `*/*`로 문서화된다 | `springdoc.default-produces-media-type`으로 이미 설정돼 있다. **컨트롤러에 `produces`를 붙이지 말 것** — 콘텐츠 협상까지 제약해 동작이 바뀐다 |
+
+#### DTO
+
+DTO 필드에는 `@Schema(description = ..., example = ...)`를 붙이고 **example을 반드시 채운다.** 단, 위의 `ErrorResponse`처럼 **여러 API가 공유하는 DTO**는 예외다 — 한 곳에 박은 예시가 모든 API에 나간다.
 
 ---
 
@@ -539,6 +581,42 @@ src/test/java/com/allday/sleep2skin_be/
 ```
 
 `HealthCheckControllerTest`가 기존 패턴이다.
+
+### API 문서도 테스트로 지킨다
+
+**문서가 어긋나도 서버 테스트는 전부 통과한다.** 문서는 프론트만 보기 때문에, 앱이 잘못 구현한 뒤에야 드러난다. `/v3/api-docs`를 직접 읽는 테스트를 **두 층**으로 둔다.
+
+| 테스트 | 무엇을 보나 | 새 API를 추가하면 |
+|---|---|---|
+| `global/config/SwaggerConfigTest` | 도메인 무관 규칙 — 모든 4xx가 실패 스키마를 가리키는가 · 모든 응답이 `application/json`인가 · 성공 래퍼에 `error`가 없는가 · 예시가 `ErrorCode`에서 생성됐는가 | **손대지 않는다.** 경로를 짚지 않고 문서 전체를 순회하므로 자동으로 검증 대상이 된다 |
+| `domain/{도메인}/{도메인}ApiDocsTest` | 그 도메인만의 것 — 설명이 실렸는가 · 어떤 에러 예시를 골랐는가 · 헤더가 붙었는가 | **여기에 추가한다** |
+
+**도메인별로 나눈 이유는 나중에 도메인 단위로 작업을 나누기 위해서다**(workflow.md §4). 한 파일에 모아두면 두 사람이 계속 같은 파일을 건드린다.
+
+예시 문구는 **`ErrorCode`의 값과 대조한다.** 테스트에 문자열을 손으로 적으면 그 문자열도 같이 낡는다.
+
+⚠️ **문서 전체를 순회하는 검사는 순회가 비면 통과한다.** 검사한 개수가 0이 아닌지 함께 단언한다.
+
+```java
+.andExpect(jsonPath("$.components.examples.USER_NOT_FOUND.value.error.message")
+        .value(ErrorCode.USER_NOT_FOUND.getMessage()))
+```
+
+### ⚠️ `doesNotExist()`가 통과했다고 검증된 게 아니다
+
+두 가지 경우에 **아무것도 검증하지 않고 통과한다.**
+
+- **값이 명시적 `null`일 때** — JsonPath가 `null`을 부재로 취급한다. `"error": null`이 그대로 실려 나가도 `jsonPath("$.error").doesNotExist()`는 통과한다. 키가 정말 없는지 보려면 **응답 원문**을 본다.
+- **경로 표현식이 틀렸을 때** — 오타 하나로 검증이 조용히 무력해진다. 같은 경로에 **양성 단언을 먼저** 둬서 경로가 실제로 잡히는지 확인한다.
+
+```java
+// 키 자체가 없는지 — 원문을 본다
+.andExpect(content().string(not(containsString("\"error\""))))
+
+// 경로가 잡히는지 먼저 확인한 뒤 부재를 단언한다
+.andExpect(jsonPath("$.paths.['/api/v1/health'].get.operationId").exists())
+.andExpect(jsonPath("$.paths.['/api/v1/health'].get.parameters").doesNotExist())
+```
 
 ### 테스트 메서드 이름
 
