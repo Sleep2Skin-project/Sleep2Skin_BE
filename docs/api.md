@@ -119,6 +119,30 @@ X-User-Id: 1                       ← 모든 API 필수
 
 **1. 오늘의 피부 예보** (HOME-03) — 저장된 그날 예보를 조회한다. 산출은 업로드 시점에 이미 끝나 있다. 수면 데이터가 없으면 **200 + 빈 상태**다.
 
+**앱 시작 직후에는 이 API가 필요 없다** — `POST /sleep/sessions`가 업로드 응답에 같은 예보를 실어 보낸다. 여기는 날짜를 바꿔 다시 볼 때 쓴다.
+
+```jsonc
+{ "success": true,
+  "data": {
+    "status": "AVAILABLE",          // 또는 NO_SLEEP_DATA
+    "message": null,                // 빈 상태일 때만 안내 문구
+    "baseDate": "2026-08-07",
+    "forecast": {                   // 빈 상태면 null
+      "darkCircle": { "score": 67, "grade": "NORMAL" },
+      "complexion": { "score": 62, "grade": "NORMAL" },
+      "barrier":    { "score": 81, "grade": "STABLE" },
+      "unavailable": []
+    } } }
+```
+
+**빈 상태와 빈 지표는 층위가 다르다.** `status: NO_SLEEP_DATA`는 예보 자체가 없는 것이고, `forecast.unavailable`은 예보는 있는데 일부 지표만 못 낸 것이다. 후자는 `status`가 `AVAILABLE`이다.
+
+**`forecast` 객체 모양은 `POST /sleep/sessions` 응답의 `forecast`와 같다.** 앱이 파싱 코드를 한 번만 쓰면 된다.
+
+> **이 응답이 조회 API 공용 형태의 기준이다** (2026-08-09 확정). `{status, message, 페이로드}`는 [conventions.md](conventions.md) §2가 정한 것이고, 이 엔드포인트가 첫 구현이다. 리포트·배너 등 이후 조회 API가 같은 모양을 복제한다 — 화면마다 다른 스키마가 생기지 않게 하는 것이 이 규칙의 핵심이다.
+>
+> `status` 값은 `global/response/QueryStatus`에 모은다: `AVAILABLE` · `NO_SLEEP_DATA` · `INSUFFICIENT_HISTORY` · `NO_VERIFICATION`.
+
 **2. 셀피 분석·검증·학습** (HOME-06→07→08) — 멀티파트 이미지를 받아 **세 가지를 한 트랜잭션에서** 처리한다.
 
 ```

@@ -3,7 +3,6 @@ package com.allday.sleep2skin_be.domain.sleep;
 import com.allday.sleep2skin_be.domain.skin.ScoringPolicy;
 import com.allday.sleep2skin_be.domain.skin.SkinScoringEngine;
 import com.allday.sleep2skin_be.domain.skin.dto.SkinForecastScore;
-import com.allday.sleep2skin_be.domain.skin.dto.SkinForecastScore.UnavailableMetric;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse;
 import com.allday.sleep2skin_be.domain.skin.entity.PersonalWeight;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinForecast;
@@ -120,7 +119,7 @@ public class SleepSessionService {
 
         return new SleepSessionUploadResult(true,
                 SleepSessionUploadResponse.of(true, session,
-                        SkinForecastResponse.of(forecast, score.unavailable())));
+                        SkinForecastResponse.of(forecast, normalized.isWatchDataMissing())));
     }
 
     /** 내용이 다른 데이터가 검증 전에 다시 왔다 — 갱신하고 재산출한다. */
@@ -140,7 +139,7 @@ public class SleepSessionService {
 
         return new SleepSessionUploadResult(false,
                 SleepSessionUploadResponse.of(true, session,
-                        SkinForecastResponse.of(forecast, score.unavailable())));
+                        SkinForecastResponse.of(forecast, normalized.isWatchDataMissing())));
     }
 
     /**
@@ -164,7 +163,7 @@ public class SleepSessionService {
 
         return new SleepSessionUploadResult(false,
                 SleepSessionUploadResponse.of(false, session,
-                        SkinForecastResponse.of(forecast, unavailableOf(forecast, normalized))));
+                        SkinForecastResponse.of(forecast, normalized.isWatchDataMissing())));
     }
 
     private SkinForecastScore calculateScore(Long userId, SleepNormalizationResult normalized) {
@@ -207,23 +206,6 @@ public class SleepSessionService {
             throw new IllegalStateException("다크서클이 산출되지 않았다 — 매핑 또는 결측 규칙이 바뀌었다");
         }
         return darkCircle;
-    }
-
-    /** 저장된 예보의 {@code null}에서 빈 지표와 사유를 되짚는다. 사유 규칙은 {@link ScoringPolicy}가 단일 출처다. */
-    private List<UnavailableMetric> unavailableOf(SkinForecast forecast,
-                                                  SleepNormalizationResult normalized) {
-        List<UnavailableMetric> unavailable = new ArrayList<>();
-        boolean watchDataMissing = normalized.isWatchDataMissing();
-
-        if (forecast.getComplexion() == null) {
-            unavailable.add(new UnavailableMetric(SkinMetric.COMPLEXION,
-                    ScoringPolicy.reasonFor(SkinMetric.COMPLEXION, watchDataMissing)));
-        }
-        if (forecast.getBarrier() == null) {
-            unavailable.add(new UnavailableMetric(SkinMetric.BARRIER,
-                    ScoringPolicy.reasonFor(SkinMetric.BARRIER, watchDataMissing)));
-        }
-        return unavailable;
     }
 
     /**
