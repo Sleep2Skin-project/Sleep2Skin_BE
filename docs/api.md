@@ -14,12 +14,14 @@
 
 ```
 X-User-Id: 1                       ← 모든 API 필수
-?baseDate=2026-08-07               ← 날짜가 필요한 조회 API
+?baseDate=2026-08-07               ← 날짜가 필요한 API (조회·동작 무관)
 ```
 
 **`X-User-Id` 헤더로 사용자를 식별한다.** 인증이 없으므로 클라이언트가 직접 알려준다. 경로 변수나 쿼리 파라미터가 아니라 헤더인 이유는 **JWT를 붙일 때 헤더를 읽던 자리 한 곳만 바뀌기 때문**이다. 쿼리 파라미터면 API마다 지워야 하고, 경로 변수면 전 경로를 갈아야 한다.
 
-**`baseDate`는 날짜가 필요한 조회 API가 전부 받는다.** 서버는 "오늘"이 언제인지 모른다 — `users`에 `time_zone`을 두지 않기로 했다([erd.md](erd.md) §3.1). 서버 시각(UTC)으로 계산하면 한국 시간 오전 9시 이전에 날짜가 하루 밀린다. 형식은 `YYYY-MM-DD`.
+**`baseDate`는 날짜가 필요한 API가 전부 받는다.** 서버는 "오늘"이 언제인지 모른다 — `users`에 `time_zone`을 두지 않기로 했다([erd.md](erd.md) §3.1). 서버 시각(UTC)으로 계산하면 한국 시간 오전 9시 이전에 날짜가 하루 밀린다. 형식은 `YYYY-MM-DD`.
+
+**조회 API만의 규칙이 아니다.** 동작 API도 날짜가 필요하면 같은 자리에서 받는다 — `POST /skin/selfie`가 유일한 예다(§2.3). 멀티파트 요청이라도 폼 필드로 내리지 않는다.
 
 **모든 시각은 ISO 8601 오프셋 포함**(`2026-08-07T07:10:00+09:00`)으로 주고받는다. 오프셋이 없으면 서버가 UTC로 해석해 `sleepDate`가 밀리고, 그 날짜로 조인되는 예보·검증이 전부 어긋난다.
 
@@ -78,7 +80,7 @@ X-User-Id: 1                       ← 모든 API 필수
 | # | 기능 | 메서드 | 경로 |
 |---|---|---|---|
 | 1 | ★ **오늘의 피부 예보** | `GET` | `/api/v1/skin/forecast?baseDate=` |
-| 2 | ★ **셀피 분석·검증·학습** | `POST` | `/api/v1/skin/selfie` |
+| 2 | ★ **셀피 분석·검증·학습** | `POST` | `/api/v1/skin/selfie?baseDate=` |
 | 3 | 적중률 · 연속 검증 배너 | `GET` | `/api/v1/skin/verification/summary?baseDate=` |
 | 4 | 내 모델 (일반 vs 개인화) | `GET` | `/api/v1/skin/model` |
 
@@ -91,6 +93,23 @@ X-User-Id: 1                       ← 모든 API 필수
 → 지표 3종 실측 저장 → 예보와 대조·판정               (HOME-07)
 → 개인 가중치 보정                                    (HOME-08)
 ```
+
+```
+POST /api/v1/skin/selfie?baseDate=2026-08-07
+X-User-Id: 1
+Content-Type: multipart/form-data
+
+image: (파일)
+```
+
+| 파라미터 | 위치 | 필수 | 비고 |
+|---|---|---|---|
+| `baseDate` | 쿼리 | ✅ | 대조할 예보의 기준일. `LocalDate` |
+| `image` | 멀티파트 | ✅ | 메모리에서 바로 LLM으로. 저장하지 않는다 |
+
+**동작 API인데도 `baseDate`를 받는다.** 다른 동작 API와 달리 이 요청은 **어느 날짜의 예보와 대조할지**를 알아야 하는데, 서버는 "오늘"을 모른다([conventions.md](conventions.md) §8) — `users`에 `time_zone`이 없어 서버 시각으로 정하면 한국 시간 오전 9시 이전에 하루 밀린 예보와 대조하게 된다. **값 범위는 정상이라 아무 제약에도 안 걸리고 적중률만 무너진다.**
+
+**과거 날짜도 받는다.** 시연용 데이터를 파이프라인을 통과시켜 쌓으려면 이 API로 지난 날짜의 검증을 만들 수 있어야 한다. 서버 시각으로 "오늘"을 고정하면 그 경로가 사라진다.
 
 **이미지는 어디에도 쓰지 않는다** — 엔티티에 이미지 컬럼 자체가 없어 저장할 곳이 없다. **동작 API이므로 그날 예보가 없으면 `404 SKIN_FORECAST_NOT_FOUND`다.** 대조할 기준이 없으면 검증이 성립하지 않는다.
 
@@ -266,7 +285,7 @@ Content-Type: application/json
 3  POST   /api/v1/sleep/sessions       ★ 수면 업로드 → 예보 응답
 4  GET    /api/v1/skin/forecast        ★ 오늘의 예보
 5  GET    /api/v1/sleep/interpretation   수면 통역 카드
-6  POST   /api/v1/skin/selfie          ★ 셀피 분석·검증·학습
+6  POST   /api/v1/skin/selfie?baseDate= ★ 셀피 분석·검증·학습
 ```
 
 ★ 셋이 핵심 루프를 관통한다. 전체 우선순위는 [prd.md](prd.md) §8.
