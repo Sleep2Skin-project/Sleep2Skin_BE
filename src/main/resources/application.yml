@@ -1,6 +1,26 @@
 spring:
   application:
     name: sleep2skin_be
+  jackson:
+    datatype:
+      datetime:
+        # 요청에 실려 온 오프셋(+09:00)을 그대로 둔다.
+        #
+        # Jackson 기본값(true)은 OffsetDateTime 을 컨텍스트 타임존(UTC)으로 옮긴다.
+        # 가리키는 순간은 같지만 벽시계 날짜가 바뀌어, 07:10+09:00 기상이
+        # 08-06T22:10Z 가 되고 sleepDate 가 하루 전으로 잡힌다.
+        #
+        # 한국의 기상 시각은 거의 전부 09:00 이전이라 사실상 매번 밀린다.
+        # sleepDate 는 skin_forecast.base_date 와 같은 값이어야 하므로
+        # 예보 조회·셀피 검증·리포트가 전부 하루씩 어긋난다 (docs/api.md §1).
+        #
+        # ⚠️ 저장 기준과는 다른 층이다. DB 에 넣을 때 UTC 로 맞추는 것은
+        #    아래 hibernate.timezone.default_storage 가 하고, 이 설정은
+        #    "오프셋으로부터 날짜를 정하는" 단계를 지킨다.
+        #
+        # ⚠️ Jackson 3 에서 이 옵션이 DeserializationFeature 에서 DateTimeFeature 로
+        #    옮겨졌다. spring.jackson.deserialization 아래에 두면 기동에 실패한다.
+        adjust-dates-to-context-time-zone: false
   datasource:
     # serverTimezone 은 아래 hibernate.timezone.default_storage 및 Dockerfile 의 TZ=UTC 와
     # 같은 값이어야 한다. 시각 저장 기준은 이 셋이 함께 정하므로(docs/erd.md §3.1)

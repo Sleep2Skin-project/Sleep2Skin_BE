@@ -6,6 +6,8 @@ import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.MetricScore;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.UnavailableMetricResponse;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
+import com.allday.sleep2skin_be.domain.sleep.dto.SleepNormalizationCommand;
+import com.allday.sleep2skin_be.domain.sleep.dto.SleepSegmentCommand;
 import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepSessionUploadResponse;
 import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepSessionUploadResponse.SleepSummary;
 import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepSessionUploadResult;
@@ -13,6 +15,7 @@ import com.allday.sleep2skin_be.global.exception.BusinessException;
 import com.allday.sleep2skin_be.global.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -21,8 +24,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
@@ -103,6 +108,40 @@ class SleepControllerTest {
                 .andExpect(jsonPath("$.data.forecast.complexion").doesNotExist())
                 .andExpect(jsonPath("$.data.forecast.unavailable[0].metric").value("COMPLEXION"))
                 .andExpect(jsonPath("$.data.forecast.unavailable[0].reason").value("MISSING_FEATURES"));
+    }
+
+    /**
+     * <b>이 테스트가 없어서 하루 밀린 예보가 그대로 나갔다.</b> 정규화 테스트는 자바에서 만든
+     * {@code OffsetDateTime}을 쓰고, 컨트롤러 테스트는 서비스를 목으로 막아 <b>JSON을 실제로
+     * 역직렬화한 값이 정규화에 닿는 경로만 아무도 보지 않았다.</b>
+     *
+     * <p>Jackson은 기본으로 {@code OffsetDateTime}을 컨텍스트 타임존(UTC)으로 옮긴다
+     * ({@code ADJUST_DATES_TO_CONTEXT_TIME_ZONE}). 그러면 {@code 07:10+09:00}이 {@code 22:10Z}가
+     * 되어 <b>기상일이 전날로 바뀐다</b> — 한국의 기상 시각은 거의 전부 09:00 이전이라
+     * <b>사실상 매번 하루씩 밀린다.</b>
+     */
+    @Test
+    @DisplayName("요청의 오프셋이 역직렬화에서 살아남는다 — 기상일이 하루 밀리면 안 된다")
+    void 요청_오프셋이_역직렬화에서_보존된다() throws Exception {
+        given(sleepSessionService.upload(anyLong(), any()))
+                .willReturn(new SleepSessionUploadResult(true, response(true)));
+
+        ArgumentCaptor<SleepNormalizationCommand> captured =
+                ArgumentCaptor.forClass(SleepNormalizationCommand.class);
+
+        mockMvc.perform(post(PATH).header(USER_ID_HEADER, USER_ID)
+                        .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+                .andExpect(status().isCreated());
+
+        verify(sleepSessionService).upload(anyLong(), captured.capture());
+        SleepSegmentCommand segment = captured.getValue().segments().getFirst();
+
+        assertThat(segment.endTime().getOffset()).isEqualTo(ZoneOffset.ofHours(9));
+        assertThat(segment.endTime()).isEqualTo(OffsetDateTime.parse("2026-08-07T07:10:00+09:00"));
+
+        // 정규화까지 통과시켜 실제로 저장될 기준일을 확인한다 — 07:10 KST 기상은 8월 7일이다
+        assertThat(new SleepSessionNormalizer().normalize(captured.getValue()).sleepDate())
+                .isEqualTo(LocalDate.of(2026, 8, 7));
     }
 
     @Test
