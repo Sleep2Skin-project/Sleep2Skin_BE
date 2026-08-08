@@ -1,18 +1,24 @@
 package com.allday.sleep2skin_be.domain.sleep;
 
 import com.allday.sleep2skin_be.domain.sleep.dto.request.SleepSessionUploadRequest;
+import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepInterpretationResponse;
 import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepSessionUploadResponse;
 import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepSessionUploadResult;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
 
 /**
  * 수면 수집·해석 API.
@@ -26,6 +32,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class SleepController implements SleepControllerSpec {
 
     private final SleepSessionService sleepSessionService;
+    private final SleepInterpretationService sleepInterpretationService;
+
+    @Override
+    @GetMapping("/interpretation")
+    public ApiResponse<SleepInterpretationResponse> getInterpretation(
+            @CurrentUserId Long userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate) {
+
+        return ApiResponse.success(sleepInterpretationService.getInterpretation(userId, baseDate));
+    }
 
     @Override
     @PostMapping("/sessions")

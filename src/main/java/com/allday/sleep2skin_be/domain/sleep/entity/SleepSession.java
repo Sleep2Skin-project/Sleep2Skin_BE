@@ -168,6 +168,22 @@ public class SleepSession extends BaseTimeEntity {
     }
 
     /**
+     * 스코어링의 비율 분모 — <b>총 수면이 아니라 단계 합이다</b>(prd.md §10.5).
+     *
+     * <p>총 수면에는 단계 미상 구간이 섞일 수 있는데 그걸 분모에 넣으면 <b>측정하지 못한 시간이
+     * "깊은 수면이 아니었던 시간"으로 계산된다.</b> {@code 0}이면 단계가 하나도 안 잡힌 밤이며
+     * {@code BARRIER}가 빈 상태가 된다.
+     */
+    public int stagedSleepMinutes() {
+        return deepSleepMinutes + remSleepMinutes + coreSleepMinutes;
+    }
+
+    /** 워치를 차지 않고 잔 밤인가. 두 값은 같은 착용 여부에 의존해 함께 결측된다. */
+    public boolean isWatchDataMissing() {
+        return hrv == null && restingHeartRate == null;
+    }
+
+    /**
      * 같은 날짜에 <b>내용이 다른</b> 수면 데이터가 다시 왔을 때의 갱신.
      *
      * <p><b>그날 셀피 검증을 마쳤으면 호출하면 안 된다.</b> 예보를 재산출하게 되고, 이미 끝난

@@ -1,15 +1,19 @@
 package com.allday.sleep2skin_be.domain.sleep;
 
 import com.allday.sleep2skin_be.domain.sleep.dto.request.SleepSessionUploadRequest;
+import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepInterpretationResponse;
 import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepSessionUploadResponse;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+
+import java.time.LocalDate;
 
 /**
  * {@link SleepController}의 API 문서.
@@ -164,5 +168,86 @@ public interface SleepControllerSpec {
     ResponseEntity<ApiResponse<SleepSessionUploadResponse>> uploadSession(
             @CurrentUserId Long userId,
             @Valid SleepSessionUploadRequest request);
+
+    @Operation(summary = "어젯밤 수면 통역 카드 (HOME-02)", description = """
+            어젯밤 수면을 한 문장으로 읽어준다. 기준치에서 **가장 멀어진 지표 1개**를 골라
+            헤드라인을 만든다.
+
+            ### 언제 호출하나
+
+            홈 화면 상단 카드를 그릴 때. 예보(`GET /skin/forecast`)와 **같은 날짜로 함께 호출**하면
+            된다.
+
+            ### 요청
+
+            `X-User-Id` 헤더와 `baseDate` 쿼리 파라미터가 필요하다. `baseDate`는 **기상일 기준**이며,
+            서버는 "오늘"을 모르므로 앱이 자기 로컬 날짜를 `YYYY-MM-DD`로 보낸다.
+
+            ### 응답
+
+            ```jsonc
+            { "success": true,
+              "data": {
+                "status": "AVAILABLE",
+                "message": null,
+                "baseDate": "2026-08-07",
+                "interpretation": {
+                  "tone": "IMPROVE",
+                  "headline": "밤중에 3번 깼어요. 다크서클 회복이 더뎌질 수 있어요.",
+                  "focus": { "feature": "AWAKE_COUNT", "label": "야간 각성", "score": 50 }
+                }
+              } }
+            ```
+
+            **`headline`은 그대로 보여줄 수 있는 문장이다.** 다만 문구는 다듬어질 수 있으므로
+            분기는 `tone`과 `focus.feature`로 한다.
+
+            | `tone` | 언제 | `focus` |
+            |---|---|---|
+            | `IMPROVE` | 기준치에서 멀어진 지표가 있다 | 그 지표 |
+            | `PRAISE` | **모든 지표가 안정 구간이다** | `null` |
+
+            **`PRAISE`일 때 `focus`는 `null`이다.** 잘 잔 밤에도 억지로 무언가를 지적하지 않는다.
+
+            ### 예보와 같은 근거를 쓴다
+
+            `focus.score`는 **예보 산출에 쓰인 것과 같은 부분점수**다. 기준을 따로 두지 않았기
+            때문에, 카드가 "충분히 주무셨어요"라고 하는데 예보는 총 수면을 감점한 상태 같은
+            어긋남이 생기지 않는다.
+
+            **점수는 높을수록 좋다.** 야간 각성은 많이 깰수록 점수가 내려간다.
+
+            ### 빈 상태 — 에러가 아니다
+
+            그날 수면 데이터가 없으면 `200`에 `status: NO_SLEEP_DATA`로 나가고
+            `interpretation`이 `null`이다. 신규 사용자에게 일상적으로 발생한다.
+
+            ### 예외
+
+            | 코드 | `error.code` | 언제 |
+            |---|---|---|
+            | `400` | `INVALID_INPUT` | `baseDate` 누락 또는 형식 오류 |
+            | `400` | `USER_ID_HEADER_INVALID` | `X-User-Id` 헤더 누락 또는 형식 오류 |
+            | `404` | `USER_NOT_FOUND` | 존재하지 않는 사용자 |
+            """)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "조회 성공. **수면 데이터가 없는 경우도 여기에 해당한다** (`status: NO_SLEEP_DATA`)")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "`INVALID_INPUT` — `baseDate` 누락 또는 형식 오류",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "INVALID_INPUT",
+                    ref = "#/components/examples/INVALID_INPUT")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
+    ApiResponse<SleepInterpretationResponse> getInterpretation(
+            @CurrentUserId Long userId,
+
+            @Parameter(description = "조회 기준일 (`YYYY-MM-DD`). **기상일 기준이며 앱의 로컬 날짜를 보낸다**",
+                    required = true, example = "2026-08-07")
+            LocalDate baseDate);
 
 }

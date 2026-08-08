@@ -72,7 +72,8 @@ class SleepSessionServiceTest {
     void setUp() {
         service = new SleepSessionService(userRepository, sleepSessionRepository,
                 sleepStageSegmentRepository, skinForecastRepository, skinMeasurementRepository,
-                personalWeightRepository, normalizer, new SkinScoringEngine());
+                personalWeightRepository, normalizer, new SkinScoringEngine(),
+                new BedtimeRegularityCalculator(sleepSessionRepository));
     }
 
     @Test

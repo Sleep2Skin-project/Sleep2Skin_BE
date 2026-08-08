@@ -26,6 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SleepApiDocsTest {
 
     private static final String SESSIONS_POST = "$.paths.['/api/v1/sleep/sessions'].post";
+    private static final String INTERPRETATION_GET = "$.paths.['/api/v1/sleep/interpretation'].get";
 
     @Autowired
     private MockMvc mockMvc;
@@ -117,6 +118,71 @@ class SleepApiDocsTest {
                         .value("#/components/schemas/ApiResponseSleepSessionUploadResponse"))
                 .andExpect(jsonPath(SESSIONS_POST + ".responses.['200'].content.['application/json'].schema.['$ref']")
                         .value("#/components/schemas/ApiResponseSleepSessionUploadResponse"));
+    }
+
+    // ===== 수면 통역 카드 (HOME-02) =====
+
+    @Test
+    @DisplayName("통역 카드 설명이 문서에 실린다")
+    void 통역_카드_문서가_반영된다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(INTERPRETATION_GET + ".summary").value(containsString("수면 통역 카드")))
+                .andExpect(jsonPath(INTERPRETATION_GET + ".summary").value(containsString("HOME-02")))
+                .andExpect(jsonPath(INTERPRETATION_GET + ".responses.['200'].content.['application/json'].schema.['$ref']")
+                        .value("#/components/schemas/ApiResponseSleepInterpretationResponse"));
+    }
+
+    /**
+     * 앱이 {@code headline} 문자열로 분기하면 문구를 다듬는 순간 화면이 깨진다.
+     * 분기 기준이 {@code tone}·{@code focus.feature}라는 것을 문서가 말해야 한다.
+     */
+    @Test
+    @DisplayName("두 어조와 PRAISE일 때 focus가 null이라는 것이 문서에 있다")
+    void 어조_분기가_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(INTERPRETATION_GET + ".description").value(containsString("IMPROVE")))
+                .andExpect(jsonPath(INTERPRETATION_GET + ".description").value(containsString("PRAISE")))
+                .andExpect(jsonPath(INTERPRETATION_GET + ".description")
+                        .value(containsString("`PRAISE`일 때 `focus`는 `null`이다")))
+                .andExpect(jsonPath(INTERPRETATION_GET + ".description").value(containsString("NO_SLEEP_DATA")));
+    }
+
+    @Test
+    @DisplayName("점수 방향과 예보와 같은 근거를 쓴다는 것이 문서에 있다")
+    void 점수_방향이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(INTERPRETATION_GET + ".description").value(containsString("높을수록 좋다")))
+                .andExpect(jsonPath(INTERPRETATION_GET + ".description")
+                        .value(containsString("예보 산출에 쓰인 것과 같은 부분점수")));
+    }
+
+    @Test
+    @DisplayName("통역 카드에도 X-User-Id와 baseDate가 필수로 붙는다")
+    void 통역_카드_파라미터가_문서에_붙는다() throws Exception {
+        // 인덱스가 아니라 이름으로 찾는다 — springdoc 의 파라미터 순서는 보장되지 않는다
+        String userIdParameter = INTERPRETATION_GET + ".parameters[?(@.name == 'X-User-Id')]";
+        String baseDateParameter = INTERPRETATION_GET + ".parameters[?(@.name == 'baseDate')]";
+
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(userIdParameter + ".in").value(hasItem("header")))
+                .andExpect(jsonPath(userIdParameter + ".required").value(hasItem(true)))
+                .andExpect(jsonPath(baseDateParameter + ".in").value(hasItem("query")))
+                .andExpect(jsonPath(baseDateParameter + ".required").value(hasItem(true)));
+    }
+
+    @Test
+    @DisplayName("통역 카드에도 상황별 에러 예시가 붙는다")
+    void 통역_카드_에러_예시가_붙는다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(INTERPRETATION_GET + ".responses.['400'].content.['application/json'].examples.INVALID_INPUT.['$ref']")
+                        .value("#/components/examples/INVALID_INPUT"))
+                .andExpect(jsonPath(INTERPRETATION_GET + ".responses.['404'].content.['application/json'].examples.USER_NOT_FOUND.['$ref']")
+                        .value("#/components/examples/USER_NOT_FOUND"));
     }
 
 }

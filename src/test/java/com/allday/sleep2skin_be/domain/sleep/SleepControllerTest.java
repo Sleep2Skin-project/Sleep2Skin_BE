@@ -6,8 +6,11 @@ import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.MetricScore;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.UnavailableMetricResponse;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
+import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
 import com.allday.sleep2skin_be.domain.sleep.dto.SleepNormalizationCommand;
 import com.allday.sleep2skin_be.domain.sleep.dto.SleepSegmentCommand;
+import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepInterpretationResponse;
+import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepInterpretationResponse.Interpretation;
 import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepSessionUploadResponse;
 import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepSessionUploadResponse.SleepSummary;
 import com.allday.sleep2skin_be.domain.sleep.dto.response.SleepSessionUploadResult;
@@ -28,12 +31,15 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -46,6 +52,8 @@ class SleepControllerTest {
     private static final String USER_ID_HEADER = "X-User-Id";
     private static final Long USER_ID = 1L;
     private static final String PATH = "/api/v1/sleep/sessions";
+    private static final String INTERPRETATION_PATH = "/api/v1/sleep/interpretation";
+    private static final LocalDate BASE_DATE = LocalDate.of(2026, 8, 7);
 
     private static final String VALID_BODY = """
             { "segments": [
@@ -59,6 +67,9 @@ class SleepControllerTest {
 
     @MockitoBean
     private SleepSessionService sleepSessionService;
+
+    @MockitoBean
+    private SleepInterpretationService sleepInterpretationService;
 
     @Test
     @DisplayName("그날 첫 수신은 201과 함께 수면 집계·예보를 반환한다")
@@ -224,6 +235,78 @@ class SleepControllerTest {
                 .andExpect(jsonPath("$.error.code").value("USER_ID_HEADER_INVALID"));
 
         verify(sleepSessionService, never()).upload(anyLong(), any());
+    }
+
+    // ===== 수면 통역 카드 =====
+
+    @Test
+    @DisplayName("통역 카드는 짚어낸 피처와 헤드라인을 함께 반환한다")
+    void 통역_카드를_반환한다() throws Exception {
+        given(sleepInterpretationService.getInterpretation(USER_ID, BASE_DATE)).willReturn(
+                SleepInterpretationResponse.of(BASE_DATE, Interpretation.improve(
+                        "밤중에 3번 깼어요. 다크서클 회복이 더뎌질 수 있어요.",
+                        SleepFeature.AWAKE_COUNT, 50)));
+
+        mockMvc.perform(get(INTERPRETATION_PATH).header(USER_ID_HEADER, USER_ID)
+                        .param("baseDate", "2026-08-07"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.interpretation.tone").value("IMPROVE"))
+                .andExpect(jsonPath("$.data.interpretation.headline").value(containsString("3번")))
+                .andExpect(jsonPath("$.data.interpretation.focus.feature").value("AWAKE_COUNT"))
+                .andExpect(jsonPath("$.data.interpretation.focus.label").value("야간 각성"))
+                .andExpect(jsonPath("$.data.interpretation.focus.score").value(50));
+    }
+
+    @Test
+    @DisplayName("잘 잔 밤은 focus가 null로 나간다 — 억지로 지적하지 않는다")
+    void 칭찬일_때는_focus가_null이다() throws Exception {
+        given(sleepInterpretationService.getInterpretation(USER_ID, BASE_DATE)).willReturn(
+                SleepInterpretationResponse.of(BASE_DATE,
+                        Interpretation.praise("어젯밤은 회복에 충분한 잠이었어요.")));
+
+        mockMvc.perform(get(INTERPRETATION_PATH).header(USER_ID_HEADER, USER_ID)
+                        .param("baseDate", "2026-08-07"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.interpretation.tone").value("PRAISE"))
+                .andExpect(content().string(containsString("\"focus\":null")));
+    }
+
+    @Test
+    @DisplayName("수면 데이터가 없어도 200이고 status로 알린다")
+    void 통역_카드_빈_상태도_200이다() throws Exception {
+        given(sleepInterpretationService.getInterpretation(USER_ID, BASE_DATE))
+                .willReturn(SleepInterpretationResponse.empty(BASE_DATE));
+
+        mockMvc.perform(get(INTERPRETATION_PATH).header(USER_ID_HEADER, USER_ID)
+                        .param("baseDate", "2026-08-07"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("NO_SLEEP_DATA"))
+                .andExpect(jsonPath("$.data.message").isNotEmpty())
+                .andExpect(content().string(containsString("\"interpretation\":null")));
+    }
+
+    @Test
+    @DisplayName("통역 카드도 baseDate가 없으면 400이다")
+    void 통역_카드는_기준일이_필수다() throws Exception {
+        mockMvc.perform(get(INTERPRETATION_PATH).header(USER_ID_HEADER, USER_ID))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+
+        verify(sleepInterpretationService, never()).getInterpretation(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("통역 카드도 존재하지 않는 사용자는 404다")
+    void 통역_카드_없는_사용자는_404다() throws Exception {
+        given(sleepInterpretationService.getInterpretation(USER_ID, BASE_DATE))
+                .willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        mockMvc.perform(get(INTERPRETATION_PATH).header(USER_ID_HEADER, USER_ID)
+                        .param("baseDate", "2026-08-07"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"));
     }
 
     // ===== 픽스처 =====

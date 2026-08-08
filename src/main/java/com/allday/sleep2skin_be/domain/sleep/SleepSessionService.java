@@ -76,6 +76,7 @@ public class SleepSessionService {
     private final PersonalWeightRepository personalWeightRepository;
     private final SleepSessionNormalizer normalizer;
     private final SkinScoringEngine scoringEngine;
+    private final BedtimeRegularityCalculator bedtimeRegularityCalculator;
 
     @Transactional
     public SleepSessionUploadResult upload(Long userId, SleepNormalizationCommand command) {
@@ -167,26 +168,13 @@ public class SleepSessionService {
     }
 
     private SkinForecastScore calculateScore(Long userId, SleepNormalizationResult normalized) {
-        return scoringEngine.score(normalized.toScoringCommand(
-                bedtimeRegularity(userId, normalized), personalWeights(userId)));
-    }
+        // 이번 밤의 잠든 시각을 DB가 아니라 정규화 결과에서 넘긴다 — 갱신 경로에서는 DB에
+        // 아직 옛 값이 들어 있어, 저장 순서에 따라 규칙성이 달라진다
+        Double bedtimeRegularitySd = bedtimeRegularityCalculator.calculate(
+                userId, normalized.sleepDate(), normalized.sleepOnsetTime());
 
-    /**
-     * 최근 7일 취침 규칙성 (§10.6).
-     *
-     * <p><b>이번 밤은 DB가 아니라 정규화 결과에서 가져온다.</b> 갱신 경로에서는 DB에 아직 옛
-     * 값이 들어 있어, 저장·flush 순서에 따라 규칙성이 달라진다 — 같은 요청이 호출 순서 때문에
-     * 다른 점수를 내는 것은 재현이 안 되는 버그가 된다.
-     */
-    private Double bedtimeRegularity(Long userId, SleepNormalizationResult normalized) {
-        LocalDate sleepDate = normalized.sleepDate();
-        List<OffsetDateTime> onsetTimes = new ArrayList<>();
-        onsetTimes.add(normalized.sleepOnsetTime());
-        onsetTimes.addAll(sleepSessionRepository.findSleepOnsetTimes(userId,
-                sleepDate.minusDays(ScoringPolicy.BEDTIME_REGULARITY_WINDOW_DAYS - 1L),
-                sleepDate.minusDays(1)));
-
-        return BedtimeRegularity.standardDeviationMinutes(onsetTimes);
+        return scoringEngine.score(
+                normalized.toScoringCommand(bedtimeRegularitySd, personalWeights(userId)));
     }
 
     /** 행이 없으면 빈 맵이고, 스코어링은 그때 일반 가중치만 쓴다 — 행의 존재가 곧 개인화 시작 여부다. */
