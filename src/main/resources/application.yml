@@ -2,7 +2,10 @@ spring:
   application:
     name: sleep2skin_be
   datasource:
-    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+    # serverTimezone 은 아래 hibernate.timezone.default_storage 및 Dockerfile 의 TZ=UTC 와
+    # 같은 값이어야 한다. 시각 저장 기준은 이 셋이 함께 정하므로(docs/erd.md §3.1)
+    # 하나만 어긋나도 환경마다 DATETIME 에 들어가는 벽시계 숫자가 달라진다.
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
