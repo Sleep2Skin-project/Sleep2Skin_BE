@@ -1,9 +1,14 @@
 package com.allday.sleep2skin_be.domain.sleep.dto;
 
+import com.allday.sleep2skin_be.domain.skin.dto.ScoringCommand;
+import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
+import com.allday.sleep2skin_be.domain.sleep.entity.SleepSession;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 정규화 결과. {@code sleep_session} 한 행 + {@code sleep_stage_segment} 여러 행이 될 값들이다.
@@ -69,6 +74,36 @@ public record SleepNormalizationResult(
      */
     public int stagedSleepMinutes() {
         return deepSleepMinutes + remSleepMinutes + coreSleepMinutes;
+    }
+
+    /** 워치를 차지 않고 잔 밤인가. 두 값은 같은 착용 여부에 의존해 함께 결측된다. */
+    public boolean isWatchDataMissing() {
+        return hrv == null && restingHeartRate == null;
+    }
+
+    public SleepSession toEntity(Long userId) {
+        return SleepSession.builder()
+                .userId(userId)
+                .sleepDate(sleepDate)
+                .sleepOnsetTime(sleepOnsetTime)
+                .wakeTime(wakeTime)
+                .totalSleepMinutes(totalSleepMinutes)
+                .deepSleepMinutes(deepSleepMinutes)
+                .remSleepMinutes(remSleepMinutes)
+                .coreSleepMinutes(coreSleepMinutes)
+                .awakeCount(awakeCount)
+                .awakeMinutes(awakeMinutes)
+                .hrv(hrv)
+                .restingHeartRate(restingHeartRate)
+                .payloadHash(payloadHash)
+                .build();
+    }
+
+    /** 스코어링 입력으로 변환. 취침 규칙성과 개인 가중치는 세션 밖에서 와야 한다. */
+    public ScoringCommand toScoringCommand(Double bedtimeRegularitySd,
+                                           Map<SleepFeature, BigDecimal> personalWeights) {
+        return new ScoringCommand(awakeCount, totalSleepMinutes, deepSleepMinutes, remSleepMinutes,
+                stagedSleepMinutes(), bedtimeRegularitySd, hrv, restingHeartRate, personalWeights);
     }
 
 }

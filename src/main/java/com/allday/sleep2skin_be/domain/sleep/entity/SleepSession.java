@@ -1,5 +1,6 @@
 package com.allday.sleep2skin_be.domain.sleep.entity;
 
+import com.allday.sleep2skin_be.domain.sleep.dto.SleepNormalizationResult;
 import com.allday.sleep2skin_be.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -164,6 +165,28 @@ public class SleepSession extends BaseTimeEntity {
         this.hrv = hrv;
         this.restingHeartRate = restingHeartRate;
         this.payloadHash = payloadHash;
+    }
+
+    /**
+     * 같은 날짜에 <b>내용이 다른</b> 수면 데이터가 다시 왔을 때의 갱신.
+     *
+     * <p><b>그날 셀피 검증을 마쳤으면 호출하면 안 된다.</b> 예보를 재산출하게 되고, 이미 끝난
+     * 검증의 대조 기준이 사후에 달라져 적중률이 훼손되고 개인 가중치가 중복 학습된다.
+     *
+     * <p>{@code sleepDate}와 {@code userId}는 바꾸지 않는다 — 그 둘이 이 행을 찾아낸 키다.
+     */
+    public void applyNormalization(SleepNormalizationResult normalized) {
+        this.sleepOnsetTime = normalized.sleepOnsetTime();
+        this.wakeTime = normalized.wakeTime();
+        this.totalSleepMinutes = normalized.totalSleepMinutes();
+        this.deepSleepMinutes = normalized.deepSleepMinutes();
+        this.remSleepMinutes = normalized.remSleepMinutes();
+        this.coreSleepMinutes = normalized.coreSleepMinutes();
+        this.awakeCount = normalized.awakeCount();
+        this.awakeMinutes = normalized.awakeMinutes();
+        this.hrv = normalized.hrv();
+        this.restingHeartRate = normalized.restingHeartRate();
+        this.payloadHash = normalized.payloadHash();
     }
 
 }
