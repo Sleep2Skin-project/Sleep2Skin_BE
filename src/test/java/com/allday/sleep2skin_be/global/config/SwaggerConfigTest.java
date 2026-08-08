@@ -52,9 +52,13 @@ class SwaggerConfigTest {
                 .andExpect(jsonPath(CONSENTS_POST + ".responses.['400'].content.['application/json'].schema.['$ref']")
                         .value("#/components/schemas/ErrorApiResponse"))
 
-                // 성공 코드는 건드리지 않는다.
-                .andExpect(jsonPath(CONSENTS_POST + ".responses.['201'].content.['*/*'].schema.['$ref']")
-                        .value("#/components/schemas/ApiResponseConsentAgreeResponse"));
+                // 성공 코드는 스키마를 건드리지 않는다. 미디어 타입은 성공·실패가 같아야 한다 —
+                // springdoc 기본값(*/*)을 그대로 두면 성공만 다른 모양으로 문서화된다.
+                .andExpect(jsonPath(CONSENTS_POST + ".responses.['201'].content.['application/json'].schema.['$ref']")
+                        .value("#/components/schemas/ApiResponseConsentAgreeResponse"))
+                .andExpect(jsonPath(CONSENTS_POST + ".responses.['200'].content.['application/json'].schema.['$ref']")
+                        .value("#/components/schemas/ApiResponseConsentAgreeResponse"))
+                .andExpect(jsonPath("$.paths.['/api/v1/health'].get.responses.['200'].content.['application/json']").exists());
     }
 
     @Test
