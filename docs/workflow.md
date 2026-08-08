@@ -529,6 +529,46 @@ SHOW CREATE TABLE sleep_session;   -- (user_id, sleep_date)
 SHOW CREATE TABLE skin_forecast;   -- (user_id, base_date)
 ```
 
+### 앱은 nginx 뒤에 있다 (2026-08-09)
+
+컨테이너는 **`127.0.0.1:8080`에만 바인딩**된다. 외부에서 오는 요청은 nginx가 받아 TLS를 끊고 평문 `http`로 앱에 넘긴다.
+
+```
+브라우저 ──https──▶ nginx ──http──▶ 앱 (127.0.0.1:8080)
+```
+
+**그래서 앱이 보는 스킴은 항상 `http`다.** 원래 요청이 `https`였다는 사실은 `X-Forwarded-Proto` 헤더로만 전해지고, 그걸 신뢰하려면 설정이 필요하다.
+
+```yaml
+server:
+  forward-headers-strategy: framework
+```
+
+이게 없으면 앱이 자기가 `http`로 서비스되는 줄 알고 동작한다. **가장 먼저 드러나는 자리가 Swagger다** — springdoc이 문서의 `servers`를 `http://...`로 생성하고, `https`로 열린 Swagger 페이지에서 `http` 요청을 보내면 브라우저가 **혼합 콘텐츠로 차단**한다. 서버에 닿지도 못하고 끝나서 Swagger는 이유를 모른 채 이렇게만 띄운다.
+
+```
+Failed to fetch.
+Possible Reasons: CORS / Network Failure / URL scheme must be "http" or "https" for CORS request.
+```
+
+⚠️ **CORS 설정으로는 풀리지 않는다.** Swagger UI는 앱이 직접 내려주므로 같은 출처이고 애초에 CORS 검사 대상이 아니다. `CORS_ALLOWED_ORIGINS`는 앱·웹 프론트가 **다른 출처에서** 부를 때 쓰는 값이다.
+
+⚠️ **Swagger만의 문제도 아니다.** 리다이렉트 URL이나 `Location` 헤더에서도 같은 이유로 `http`가 새어 나간다.
+
+**nginx 쪽 전제** — 헤더를 실제로 보내고 있어야 한다. 이 설정 파일은 저장소에 없으므로 서버에서 확인한다.
+
+```bash
+sudo grep -r "X-Forwarded" /etc/nginx/
+```
+
+`proxy_set_header X-Forwarded-Proto $scheme;`이 없으면 앱이 참고할 정보 자체가 없다.
+
+**확인 방법** — 배포 후 문서의 `servers`가 `https`인지 본다.
+
+```bash
+curl -s https://sleep2skin.duckdns.org/v3/api-docs | head -c 300
+```
+
 ### ⚠️ DB를 처음 붙이는 배포에서 특히 조심한다
 
 `main`에 오래 DB 없는 버전이 떠 있었다면 **`app.env`에도 DB 값이 없다.** 배포하기 전에 넣어야 한다.

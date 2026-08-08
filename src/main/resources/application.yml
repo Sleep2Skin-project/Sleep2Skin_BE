@@ -1,3 +1,25 @@
+# 앱은 nginx 뒤에서 평문 http 로 요청을 받는다. TLS 는 프록시가 끊는다.
+#
+# 그래서 앱이 보는 스킴은 항상 http 이고, 원래 요청이 https 였다는 사실은
+# X-Forwarded-Proto 헤더로만 전해진다. 이 설정이 없으면 그 헤더를 무시해
+# 자기가 http 로 서비스되는 줄 알고 동작한다.
+#
+# 그러면 springdoc 이 문서의 servers 를 http://... 로 생성하고,
+# https 로 열린 Swagger 페이지에서 http 요청을 보내게 되어
+# 브라우저가 혼합 콘텐츠로 차단한다 — 서버에 닿지도 못하고 끝나서
+# Swagger 는 이유를 모른 채 "Failed to fetch (CORS / Network)" 만 띄운다.
+#
+# ⚠️ CORS 설정으로는 풀리지 않는다. Swagger UI 는 앱이 직접 내려주므로
+#    같은 출처이고 애초에 CORS 검사 대상이 아니다.
+#
+# ⚠️ Swagger 만의 문제도 아니다. 리다이렉트 URL 이나 Location 헤더에서도
+#    같은 이유로 http 가 새어 나간다.
+#
+# 전제: nginx 가 proxy_set_header X-Forwarded-Proto $scheme 를 보내야 한다.
+#       안 보내면 앱이 참고할 정보 자체가 없다 (docs/workflow.md §7).
+server:
+  forward-headers-strategy: framework
+
 spring:
   application:
     name: sleep2skin_be
