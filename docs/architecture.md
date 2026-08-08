@@ -530,11 +530,15 @@ AWS EC2 + Docker, DB는 **RDS(MySQL)**. **CI/CD 파이프라인 구축 완료.**
 
 > 현재 `compose.yaml`은 아직 로컬·운영 구분 없이 하나다. 분리 방식(프로파일 지정 vs 파일 분리)은 팀 협의 후 결정한다.
 
-CI는 MySQL service를 띄워 **실제 MySQL로도 테스트**한다. 로컬은 H2를 쓰므로 방언 차이는 CI에서 걸린다.
+**CI는 DB 서비스를 띄우지 않는다.** 테스트가 전부 H2(`test` 프로파일) 아니면 `@WebMvcTest`라 DataSource가 필요 없고, `bootJar`는 컴파일만 한다.
+
+> 원래 CI에 MySQL service가 있었지만 **아무도 쓰지 않았다.** 테스트는 `@ActiveProfiles("test")`로 H2를 물고 있었고, MySQL 컨테이너는 매번 기동·헬스체크 시간만 쓰고 있었다. 2026-08-08에 제거했다.
+>
+> ⚠️ **방언 차이는 지금 어디서도 걸리지 않는다.** H2를 `MODE=MySQL`로 띄워도 완전히 같지 않다. 특히 **유니크 제약이 실제로 걸렸는지 확인하는 것**([erd.md](erd.md) §2.4)은 H2에서 의미가 없다. 엔티티 작업에서 이 검증이 필요해지면 그때 MySQL service를 다시 붙이고 해당 테스트만 실제 MySQL로 돌린다.
 
 ```
 PR 생성 (dev/main 대상)
-   → CI: bootJar + test (MySQL service) + docker build
+   → CI: bootJar + test (H2) + docker build
    → 머지
    → EC2 배포
    → GET /api/v1/health 로 기동 확인

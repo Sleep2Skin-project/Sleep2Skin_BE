@@ -62,7 +62,7 @@ Get-Content .env | ForEach-Object {
 
 > H2는 `MODE=MySQL`로 띄우지만 방언 차이가 완전히 사라지지는 않습니다. MySQL 고유 문법에 의존하는 쿼리를 쓰게 되면 그 테스트만 실제 MySQL로 돌리도록 따로 다뤄야 합니다.
 
-CI(GitHub Actions)는 MySQL service를 띄워 실제 MySQL로도 검증합니다 (`.github/workflows/ci.yml` 참고).
+CI(GitHub Actions)도 **DB 없이 돕니다.** 테스트가 전부 H2 아니면 `@WebMvcTest`라 DB 서비스가 필요 없습니다 (`.github/workflows/ci.yml` 참고).
 
 ## Docker
 

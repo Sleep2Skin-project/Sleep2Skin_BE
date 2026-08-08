@@ -11,8 +11,8 @@ spring:
     driver-class-name: org.h2.Driver
   jpa:
     hibernate:
-      # 운영은 ddl-auto: none 이라 DDL 을 직접 관리하지만,
-      # 테스트는 엔티티에서 스키마를 만들어 쓴다.
+      # 로컬·운영은 ddl-auto: update 로 스키마를 누적하지만,
+      # 테스트는 매번 새로 만들고 끝나면 버린다.
       ddl-auto: create-drop
     properties:
       hibernate:
