@@ -30,8 +30,13 @@ X-User-Id: 1                       ← 모든 API 필수
 ### 응답
 
 ```jsonc
-{ "success": true, "data": { ... }, "error": null }
+{ "success": true,  "data":  { ... } }     // 성공
+{ "success": false, "error": { "code": "...", "message": "..." } }   // 실패
 ```
+
+**비어 있는 쪽은 응답에 나오지 않는다.** 성공 응답에 `error` 키가, 실패 응답에 `data` 키가 없다 — `success`가 이미 같은 정보를 담고 있어 중복이다. 클라이언트는 `success`로 분기한다.
+
+**단, `data` 안쪽의 `null`은 그대로 나온다.** 페이로드의 `null`은 의미 있는 값이다 — `"complexion": null`은 "그 지표를 산출할 수 없었다"는 뜻이고 `unavailable`의 사유와 짝을 이룬다(§3 지표가 빈 경우). 생략되는 것은 래퍼의 두 필드뿐이다.
 
 **빈 상태 처리가 이 서비스의 핵심 규칙이다.**
 
@@ -70,8 +75,7 @@ X-User-Id: 1                       ← 모든 API 필수
 ```jsonc
 { "success": true,
   "data": { "consentId": 1, "termsVersion": "1.0",
-            "agreedAt": "2026-08-08T11:28:19Z", "newlyAgreed": true },
-  "error": null }
+            "agreedAt": "2026-08-08T11:28:19Z", "newlyAgreed": true } }
 ```
 
 `agreedAt`은 `consent_history.created_at`이다. 행이 생기는 순간이 곧 동의하는 순간이라 별도 컬럼을 두지 않았다([erd.md](erd.md) §3.2).
@@ -82,8 +86,7 @@ X-User-Id: 1                       ← 모든 API 필수
 
 ```jsonc
 { "success": true,
-  "data": { "userId": 2, "onboardingCompleted": true, "newlyCompleted": true },
-  "error": null }
+  "data": { "userId": 2, "onboardingCompleted": true, "newlyCompleted": true } }
 ```
 
 **동의 이력이 있는지 서버가 확인하지 않는다.** ONB-02 → ONB-05 순서를 지키는 것은 클라이언트 몫이다. 서버가 막으면 시연용 데이터를 파이프라인에 주입하는 경로가 좁아진다.
@@ -263,8 +266,7 @@ Content-Type: application/json
       "barrier":    { "score": 98, "grade": "STABLE" },
       "unavailable": []
     }
-  },
-  "error": null
+  }
 }
 ```
 

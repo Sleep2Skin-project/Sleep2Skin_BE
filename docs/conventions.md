@@ -8,26 +8,28 @@ sleep2skin 백엔드의 코드 규칙. 구조 설계는 [architecture.md](archit
 
 ### 공통 래퍼
 
-모든 응답은 `ApiResponse<T>`로 감싼다. 성공과 실패의 모양이 같아야 프론트가 분기를 하나만 두면 된다.
+모든 응답은 `ApiResponse<T>`로 감싼다. 프론트는 `success` 하나로 분기한다.
 
 ```json
 // 성공
 {
   "success": true,
-  "data": { "darkCircle": 44, "complexion": 72, "barrier": 78 },
-  "error": null
+  "data": { "darkCircle": 44, "complexion": 72, "barrier": 78 }
 }
 
 // 실패
 {
   "success": false,
-  "data": null,
   "error": {
     "code": "SLEEP_SESSION_NOT_FOUND",
     "message": "수면 데이터가 없어 예보를 산출할 수 없습니다."
   }
 }
 ```
+
+**비어 있는 쪽은 직렬화하지 않는다.** `success`가 이미 같은 정보를 담고 있어 `"error": null`은 중복이다. `ApiResponse`에 붙은 `@JsonInclude(NON_NULL)`이 이 동작을 만든다.
+
+⚠️ **이 설정을 전역(`spring.jackson.default-property-inclusion`)으로 올리지 말 것.** 그러면 중첩 DTO의 `null`까지 사라지는데, 이 서비스에서 페이로드의 `null`은 의미 있는 값이다 — 아래 빈 상태 예시의 `"forecast": null`·`"message": null`이 그렇고, 예보 응답의 `"complexion": null`은 "그 지표를 산출할 수 없었다"는 뜻이라 `unavailable`의 사유와 짝을 이룬다([api.md](api.md) §3). 키가 통째로 없어지면 클라이언트가 **산출 불가와 키 이름 오류를 구분할 수 없다.** 클래스 단위 어노테이션이라 래퍼의 두 필드에만 적용된다.
 
 ```java
 public record ApiResponse<T>(
@@ -125,8 +127,7 @@ public enum ErrorCode {
     "message": "수면 데이터가 없어 오늘은 예보가 없습니다.",
     "baseDate": "2026-08-05",
     "forecast": null
-  },
-  "error": null
+  }
 }
 
 // 조회 — 정상 (200)
@@ -137,10 +138,11 @@ public enum ErrorCode {
     "message": null,
     "baseDate": "2026-08-05",
     "forecast": { "darkCircle": 44, "complexion": 72, "barrier": 78 }
-  },
-  "error": null
+  }
 }
 ```
+
+두 예시 안쪽의 `"forecast": null`·`"message": null`은 **그대로 나온다.** 사라지는 것은 래퍼의 `error`뿐이다.
 
 **모든 조회 API가 `{status, message, 페이로드}` 형태를 공유한다.** 리포트(REP-06 기록 7일 미만), 배너(HOME-09 검증 이력 없음)도 같은 모양을 쓴다. 화면마다 다른 스키마가 생기지 않게 하는 것이 이 규칙의 핵심이다.
 

@@ -448,7 +448,7 @@ POST /api/v1/sleep/sessions 수신
 **응답에 처리 여부를 명시한다.** 앱이 "새 예보인지 기존 예보인지"를 알아야 화면 갱신 여부를 판단할 수 있다.
 
 ```json
-{ "success": true, "data": { "processed": false, "forecast": { ... } }, "error": null }
+{ "success": true, "data": { "processed": false, "forecast": { ... } } }
 ```
 
 **구현 요건**:

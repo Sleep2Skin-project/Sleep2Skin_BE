@@ -14,12 +14,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -102,6 +105,26 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.error.code").value("USER_ID_HEADER_INVALID"));
 
         verify(consentService, never()).agree(anyLong());
+    }
+
+    /**
+     * {@code jsonPath("$.error").doesNotExist()}로는 이걸 검증할 수 없다 — JsonPath가 명시적 null을
+     * 부재로 취급해 {@code "error": null}이 그대로 실려 나가도 통과한다. 그래서 원문을 본다.
+     */
+    @Test
+    @DisplayName("래퍼는 비어 있는 쪽을 아예 직렬화하지 않는다")
+    void 래퍼는_비어있는_필드를_내보내지_않는다() throws Exception {
+        given(consentService.agree(USER_ID)).willReturn(new ConsentAgreeResponse(
+                10L, "1.0", OffsetDateTime.of(2026, 8, 8, 0, 12, 33, 0, ZoneOffset.UTC), true));
+
+        mockMvc.perform(post("/api/v1/users/me/consents").header(USER_ID_HEADER, USER_ID))
+                .andExpect(content().string(not(containsString("\"error\""))));
+
+        given(consentService.agree(USER_ID))
+                .willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        mockMvc.perform(post("/api/v1/users/me/consents").header(USER_ID_HEADER, USER_ID))
+                .andExpect(content().string(not(containsString("\"data\""))));
     }
 
     @Test
