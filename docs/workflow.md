@@ -390,9 +390,190 @@ PRD §7의 블로커는 코드로 결정할 수 없는 것들이다.
 
 `COMPOSE_FILE`·`DB_ROOT_PASSWORD`는 **로컬 전용**이라 넣지 않는다.
 
+⚠️ **`--env-file`은 따옴표를 벗기지 않는다.** `DB_PASSWORD="abc"`로 적으면 **따옴표까지 비밀번호가 된다.** `=` 앞뒤 공백도 값에 들어간다. Compose의 `.env`는 따옴표를 벗겨주므로 **로컬에서 쓰던 감각으로 옮겨 적으면 걸린다.**
+
+```
+DB_PASSWORD=값        ← 이렇게
+DB_PASSWORD="값"      ← 이러면 따옴표가 비밀번호의 일부다
+```
+
+값을 노출하지 않고 확인하는 방법이다. `first`가 `"`나 `'`면 잘못 적힌 것이다.
+
+```bash
+docker run --rm --env-file ~/app.env alpine sh -c 'echo "user=[$DB_USERNAME] len=${#DB_PASSWORD} first=[$(printf %.1s "$DB_PASSWORD")]"'
+```
+
+---
+
+## 8. 운영 DB (RDS) 설정
+
+**로컬과 운영이 정반대라 여기서 한 번 막힌다** (2026-08-09 첫 배포에서 실제로 발생).
+
+### `app.env`를 고쳐도 RDS에는 아무 일이 일어나지 않는다
+
+로컬 스택은 MySQL 컨테이너에 이 값들을 넘긴다.
+
+```yaml
+# docker-compose.local.yml
+MYSQL_DATABASE: ${DB_NAME}       # 이 이름으로 DB 를 만든다
+MYSQL_USER:     ${DB_USERNAME}   # 이 계정을 만든다
+MYSQL_PASSWORD: ${DB_PASSWORD}
+```
+
+**로컬은 `.env` 한 곳만 고치면 DB·계정·테이블이 전부 만들어진다.** 그래서 운영도 그럴 거라고 기대하게 된다.
+
+**RDS는 이미 돌고 있는 서버라 "처음 뜰 때"가 없다.** `app.env`를 읽는 주체도 아니다 — 그건 앱에게 "이 계정으로 붙어라"라고 지시하는 파일이고, RDS에게 계정을 만들라는 지시가 아니다. `cd.yml`도 `app.env`를 컨테이너에 넘겨주기만 한다.
+
+```
+app.env  →  "sleep2skin 계정으로, 이 비밀번호로 붙여줘"    ← 요청하는 쪽
+RDS      →  "그런 계정 없는데"                            ← 확인하는 쪽
+```
+
+자물쇠는 그대로인데 열쇠만 새로 깎아 온 셈이라, 아무리 새 비밀번호를 적어도 RDS가 모르면 `Access denied for user ...`가 난다.
+
+### 운영에서 누가 무엇을 만드는가
+
+| 대상 | 누가 만드나 |
+|---|---|
+| 계정 (`sleep2skin`) | **사람** — `CREATE USER` |
+| 데이터베이스 (`sleep2skin`) | **사람** — `CREATE DATABASE` |
+| 테이블 9개 | Hibernate (`ddl-auto: update`) |
+
+**데이터베이스도 앱이 만들지 못한다.** `ddl-auto: update`는 *이미 있는 데이터베이스 안에* 테이블을 만드는 기능이고, JDBC URL에 `createDatabaseIfNotExist`가 없다. **DB가 없으면 연결 단계에서 실패한다.**
+
+### ⚠️ 비밀번호는 두 곳에 있다
+
+| 어디 | 무엇이 정하나 |
+|---|---|
+| RDS 안 | `CREATE USER` / `ALTER USER` |
+| `app.env` | 파일에 적어둔 값 |
+
+**한쪽만 바꾸면 `Access denied`가 난다.** `app.env`의 `DB_PASSWORD`를 바꿀 때는 RDS에서 `ALTER USER`도 함께 실행한다.
+
+> MySQL은 **계정 없음 · 비밀번호 틀림 · 호스트 불일치**를 전부 같은 메시지로 응답한다. 메시지만으로 구분할 수 없으므로 `SELECT user, host FROM mysql.user WHERE user = '...'`로 확인한다.
+
+### 계정을 둘로 나눈다
+
+| 계정 | 쓰임 | 어디에 두나 |
+|---|---|---|
+| `admin` (마스터) | 사람이 DB 작업할 때만 | **`app.env`에 넣지 않는다** |
+| `sleep2skin` (앱 전용) | 앱이 붙을 때 | `app.env` |
+
+**둘을 다른 값으로 둔다.** 그래야 `app.env`가 유출돼도 피해가 `sleep2skin` 스키마 하나로 갇힌다. 마스터 계정이 거기 있으면 그 파일 하나가 인스턴스 전체 권한을 들고 있는 셈이다.
+
+마스터 비밀번호를 잊었다면 **콘솔 → RDS → 인스턴스 → 수정 → 새 마스터 암호 → 즉시 적용**으로 재설정한다. 기존 값을 몰라도 되고 재부팅도 필요 없다.
+
+### 최초 설정 절차
+
+**EC2에서 실행한다.** 보안그룹이 EC2만 3306을 허용하므로 개발자 PC에서는 접속되지 않는다.
+
+**1. 주소를 `app.env`에서 가져온다** — 손으로 옮겨 적으면 오타가 난다(실제로 `.com`이 `.co`로 잘려 한 번 막혔다).
+
+```bash
+RDS=$(grep '^DB_HOST=' ~/app.env | cut -d= -f2)
+```
+
+```bash
+echo "$RDS"
+```
+
+**2. 마스터 계정으로 접속한다.** `mysql` 클라이언트가 설치돼 있지 않아도 된다.
+
+```bash
+docker run -it --rm mysql:8 mysql -h "$RDS" -u admin -p
+```
+
+⚠️ **명령을 여러 줄로 나누지 않는다.** `\` 뒤에 공백이 하나만 붙어도 줄 연결이 깨져 `-h`가 전달되지 않고, mysql이 로컬 소켓을 찾다가 엉뚱한 에러를 낸다.
+
+**3. 프롬프트가 `mysql>`로 바뀌면** DB와 계정을 만든다.
+
+```sql
+CREATE DATABASE IF NOT EXISTS sleep2skin CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE USER IF NOT EXISTS 'sleep2skin'@'%' IDENTIFIED BY '앱비밀번호';
+ALTER USER 'sleep2skin'@'%' IDENTIFIED BY '앱비밀번호';
+GRANT ALL PRIVILEGES ON sleep2skin.* TO 'sleep2skin'@'%';
+FLUSH PRIVILEGES;
+SELECT user, host FROM mysql.user WHERE user = 'sleep2skin';
+```
+
+- **`utf8mb4`를 명시한다.** 닉네임·`action_master` 문구가 전부 한국어다. MySQL 8 기본값이지만 기본값에 기대면 인스턴스 설정이 다를 때 조용히 깨진다
+- **호스트는 `%`다.** `localhost`로 만들면 EC2에서 오는 접속이 다른 계정 취급이라 막힌다
+- **권한을 `sleep2skin.*`로 준다.** `ddl-auto: update`가 `CREATE TABLE`·`ALTER TABLE`을 하므로 더 좁히면 **앱은 뜨는데 테이블을 못 만드는** 상태가 된다. 의미 있는 경계는 권한 종류가 아니라 **스키마 하나로 가두는 것**이다
+
+**4. 앱 계정으로 붙는지 확인한 뒤 배포한다.**
+
+```bash
+docker run -it --rm mysql:8 mysql -h "$RDS" -u sleep2skin -p sleep2skin -e "SELECT 1"
+```
+
+`1`이 찍히면 앱도 붙는다. 실패하면 그대로 배포해도 CD 2단계에서 걸린다.
+
+### 에러로 어디까지 갔는지 읽는다
+
+| 에러 | 어디서 멈췄나 |
+|---|---|
+| `socket '/var/run/mysqld/mysqld.sock'` | `-h`가 전달되지 않았다. **명령이 쪼개졌다** |
+| `Unknown MySQL server host` | 주소 오타 — DNS에서 멈춤 |
+| `Access denied for user` | **RDS까지 도달했다.** 계정·비밀번호·호스트만 남음 |
+| `Unknown database 'sleep2skin'` | 접속은 됐는데 **DB가 없다** |
+| 한참 멈춰 있다 | 보안그룹 또는 주소 오타 |
+
+**`Access denied`가 나오면 절반은 성공이다** — 네트워크와 인스턴스는 정상이라는 뜻이다.
+
+### 배포 후 확인
+
+**유니크 제약 5개가 실제로 걸렸는지 본다**([erd.md](erd.md) §2 원칙 ④). 빠지면 중복 차단이 애플리케이션 코드에만 의존하게 되고 동시 요청에서 조용히 뚫린다.
+
+```sql
+SHOW CREATE TABLE sleep_session;   -- (user_id, sleep_date)
+SHOW CREATE TABLE skin_forecast;   -- (user_id, base_date)
+```
+
+### 앱은 nginx 뒤에 있다 (2026-08-09)
+
+컨테이너는 **`127.0.0.1:8080`에만 바인딩**된다. 외부에서 오는 요청은 nginx가 받아 TLS를 끊고 평문 `http`로 앱에 넘긴다.
+
+```
+브라우저 ──https──▶ nginx ──http──▶ 앱 (127.0.0.1:8080)
+```
+
+**그래서 앱이 보는 스킴은 항상 `http`다.** 원래 요청이 `https`였다는 사실은 `X-Forwarded-Proto` 헤더로만 전해지고, 그걸 신뢰하려면 설정이 필요하다.
+
+```yaml
+server:
+  forward-headers-strategy: framework
+```
+
+이게 없으면 앱이 자기가 `http`로 서비스되는 줄 알고 동작한다. **가장 먼저 드러나는 자리가 Swagger다** — springdoc이 문서의 `servers`를 `http://...`로 생성하고, `https`로 열린 Swagger 페이지에서 `http` 요청을 보내면 브라우저가 **혼합 콘텐츠로 차단**한다. 서버에 닿지도 못하고 끝나서 Swagger는 이유를 모른 채 이렇게만 띄운다.
+
+```
+Failed to fetch.
+Possible Reasons: CORS / Network Failure / URL scheme must be "http" or "https" for CORS request.
+```
+
+⚠️ **CORS 설정으로는 풀리지 않는다.** Swagger UI는 앱이 직접 내려주므로 같은 출처이고 애초에 CORS 검사 대상이 아니다. `CORS_ALLOWED_ORIGINS`는 앱·웹 프론트가 **다른 출처에서** 부를 때 쓰는 값이다.
+
+⚠️ **Swagger만의 문제도 아니다.** 리다이렉트 URL이나 `Location` 헤더에서도 같은 이유로 `http`가 새어 나간다.
+
+**nginx 쪽 전제** — 헤더를 실제로 보내고 있어야 한다. 이 설정 파일은 저장소에 없으므로 서버에서 확인한다.
+
+```bash
+sudo grep -r "X-Forwarded" /etc/nginx/
+```
+
+`proxy_set_header X-Forwarded-Proto $scheme;`이 없으면 앱이 참고할 정보 자체가 없다.
+
+**확인 방법** — 배포 후 문서의 `servers`가 `https`인지 본다.
+
+```bash
+curl -s https://sleep2skin.duckdns.org/v3/api-docs | head -c 300
+```
+
 ### ⚠️ DB를 처음 붙이는 배포에서 특히 조심한다
 
 `main`에 오래 DB 없는 버전이 떠 있었다면 **`app.env`에도 DB 값이 없다.** 배포하기 전에 넣어야 한다.
+
+**`app.env`에 값을 넣는 것만으로는 부족하다.** RDS 쪽에 계정과 데이터베이스를 따로 만들어야 하며, 로컬과 달리 앱이 대신 만들어주지 않는다 → **§8**
 
 **스키마는 `ddl-auto: update`가 만든다.** 테이블이 없으면 엔티티 그대로 생성되지만, **이미 있는 테이블의 제약을 완화하지는 못한다** — `NOT NULL` → `NULL 허용` 같은 변경은 반영되지 않는다. 로컬은 `docker compose down -v`로 넘어가지만 **RDS에는 대응하는 조치가 없다.** 데이터가 쌓이기 전에 스키마를 굳혀두는 편이 낫다.
 
@@ -402,7 +583,7 @@ PRD §7의 블로커는 코드로 결정할 수 없는 것들이다.
 
 ---
 
-## 8. 참고
+## 9. 참고
 
 - 아키텍처: [architecture.md](architecture.md)
 - 코딩 규칙: [conventions.md](conventions.md)
