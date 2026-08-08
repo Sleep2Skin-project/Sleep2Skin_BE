@@ -1,5 +1,6 @@
 package com.allday.sleep2skin_be.global.config;
 
+import com.allday.sleep2skin_be.global.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -83,11 +84,63 @@ class SwaggerConfigTest {
 
                 // 상태 코드별 설명도 인터페이스에서 온다.
                 .andExpect(jsonPath(CONSENTS_POST + ".responses.['201'].description")
-                        .value(containsString("newlyAgreed")))
+                        .value(containsString("newlyAgreed")));
+    }
 
-                // @Tag의 공통 규약 설명
+    /**
+     * {@code @Tag} 설명은 Swagger UI에서 태그를 접어도 계속 펼쳐진 채 목록 맨 위를 차지한다.
+     * 공통 규약을 거기 넣으면 API 목록을 훑기가 불편해져, 태그는 한 줄로 두고 규약은 각 API 설명에
+     * 되풀이해 적기로 했다.
+     */
+    @Test
+    @DisplayName("공통 규약은 태그가 아니라 각 API 설명에 들어 있다")
+    void 공통_규약이_API마다_적혀_있다() throws Exception {
+        String onboardingPatch = "$.paths.['/api/v1/users/me/onboarding'].patch";
+
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+
+                // 태그는 목록에서 한 줄로만 보인다.
                 .andExpect(jsonPath("$.tags[?(@.name == 'User')].description")
-                        .value(hasItem(containsString("X-User-Id"))));
+                        .value(hasItem("사용자 · 동의 · 온보딩 API")))
+
+                // 규약은 API를 펼치면 그 안에 다 있다.
+                .andExpect(jsonPath(CONSENTS_POST + ".description").value(containsString("X-User-Id")))
+                .andExpect(jsonPath(CONSENTS_POST + ".description").value(containsString("USER_NOT_FOUND")))
+                .andExpect(jsonPath(onboardingPatch + ".description").value(containsString("X-User-Id")))
+                .andExpect(jsonPath(onboardingPatch + ".description").value(containsString("USER_NOT_FOUND")));
+    }
+
+    /**
+     * 예시 문구를 손으로 적으면 {@link ErrorCode}가 바뀌어도 문서만 조용히 틀린 채 남는다.
+     * 실제로 그런 적이 있어서 생성으로 바꿨고, 그 생성이 계속 유지되는지를 여기서 본다.
+     */
+    @Test
+    @DisplayName("에러 예시는 ErrorCode에서 생성되어 상황별로 다르게 붙는다")
+    void 에러_예시가_상황별로_다르다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+
+                // 예시의 메시지는 enum에서 나온다 — 손으로 적은 문구와 대조하지 않는다.
+                .andExpect(jsonPath("$.components.examples.USER_NOT_FOUND.value.error.code")
+                        .value(ErrorCode.USER_NOT_FOUND.name()))
+                .andExpect(jsonPath("$.components.examples.USER_NOT_FOUND.value.error.message")
+                        .value(ErrorCode.USER_NOT_FOUND.getMessage()))
+                .andExpect(jsonPath("$.components.examples.USER_NOT_FOUND.value.success").value(false))
+                .andExpect(jsonPath("$.components.examples.USER_NOT_FOUND.value.data").doesNotExist())
+
+                // ErrorCode를 추가하면 예시도 저절로 생긴다.
+                .andExpect(jsonPath("$.components.examples.length()").value(ErrorCode.values().length))
+
+                // 상태 코드마다 다른 예시가 붙는다.
+                .andExpect(jsonPath(CONSENTS_POST + ".responses.['404'].content.['application/json'].examples.USER_NOT_FOUND.['$ref']")
+                        .value("#/components/examples/USER_NOT_FOUND"))
+                .andExpect(jsonPath(CONSENTS_POST + ".responses.['400'].content.['application/json'].examples.USER_ID_HEADER_INVALID.['$ref']")
+                        .value("#/components/examples/USER_ID_HEADER_INVALID"))
+
+                // 예시를 붙여도 스키마는 실패 래퍼여야 한다 — 커스터마이저가 둘 다 챙기는지 본다.
+                .andExpect(jsonPath(CONSENTS_POST + ".responses.['404'].content.['application/json'].schema.['$ref']")
+                        .value("#/components/schemas/ErrorApiResponse"));
     }
 
     @Test

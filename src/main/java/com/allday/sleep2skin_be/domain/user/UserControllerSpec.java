@@ -5,6 +5,8 @@ import com.allday.sleep2skin_be.domain.user.dto.response.OnboardingCompleteRespo
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 
@@ -15,35 +17,14 @@ import org.springframework.http.ResponseEntity;
  * 설명이 길어질 수밖에 없는데, 그게 컨트롤러에 그대로 붙으면 실제 코드가 어노테이션에 파묻힌다.
  * 컨트롤러는 위임 로직만 남기고 문서는 여기서 관리한다.
  *
+ * <p><b>공통 규약도 API마다 되풀이해 적는다.</b> {@code @Tag} 설명은 Swagger UI에서 태그를 접어도
+ * 계속 펼쳐진 채 목록 맨 위를 차지해, 거기에 규약을 넣으면 API 목록을 보기가 불편해진다.
+ * 읽는 사람은 자기가 쓸 API 하나만 펼치므로 그 안에 다 있는 편이 낫다.
+ *
  * <p><b>{@link CurrentUserId}는 구현체 쪽에도 반드시 붙어 있어야 한다.</b> 파라미터 어노테이션은
  * 인터페이스에서 상속되지 않아, 여기에만 두면 리졸버가 파라미터를 인식하지 못한다.
  */
-@Tag(name = "User", description = """
-        사용자 · 동의 · 온보딩 API
-
-        ### 공통 규약
-
-        - **모든 요청에 `X-User-Id` 헤더가 필요하다.** 인증이 없어 클라이언트가 사용자를 직접 지정한다.
-          우측 상단 자물쇠가 아니라 각 API의 파라미터 입력란에 값을 넣는다.
-        - 응답은 항상 공통 래퍼에 담긴다. **성공이면 `error` 키가, 실패면 `data` 키가 아예 없다.**
-          `success`로 분기하면 된다.
-
-        ```jsonc
-        { "success": true,  "data":  { ... } }
-        { "success": false, "error": { "code": "USER_NOT_FOUND", "message": "사용자를 찾을 수 없습니다." } }
-        ```
-
-        - **분기는 `error.code`(문자열)로 한다.** `error.message`는 사용자에게 그대로 보여줄 수 있는
-          한국어 문장이지만 문구가 다듬어질 수 있으므로 분기 조건으로 쓰지 않는다.
-
-        ### 이 태그의 공통 에러
-
-        | 코드 | `error.code` | 언제 | 앱이 할 일 |
-        |---|---|---|---|
-        | `400` | `USER_ID_HEADER_INVALID` | `X-User-Id` 헤더가 없거나 숫자가 아님 | 요청 버그다. 헤더를 넣고 다시 호출 |
-        | `404` | `USER_NOT_FOUND` | 그 `userId`의 사용자가 DB에 없음 | 시딩된 테스트 유저 ID인지 확인 |
-        | `500` | `INTERNAL_ERROR` | 서버 오류 | 재시도 안내 |
-        """)
+@Tag(name = "User", description = "사용자 · 동의 · 온보딩 API")
 public interface UserControllerSpec {
 
     @Operation(summary = "개인정보 수집·이용 동의 저장 (ONB-02)", description = """
@@ -59,11 +40,23 @@ public interface UserControllerSpec {
 
             **본문이 없다.** `X-User-Id` 헤더만 있으면 된다.
 
+            `X-User-Id`는 요청을 보낸 사용자의 식별자다. 인증이 없어 클라이언트가 직접 지정하며,
+            아래 파라미터 입력란에 값을 넣고 실행하면 된다.
+
             약관 버전은 **서버가 정한다.** 클라이언트가 버전을 보내면 임의의 문자열이 이력에 섞여
             "언제 어느 버전에 동의했는가"를 신뢰할 수 없게 되므로 받지 않는다. 현재 버전은 응답의
             `termsVersion`으로 확인할 수 있다.
 
-            ### 결과와 응답 코드
+            ### 응답
+
+            공통 래퍼에 담겨 나간다. **성공이면 `error` 키가, 실패면 `data` 키가 아예 없다.**
+            `success`로 분기하면 된다.
+
+            ```jsonc
+            { "success": true,
+              "data": { "consentId": 1, "termsVersion": "1.0",
+                        "agreedAt": "2026-08-08T11:28:19Z", "newlyAgreed": true } }
+            ```
 
             | 상황 | 코드 | `newlyAgreed` | 서버가 한 일 |
             |---|---|---|---|
@@ -72,6 +65,8 @@ public interface UserControllerSpec {
 
             **둘 다 성공이다.** 화면 흐름을 나눌 필요가 없다면 `newlyAgreed`는 무시하고 다음 단계로
             진행하면 된다.
+
+            `agreedAt`은 동의한 시각이다(ISO 8601, UTC).
 
             ### 재호출해도 안전하다
 
@@ -83,16 +78,30 @@ public interface UserControllerSpec {
 
             ### 예외
 
-            공통 에러(`USER_ID_HEADER_INVALID`, `USER_NOT_FOUND`) 외에 이 API만의 에러는 없다.
+            실패 응답은 `{ "success": false, "error": { "code": ..., "message": ... } }` 모양이다.
+            **분기는 `error.code`(문자열)로 한다.** `error.message`는 사용자에게 그대로 보여줄 수 있는
+            한국어 문장이지만 문구가 다듬어질 수 있으므로 분기 조건으로 쓰지 않는다.
+
+            | 코드 | `error.code` | 언제 | 앱이 할 일 |
+            |---|---|---|---|
+            | `400` | `USER_ID_HEADER_INVALID` | `X-User-Id` 헤더가 없거나 숫자가 아님 | 요청 버그다. 헤더를 넣고 다시 호출 |
+            | `404` | `USER_NOT_FOUND` | 그 `userId`의 사용자가 DB에 없음 | 시딩된 테스트 유저 ID인지 확인 |
+            | `500` | `INTERNAL_ERROR` | 서버 오류 | 재시도 안내 |
             """)
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "201", description = "동의 이력을 새로 저장했다 (`newlyAgreed: true`)")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "200", description = "이미 같은 버전에 동의한 상태여서 기존 이력을 반환했다 (`newlyAgreed: false`)")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "400", description = "`USER_ID_HEADER_INVALID` — `X-User-Id` 헤더 누락 또는 형식 오류")
+            responseCode = "400", description = "`USER_ID_HEADER_INVALID` — `X-User-Id` 헤더 누락 또는 형식 오류",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_ID_HEADER_INVALID",
+                    ref = "#/components/examples/USER_ID_HEADER_INVALID")))
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자")
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
     ResponseEntity<ApiResponse<ConsentAgreeResponse>> agreeConsent(@CurrentUserId Long userId);
 
     @Operation(summary = "온보딩 완료 처리 (ONB-05)", description = """
@@ -105,9 +114,20 @@ public interface UserControllerSpec {
 
             ### 요청
 
-            **본문이 없다.** 바꿀 상태가 하나뿐이라 `PATCH` + 빈 본문이다.
+            **본문이 없다.** `X-User-Id` 헤더만 있으면 된다. 바꿀 상태가 하나뿐이라 `PATCH` + 빈 본문이다.
 
-            ### 결과와 응답 코드
+            `X-User-Id`는 요청을 보낸 사용자의 식별자다. 인증이 없어 클라이언트가 직접 지정하며,
+            아래 파라미터 입력란에 값을 넣고 실행하면 된다.
+
+            ### 응답
+
+            공통 래퍼에 담겨 나간다. **성공이면 `error` 키가, 실패면 `data` 키가 아예 없다.**
+            `success`로 분기하면 된다.
+
+            ```jsonc
+            { "success": true,
+              "data": { "userId": 2, "onboardingCompleted": true, "newlyCompleted": true } }
+            ```
 
             성공하면 항상 `200`이고 `onboardingCompleted`는 언제나 `true`다.
 
@@ -126,14 +146,28 @@ public interface UserControllerSpec {
 
             ### 예외
 
-            공통 에러(`USER_ID_HEADER_INVALID`, `USER_NOT_FOUND`) 외에 이 API만의 에러는 없다.
+            실패 응답은 `{ "success": false, "error": { "code": ..., "message": ... } }` 모양이다.
+            **분기는 `error.code`(문자열)로 한다.** `error.message`는 사용자에게 그대로 보여줄 수 있는
+            한국어 문장이지만 문구가 다듬어질 수 있으므로 분기 조건으로 쓰지 않는다.
+
+            | 코드 | `error.code` | 언제 | 앱이 할 일 |
+            |---|---|---|---|
+            | `400` | `USER_ID_HEADER_INVALID` | `X-User-Id` 헤더가 없거나 숫자가 아님 | 요청 버그다. 헤더를 넣고 다시 호출 |
+            | `404` | `USER_NOT_FOUND` | 그 `userId`의 사용자가 DB에 없음 | 시딩된 테스트 유저 ID인지 확인 |
+            | `500` | `INTERNAL_ERROR` | 서버 오류 | 재시도 안내 |
             """)
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "200", description = "처리 성공. 이미 완료된 사용자도 여기에 해당한다 (`newlyCompleted: false`)")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "400", description = "`USER_ID_HEADER_INVALID` — `X-User-Id` 헤더 누락 또는 형식 오류")
+            responseCode = "400", description = "`USER_ID_HEADER_INVALID` — `X-User-Id` 헤더 누락 또는 형식 오류",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_ID_HEADER_INVALID",
+                    ref = "#/components/examples/USER_ID_HEADER_INVALID")))
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자")
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
     ApiResponse<OnboardingCompleteResponse> completeOnboarding(@CurrentUserId Long userId);
 
 }

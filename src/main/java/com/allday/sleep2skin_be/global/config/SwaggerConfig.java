@@ -1,8 +1,10 @@
 package com.allday.sleep2skin_be.global.config;
 
+import com.allday.sleep2skin_be.global.exception.ErrorCode;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserIdArgumentResolver;
 import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.examples.Example;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.media.BooleanSchema;
 import io.swagger.v3.oas.models.media.Content;
@@ -18,6 +20,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Configuration
 public class SwaggerConfig {
@@ -97,6 +101,8 @@ public class SwaggerConfig {
                     .addProperty("error", new Schema<>()
                             .$ref(SCHEMA_REF_PREFIX + "ErrorResponse")));
 
+            registerErrorExamples(openApi);
+
             openApi.getComponents().getSchemas().forEach((schemaName, schema) -> {
                 if (schemaName.startsWith("ApiResponse") && schema.getProperties() != null) {
                     schema.getProperties().remove("error");
@@ -110,13 +116,63 @@ public class SwaggerConfig {
                         }
                         operation.getResponses().forEach((statusCode, response) -> {
                             if (statusCode.startsWith("4") || statusCode.startsWith("5")) {
-                                response.setContent(new Content().addMediaType(APPLICATION_JSON,
-                                        new MediaType().schema(new Schema<>()
-                                                .$ref(SCHEMA_REF_PREFIX + ERROR_WRAPPER_SCHEMA))));
+                                applyErrorSchema(response);
                             }
                         });
                     }));
         };
+    }
+
+    /**
+     * {@link ErrorCode} 하나마다 실패 응답 예시를 만들어 {@code components.examples}에 등록한다.
+     * 문서에서는 {@code #/components/examples/{코드 이름}}으로 참조한다.
+     *
+     * <p><b>예시를 손으로 적지 않기 위한 것이다.</b> 전에는 {@code ErrorResponse}에 예시가 하드코딩돼
+     * 있어서 <b>모든 API가 같은 예시를 보여줬고, 그나마도 실제로는 나갈 수 없는 문구였다</b> —
+     * 문서에 적힌 메시지와 enum의 메시지가 서로 달랐다. 손으로 옮겨 적는 한 언제든 다시 어긋난다.
+     *
+     * <p>여기서 만들면 코드·메시지·상태 코드가 전부 enum에서 나오므로 어긋날 수가 없고,
+     * {@code ErrorCode}에 새 값을 추가하면 예시도 저절로 생긴다. 각 API는 <b>어떤 코드가 나오는지만</b>
+     * 고르면 된다.
+     */
+    private void registerErrorExamples(OpenAPI openApi) {
+        for (ErrorCode errorCode : ErrorCode.values()) {
+            Map<String, Object> error = new LinkedHashMap<>();
+            error.put("code", errorCode.name());
+            error.put("message", errorCode.getMessage());
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("success", false);
+            body.put("error", error);
+
+            openApi.getComponents().addExamples(errorCode.name(), new Example()
+                    .summary(errorCode.getStatus().value() + " " + errorCode.name())
+                    .description(errorCode.getMessage())
+                    .value(body));
+        }
+    }
+
+    /**
+     * 실패 응답이 실패 래퍼 스키마를 가리키게 한다.
+     *
+     * <p><b>이미 있는 내용을 덮어쓰지 않는다.</b> 스펙이 {@code @Content}로 예시를 직접 지정했다면
+     * 그건 "이 API에서 어떤 코드가 나오는가"라는, 여기서는 알 수 없는 정보다. 스키마만 바로잡고
+     * 예시는 그대로 둔다.
+     */
+    private void applyErrorSchema(io.swagger.v3.oas.models.responses.ApiResponse response) {
+        Content content = response.getContent();
+
+        if (content == null || content.isEmpty()) {
+            response.setContent(new Content().addMediaType(APPLICATION_JSON,
+                    new MediaType().schema(errorWrapperRef())));
+            return;
+        }
+
+        content.values().forEach(mediaType -> mediaType.setSchema(errorWrapperRef()));
+    }
+
+    private Schema<?> errorWrapperRef() {
+        return new Schema<>().$ref(SCHEMA_REF_PREFIX + ERROR_WRAPPER_SCHEMA);
     }
 
 }
