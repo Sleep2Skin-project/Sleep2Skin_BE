@@ -8,6 +8,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -59,6 +61,33 @@ class SwaggerConfigTest {
                 .andExpect(jsonPath(CONSENTS_POST + ".responses.['200'].content.['application/json'].schema.['$ref']")
                         .value("#/components/schemas/ApiResponseConsentAgreeResponse"))
                 .andExpect(jsonPath("$.paths.['/api/v1/health'].get.responses.['200'].content.['application/json']").exists());
+    }
+
+    /**
+     * 문서를 {@code *ControllerSpec} 인터페이스에 두는 구조가 실제로 동작하는지 본다.
+     *
+     * <p>springdoc이 인터페이스의 어노테이션을 못 찾으면 <b>설명만 조용히 사라지고 API는 그대로
+     * 뜬다.</b> 컴파일도 테스트도 통과하므로 프론트가 빈 문서를 보기 전까지 아무도 모른다.
+     */
+    @Test
+    @DisplayName("ControllerSpec 인터페이스에 붙인 설명이 문서에 실린다")
+    void 인터페이스의_문서가_반영된다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(CONSENTS_POST + ".summary").value(containsString("동의")))
+                .andExpect(jsonPath(CONSENTS_POST + ".description").value(containsString("멱등")))
+                .andExpect(jsonPath("$.paths.['/api/v1/users/me/onboarding'].patch.summary")
+                        .value(containsString("온보딩")))
+                .andExpect(jsonPath("$.paths.['/api/v1/users/me/onboarding'].patch.description")
+                        .value(containsString("ONB-02")))
+
+                // 상태 코드별 설명도 인터페이스에서 온다.
+                .andExpect(jsonPath(CONSENTS_POST + ".responses.['201'].description")
+                        .value(containsString("newlyAgreed")))
+
+                // @Tag의 공통 규약 설명
+                .andExpect(jsonPath("$.tags[?(@.name == 'User')].description")
+                        .value(hasItem(containsString("X-User-Id"))));
     }
 
     @Test
