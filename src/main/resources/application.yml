@@ -21,6 +21,18 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        # OffsetDateTime 을 DATETIME 컬럼에 넣을 때의 기준을 못 박는다.
+        #
+        # MySQL DATETIME 에는 타임존 정보가 없다. 요청에 실려 온 오프셋(+09:00)은
+        # sleepDate 를 정하는 데 쓰이고 저장 시점에 사라지며, 남는 벽시계 숫자가
+        # 어느 존 기준인지는 이 설정이 정한다. 명시하지 않으면 JVM 기본 타임존이나
+        # 라이브러리 기본값을 타므로 환경·버전에 따라 기준이 흔들린다.
+        #
+        # 흔들리면 sleep_onset_time 이 밤마다 다른 기준을 가리키고,
+        # 그 7일 표준편차인 취침 규칙성이 틀어져 혈색 점수만 조용히 틀린다
+        # (docs/erd.md §3.3, PRD §10.3). 값 범위는 정상이라 아무 제약에도 안 걸린다.
+        timezone:
+          default_storage: NORMALIZE_UTC
 
 springdoc:
   api-docs:

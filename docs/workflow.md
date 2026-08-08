@@ -43,6 +43,16 @@ docker compose up -d mysql
 
 **테스트는 MySQL 없이 돈다.** `test` 프로파일이 H2를 물려주므로 `./gradlew test`만 치면 된다.
 
+### IDE 실행 설정 — 타임존을 UTC로 맞춘다
+
+IDE 실행 버튼으로 띄운다면 **VM 옵션에 `-Duser.timezone=UTC`를 넣는다.**
+
+운영 컨테이너는 UTC다(`Dockerfile`의 `ENV TZ=UTC`). 로컬 개발 머신은 KST이므로 그냥 두면 **두 환경의 JVM 타임존이 다르다.** 코드에 `LocalDate.now()` 같은 것이 섞여 들어가도 로컬에서는 멀쩡하고 **EC2에서만, 그것도 한국 시간 오전 9시 이전에만** 하루 밀린다. 재현이 안 되는 버그가 된다.
+
+**값이 UTC라는 것보다 두 환경이 같다는 것이 요점이다.** 저장 기준을 왜 고정했는지는 [erd.md](erd.md) §3.1에 있다.
+
+IDE는 `.env`를 읽지 않으므로 **DB 접속 정보도 실행 설정의 환경 변수에 직접 넣어야 한다** — `DB_HOST`·`DB_PORT`·`DB_NAME`·`DB_USERNAME`·`DB_PASSWORD`. 값은 `.env`와 같다. 빠뜨리면 `${DB_HOST}`가 풀리지 않아 기동에 실패한다.
+
 | | 로컬 테스트 | 로컬 실행 | 운영 |
 |---|---|---|---|
 | DB | H2 (인메모리) | MySQL 컨테이너 | **AWS RDS (MySQL)** |

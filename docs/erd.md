@@ -177,7 +177,30 @@ SHOW CREATE TABLE sleep_session;
 | `time_zone` | **앱이 요청에 `baseDate`를 실어 보낸다.** 서버가 "오늘"을 정할 필요가 없다 |
 | `deleted_at` | MY-04는 **복구 불가 영구 삭제**다. soft delete가 아니다 |
 
-`time_zone`을 뺀 대신 **모든 조회 API가 기준일을 파라미터로 받는다.** 서버 시각이 UTC여도 날짜가 어긋나지 않는다.
+`time_zone`을 뺀 대신 **날짜가 필요한 API가 전부 기준일을 파라미터로 받는다.** 조회만이 아니라 동작 API도 그렇다 — `POST /skin/selfie`는 어느 날짜의 예보와 대조할지 알아야 해서 `baseDate`를 받는다([api.md](api.md) §2.3). 서버 시각이 UTC여도 날짜가 어긋나지 않는다.
+
+#### `DATETIME`은 오프셋을 저장하지 않는다 — 기준을 설정으로 못 박았다
+
+**"날짜를 고르는 문제"와 "시각을 저장하는 문제"는 별개다.** 위 규약은 앞엣것만 해결한다.
+
+이 문서의 모든 시각 컬럼이 `DATETIME(6)`인데 **MySQL `DATETIME`에는 타임존 정보가 없다.** 요청에 실려 온 오프셋(`+09:00`)은 `sleep_date`를 계산하는 데 쓰이고 **저장 시점에 사라진다.** 남는 것은 벽시계 숫자 하나이고, 그 숫자가 어느 존 기준인지는 세 군데가 함께 정한다 — JDBC URL의 `serverTimezone`, Hibernate의 저장 정책, JVM 기본 타임존.
+
+**셋 다 명시하지 않으면 환경마다 기준이 달라진다.** 운영 컨테이너는 UTC, 로컬 개발 머신은 KST다.
+
+기준이 흔들리면 **`sleep_onset_time`이 밤마다 다른 것을 가리키고**, 그 7일 표준편차인 취침 규칙성이 틀어져 **혈색 점수만 조용히 틀린다**([prd.md](prd.md) §10.3). `sleep_stage_segment`의 `start_time`·`end_time`도 같은 값을 받으며, 이쪽은 타임라인 화면에 그대로 그려진다.
+
+**그래서 두 곳을 고정했다.** 엔티티를 만들기 전에 정한 것이며, 나중에 바꾸면 이미 저장된 값의 기준이 달라져 마이그레이션이 필요해진다.
+
+| 위치 | 설정 | 역할 |
+|---|---|---|
+| `application.yml` | `hibernate.timezone.default_storage: NORMALIZE_UTC` | `OffsetDateTime` → `DATETIME` 변환을 UTC로 통일 |
+| `Dockerfile` | `ENV TZ=UTC` | 운영 JVM 타임존 고정 |
+
+로컬은 IDE 실행 설정에 `-Duser.timezone=UTC`를 넣어 맞춘다([workflow.md](workflow.md) §1). **값이 UTC라는 것보다 두 환경이 같다는 것이 요점이다** — 다르면 `LocalDate.now()` 한 줄이 섞여도 로컬에서 재현되지 않는다.
+
+**엔티티 필드는 `OffsetDateTime`으로 쓴다.** `BaseTimeEntity`·`BaseCreatedEntity`가 이미 그렇게 돼 있고, 도메인 시각 컬럼도 같은 타입을 따른다 — `LocalDateTime`으로 받으면 요청의 오프셋이 컨트롤러 단계에서 이미 버려져 위 설정이 개입할 여지가 없다.
+
+> **남는 한계** — `baseDate`가 틀렸는지는 **서버가 알 수 없다.** 대조할 다른 날짜 정보가 요청에 없다. 규약 문서가 유일한 방어선이고 컴파일러도 테스트도 잡아주지 않는다.
 
 ### 3.2 `consent_history` — 동의 이력
 
