@@ -1,13 +1,13 @@
 package com.allday.sleep2skin_be.domain.skin.dto.response;
 
 import com.allday.sleep2skin_be.domain.skin.ScoringPolicy;
-import com.allday.sleep2skin_be.domain.skin.dto.SkinForecastScore.UnavailableMetric;
 import com.allday.sleep2skin_be.domain.skin.dto.SkinGrade;
 import com.allday.sleep2skin_be.domain.skin.dto.UnavailableReason;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinForecast;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,12 +35,28 @@ public record SkinForecastResponse(
         List<UnavailableMetricResponse> unavailable
 ) {
 
-    public static SkinForecastResponse of(SkinForecast forecast, List<UnavailableMetric> unavailable) {
+    /**
+     * <b>빈 지표와 사유를 저장된 {@code null}에서 도출한다.</b> 예보에 사유 컬럼이 없기 때문이기도
+     * 하지만, 더 중요한 건 <b>업로드 경로와 조회 경로가 같은 답을 내는 것이 구조로 보장</b>된다는
+     * 점이다 — 사유를 밖에서 받으면 호출부마다 판정이 갈릴 수 있다.
+     *
+     * @param watchDataMissing 그날 {@code HRV}와 안정시 심박이 <b>둘 다</b> 없었는가.
+     *                         {@code COMPLEXION}이 빈 사유를 가르는 유일한 입력이다
+     */
+    public static SkinForecastResponse of(SkinForecast forecast, boolean watchDataMissing) {
+        List<UnavailableMetricResponse> unavailable = new ArrayList<>();
+        if (forecast.getComplexion() == null) {
+            unavailable.add(UnavailableMetricResponse.of(SkinMetric.COMPLEXION, watchDataMissing));
+        }
+        if (forecast.getBarrier() == null) {
+            unavailable.add(UnavailableMetricResponse.of(SkinMetric.BARRIER, watchDataMissing));
+        }
+
         return new SkinForecastResponse(
                 MetricScore.of(forecast.getDarkCircle()),
                 MetricScore.of(forecast.getComplexion()),
                 MetricScore.of(forecast.getBarrier()),
-                unavailable.stream().map(UnavailableMetricResponse::from).toList());
+                List.copyOf(unavailable));
     }
 
     @Schema(description = "지표 점수와 등급")
@@ -74,8 +90,9 @@ public record SkinForecastResponse(
                     """, example = "MISSING_FEATURES")
             UnavailableReason reason
     ) {
-        static UnavailableMetricResponse from(UnavailableMetric unavailable) {
-            return new UnavailableMetricResponse(unavailable.metric(), unavailable.reason());
+        static UnavailableMetricResponse of(SkinMetric metric, boolean watchDataMissing) {
+            return new UnavailableMetricResponse(metric,
+                    ScoringPolicy.reasonFor(metric, watchDataMissing));
         }
     }
 
