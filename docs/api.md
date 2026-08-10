@@ -57,7 +57,7 @@ X-User-Id: 1                       ← 모든 API 필수
 |---|---|---|---|
 | 1 | **개인정보 동의 저장** | `POST` | `/api/v1/users/me/consents` |
 | 2 | **온보딩 완료 처리** | `PATCH` | `/api/v1/users/me/onboarding` |
-| 3 | 프로필 · 검증 횟수 · 연속 횟수 | `GET` | `/api/v1/users/me?baseDate=` |
+| 3 | **온보딩·동의 상태 조회** (+ 프로필) | `GET` | `/api/v1/users/me` |
 | 4 | 수면 데이터 연결 상태 | `GET` | `/api/v1/users/me/data-status` |
 | 5 | 전체 삭제 (영구) | `DELETE` | `/api/v1/users/me` |
 
@@ -91,7 +91,43 @@ X-User-Id: 1                       ← 모든 API 필수
 
 **동의 이력이 있는지 서버가 확인하지 않는다.** ONB-02 → ONB-05 순서를 지키는 것은 클라이언트 몫이다. 서버가 막으면 시연용 데이터를 파이프라인에 주입하는 경로가 좁아진다.
 
-**3. 프로필 · 검증 횟수 · 연속 횟수** (MY-01) — **등급이 아니라 숫자를 반환한다.** 신뢰도 해석은 클라이언트가 한다. 등급만 내려주면 원본 숫자가 가려져 REP-12와 어긋나도 알아채기 어렵다. 연속 횟수 계산에 "오늘"이 필요하므로 `baseDate`를 받는다.
+**3. 온보딩·동의 상태 조회** (ONB-01 진입 분기 + MY-01) — **앱이 시작될 때 가장 먼저 호출한다.** 온보딩 화면을 띄울지, 동의 화면을 띄울지, 바로 홈으로 갈지를 이 한 번의 응답으로 결정한다.
+
+```jsonc
+GET /api/v1/users/me
+X-User-Id: 1
+
+{ "success": true,
+  "data": {
+    "userId": 1,
+    "nickname": "테스트유저1",
+    "onboardingCompleted": true,
+    "consentAgreed": true,
+    "currentTermsVersion": "1.0",
+    "agreedTermsVersion": "1.0",     // 동의 이력이 없으면 null
+    "agreedAt": "2026-08-08T00:12:33Z"
+  } }
+```
+
+**앱은 두 불리언만 보면 된다.**
+
+| `consentAgreed` | `onboardingCompleted` | 앱이 띄울 화면 |
+|---|---|---|
+| `false` | — | 동의 화면(ONB-02)부터 |
+| `true` | `false` | 온보딩 이어서(ONB-03~05) |
+| `true` | `true` | 온보딩 전체를 건너뛰고 홈으로 |
+
+**`consentAgreed`는 "동의한 적이 있는가"가 아니라 "현재 약관 버전에 동의했는가"다.** 이게 이 API의 핵심이다. 약관이 개정돼 `ConsentPolicy.CURRENT_TERMS_VERSION`이 올라가면 기존 사용자도 `false`가 되어 자연스럽게 재동의 화면으로 간다. **로컬 플래그로는 이걸 알 방법이 없다** — 앱은 "동의 완료"만 기억하고 있어서 버전이 올라간 것을 영원히 모른다. `consent_history`를 이력 테이블로 유지한 이유가 여기서 실현된다([erd.md](erd.md) §3.2).
+
+`agreedTermsVersion`이 `null`이면 첫 사용자이고, 값이 있는데 `currentTermsVersion`과 다르면 재동의 상황이다. 앱이 화면 문구를 나누고 싶을 때만 쓰면 된다 — **분기 자체는 `consentAgreed` 하나로 충분하다.**
+
+**`baseDate`를 받지 않는다.** 이 응답에는 날짜에 따라 달라지는 값이 없다.
+
+> ⚠️ **MY-01의 `verificationCount`·`streakCount`는 아직 이 응답에 없다.** 연속 검증 횟수는 HOME-09 배너와 **같은 계산을 써야 하고**([prd.md](prd.md) §4.2), 그 계산이 `skin_measurement`에 있어 아직 만들지 않았다. 두 필드가 붙을 때 **`baseDate`가 필수 쿼리 파라미터로 함께 생긴다**(연속 횟수에 "오늘"이 필요하다). 앱 팀은 이 변경을 미리 알고 있어야 한다.
+
+**MY-01은 등급이 아니라 숫자를 반환한다.** 신뢰도 해석은 클라이언트가 한다. 등급만 내려주면 원본 숫자가 가려져 REP-12와 어긋나도 알아채기 어렵다.
+
+**빈 상태가 없어서 `{status, message}`를 쓰지 않는다.** 다른 조회 API와 달리 이 응답은 사용자가 존재하면 언제나 완전하다 — 신규 사용자도 `onboardingCompleted: false`라는 **정상적인 값**을 받는다. 사용자가 없으면 그건 진짜 오류이므로 `404 USER_NOT_FOUND`다.
 
 **4. 수면 데이터 연결 상태** (MY-02) — **마지막 수면 수신 시각**만 반환한다. 서버 배치가 없으므로 그 이상 알 수 있는 게 없다.
 
@@ -388,3 +424,5 @@ Content-Type: application/json
 | 게이미피케이션 (HOME-04) | — | 방향 미확정 |
 
 **백엔드 구현 대상이 아닌 것** (클라이언트 전용): ONB-01, ONB-04, HOME-01, HOME-05, REP-01, MY-05
+
+> **ONB-01은 화면만 클라이언트 전용이다.** 진입 분기(온보딩을 띄울지 건너뛸지)의 근거는 `GET /api/v1/users/me`가 준다(§2.1). 원래는 앱의 로컬 플래그로만 판단할 계획이었으나, **로컬 플래그로는 약관 개정에 따른 재동의를 감지할 수 없어** 서버 조회로 바꿨다 (2026-08-10).
