@@ -57,7 +57,7 @@ X-User-Id: 1                       ← 모든 API 필수
 |---|---|---|---|
 | 1 | **개인정보 동의 저장** | `POST` | `/api/v1/users/me/consents` |
 | 2 | **온보딩 완료 처리** | `PATCH` | `/api/v1/users/me/onboarding` |
-| 3 | 프로필 · 검증 횟수 · 연속 횟수 | `GET` | `/api/v1/users/me?baseDate=` |
+| 3 | **온보딩·동의 상태 조회** (+ 프로필) | `GET` | `/api/v1/users/me` |
 | 4 | 수면 데이터 연결 상태 | `GET` | `/api/v1/users/me/data-status` |
 | 5 | 전체 삭제 (영구) | `DELETE` | `/api/v1/users/me` |
 
@@ -91,7 +91,43 @@ X-User-Id: 1                       ← 모든 API 필수
 
 **동의 이력이 있는지 서버가 확인하지 않는다.** ONB-02 → ONB-05 순서를 지키는 것은 클라이언트 몫이다. 서버가 막으면 시연용 데이터를 파이프라인에 주입하는 경로가 좁아진다.
 
-**3. 프로필 · 검증 횟수 · 연속 횟수** (MY-01) — **등급이 아니라 숫자를 반환한다.** 신뢰도 해석은 클라이언트가 한다. 등급만 내려주면 원본 숫자가 가려져 REP-12와 어긋나도 알아채기 어렵다. 연속 횟수 계산에 "오늘"이 필요하므로 `baseDate`를 받는다.
+**3. 온보딩·동의 상태 조회** (ONB-01 진입 분기 + MY-01) — **앱이 시작될 때 가장 먼저 호출한다.** 온보딩 화면을 띄울지, 동의 화면을 띄울지, 바로 홈으로 갈지를 이 한 번의 응답으로 결정한다.
+
+```jsonc
+GET /api/v1/users/me
+X-User-Id: 1
+
+{ "success": true,
+  "data": {
+    "userId": 1,
+    "nickname": "테스트유저1",
+    "onboardingCompleted": true,
+    "consentAgreed": true,
+    "currentTermsVersion": "1.0",
+    "agreedTermsVersion": "1.0",     // 동의 이력이 없으면 null
+    "agreedAt": "2026-08-08T00:12:33Z"
+  } }
+```
+
+**앱은 두 불리언만 보면 된다.**
+
+| `consentAgreed` | `onboardingCompleted` | 앱이 띄울 화면 |
+|---|---|---|
+| `false` | — | 동의 화면(ONB-02)부터 |
+| `true` | `false` | 온보딩 이어서(ONB-03~05) |
+| `true` | `true` | 온보딩 전체를 건너뛰고 홈으로 |
+
+**`consentAgreed`는 "동의한 적이 있는가"가 아니라 "현재 약관 버전에 동의했는가"다.** 이게 이 API의 핵심이다. 약관이 개정돼 `ConsentPolicy.CURRENT_TERMS_VERSION`이 올라가면 기존 사용자도 `false`가 되어 자연스럽게 재동의 화면으로 간다. **로컬 플래그로는 이걸 알 방법이 없다** — 앱은 "동의 완료"만 기억하고 있어서 버전이 올라간 것을 영원히 모른다. `consent_history`를 이력 테이블로 유지한 이유가 여기서 실현된다([erd.md](erd.md) §3.2).
+
+`agreedTermsVersion`이 `null`이면 첫 사용자이고, 값이 있는데 `currentTermsVersion`과 다르면 재동의 상황이다. 앱이 화면 문구를 나누고 싶을 때만 쓰면 된다 — **분기 자체는 `consentAgreed` 하나로 충분하다.**
+
+**`baseDate`를 받지 않는다.** 이 응답에는 날짜에 따라 달라지는 값이 없다.
+
+> ⚠️ **MY-01의 `verificationCount`·`streakCount`는 아직 이 응답에 없다.** 연속 검증 횟수는 HOME-09 배너와 **같은 계산을 써야 하고**([prd.md](prd.md) §4.2), 그 계산이 `skin_measurement`에 있어 아직 만들지 않았다. 두 필드가 붙을 때 **`baseDate`가 필수 쿼리 파라미터로 함께 생긴다**(연속 횟수에 "오늘"이 필요하다). 앱 팀은 이 변경을 미리 알고 있어야 한다.
+
+**MY-01은 등급이 아니라 숫자를 반환한다.** 신뢰도 해석은 클라이언트가 한다. 등급만 내려주면 원본 숫자가 가려져 REP-12와 어긋나도 알아채기 어렵다.
+
+**빈 상태가 없어서 `{status, message}`를 쓰지 않는다.** 다른 조회 API와 달리 이 응답은 사용자가 존재하면 언제나 완전하다 — 신규 사용자도 `onboardingCompleted: false`라는 **정상적인 값**을 받는다. 사용자가 없으면 그건 진짜 오류이므로 `404 USER_NOT_FOUND`다.
 
 **4. 수면 데이터 연결 상태** (MY-02) — **마지막 수면 수신 시각**만 반환한다. 서버 배치가 없으므로 그 이상 알 수 있는 게 없다.
 
@@ -164,7 +200,7 @@ X-User-Id: 1                       ← 모든 API 필수
 >
 > `status` 값은 `global/response/QueryStatus`에 모은다: `AVAILABLE` · `NO_SLEEP_DATA` · `INSUFFICIENT_HISTORY` · `NO_VERIFICATION`.
 
-**2. 셀피 분석·검증·학습** (HOME-06→07→08) — 멀티파트 이미지를 받아 **세 가지를 한 트랜잭션에서** 처리한다.
+**2. 셀피 분석·검증·학습** (HOME-06→07→08) — 멀티파트 이미지를 받아 **세 가지를 한 트랜잭션에서** 처리한다. **구현 완료** (2026-08-10).
 
 ```
 멀티파트 수신 → 메모리에서 OpenAI Vision 호출        (HOME-06)
@@ -191,9 +227,136 @@ image: (파일)
 
 **이미지는 어디에도 쓰지 않는다** — 엔티티에 이미지 컬럼 자체가 없어 저장할 곳이 없다. **동작 API이므로 그날 예보가 없으면 `404 SKIN_FORECAST_NOT_FOUND`다.** 대조할 기준이 없으면 검증이 성립하지 않는다.
 
+응답이다 (2026-08-10 확정).
+
+```jsonc
+{ "success": true,
+  "data": {
+    "baseDate": "2026-08-07",
+    "analyzedAt": "2026-08-07T12:33:12Z",   // 서버 시각. 운영은 UTC 라 오프셋이 Z 다
+    "verifications": [                  // 예보와 대조한 지표만
+      { "metric": "DARK_CIRCLE",
+        "forecast": { "score": 67, "grade": "NORMAL" },
+        "measured": { "score": 61, "grade": "NORMAL" },
+        "difference": 6,                // 예보 − 실측
+        "verdict": "CLOSE" },
+      { "metric": "BARRIER",
+        "forecast": { "score": 81, "grade": "STABLE" },
+        "measured": { "score": 78, "grade": "STABLE" },
+        "difference": 3,
+        "verdict": "HIT" }
+    ],
+    "skipped": [                        // 예보가 없어 대조하지 못한 지표
+      { "metric": "COMPLEXION",
+        "measured": { "score": 55, "grade": "NORMAL" },
+        "reason": "MISSING_FEATURES" }
+    ],
+    "hitRate": 50,                      // 대조한 지표 중 `HIT` 비율(%)
+    "model": {                          // 개인 가중치 학습 결과 (HOME-08)
+      "updated": true,
+      "message": "야간 각성을(를) 조금 더 중요하게 보도록 학습했어요.",
+      "changes": [
+        { "feature": "AWAKE_COUNT", "metric": "DARK_CIRCLE", "label": "야간 각성",
+          "before": 1.0000, "after": 1.0110 },
+        { "feature": "TOTAL_SLEEP", "metric": "DARK_CIRCLE", "label": "총 수면 시간",
+          "before": 1.0000, "after": 0.9890 }
+      ]
+    }
+  } }
+```
+
+**`changes`는 값이 실제로 바뀐 행만 담는다.** 그날 참여하지 않은 피처와, 참여했지만 보정량이 0이던 피처는 빠진다. **보정량 0은 버그가 아니다** — 두 피처의 부분점수가 같으면 오차를 어느 쪽 탓으로 돌릴 근거가 없어 `Δw = 0`이 된다(§10.7).
+
+**첫 검증은 `changes`가 비어 있어도 `updated: true`다.** 그때 7행이 `1.0`으로 만들어지며, **행의 존재 자체가 "개인화가 시작됐다"는 뜻**이기 때문이다([erd.md](erd.md) §3.7).
+
+**한 피처가 올라가면 같은 지표의 다른 피처는 반드시 내려간다** (§10.7 "합이 0이다"). `message`가 올라간 쪽만 말하는 이유이며, 내려간 쪽까지 말하면 같은 사실을 두 번 말하는 셈이다.
+
+**`difference`는 `예보 − 실측`이다.** 판정 구간(§10.2)이 이 방향으로 정의돼 있다. `verdict`는 `HIT`(±5) · `CLOSE`(±6~15) · `UNDERESTIMATED`(−16 이하) · `OVERESTIMATED`(+16 이상)이며, **`UNDERESTIMATED`는 점수를 낮게 예측한 것 = 피부 위험을 과대평가한 것**이다. 두 축이 반대라 문구에서 뒤집히기 쉽다.
+
+**실측 3종은 항상 나온다.** LLM은 예보와 무관하게 셋을 모두 산출하고 `skin_measurement`도 셋 다 `NOT NULL`이다. **갈리는 것은 실측이 아니라 대조 가능 여부**이며, 그래서 `skipped`에도 `measured`가 실린다 — 예보가 없어 판정만 못 한 것이지 사진을 못 읽은 것이 아니다.
+
+**`hitRate`의 분모는 `verifications`의 길이다 — 3이 아니다.** 빈 지표를 0점으로 취급하면 존재하지 않는 오차가 적중률에 섞이고, 같은 값이 HOME-08의 학습 입력으로 들어가 **없던 값이 개인 가중치를 움직인다.** `verifications`는 비지 않는다 — `DARK_CIRCLE`은 예보가 빈 상태가 될 수 없기 때문이다([erd.md](erd.md) §3.5).
+
+**`skipped[].reason`은 예보 조회 API의 `unavailable[].reason`과 같은 집합**이며 같은 코드(`ScoringPolicy.reasonFor`)에서 나온다. 두 화면이 같은 상황에 다른 문구를 띄우지 않게 하는 것이 요점이다.
+
+**한 트랜잭션이라는 것은 저장·검증·학습 셋을 말한다.** LLM 호출은 그 앞이고 **트랜잭션 밖이다** — 최대 30초 걸리는 외부 호출이 DB 커넥션을 잡고 있으면 셀피가 몰릴 때 커넥션 풀이 고갈되어 **수면 업로드까지 함께 막힌다.**
+
+**중복·예보 부재 검사는 LLM 호출보다 먼저 한다.** 순서가 뒤바뀌면 어차피 `409`/`404`로 끝날 요청에 분석 비용을 쓴다.
+
+| 코드 | `ErrorCode` | 언제 | 앱이 할 일 |
+|---|---|---|---|
+| `400` | `SELFIE_IMAGE_INVALID` | `image` 파트가 없거나 비었음 · 이미지가 아닌 타입 | 다시 촬영 |
+| `400` | `INVALID_INPUT` | `baseDate` 누락·형식 오류 · 파일이 상한(10MB) 초과 | 요청 버그 또는 리사이즈 |
+| `404` | `USER_NOT_FOUND` | 없는 사용자 | — |
+| `404` | `SKIN_FORECAST_NOT_FOUND` | 그날 예보가 없음 | **먼저 수면을 업로드해야 한다** |
+| `409` | `VERIFICATION_ALREADY_DONE` | 그날 이미 검증함 (하루 1회) | 결과 화면으로 |
+| `502` | `SELFIE_ANALYSIS_FAILED` | LLM 호출·파싱 실패 | 재시도 |
+| `504` | `SELFIE_ANALYSIS_TIMEOUT` | LLM 응답 지연(30초 초과) | 재시도 |
+
+**여기서만 `404`가 에러다.** 조회 API였다면 예보 부재는 `200` + 빈 상태이지만, 이 API는 **대조할 기준이 없으면 동작 자체가 성립하지 않는다**([conventions.md](conventions.md) §2).
+
+**실패하면 `skin_measurement` 행이 생기지 않는다.** 분석 상태 컬럼을 두지 않은 이유이며([erd.md](erd.md) §3.6), 그래서 재시도가 안전하다 — 하루 1회 제약에 걸리지 않는다.
+
 **3. 적중률 · 연속 검증 배너** (HOME-09) — 최근 검증 1건 + 적중률 + 연속 검증 횟수.
 
+```jsonc
+{ "success": true,
+  "data": {
+    "status": "AVAILABLE",          // 또는 NO_VERIFICATION
+    "message": null,
+    "baseDate": "2026-08-10",
+    "summary": {                    // 빈 상태면 null
+      "hitRate": 58,                // 누적 — 지금까지 모든 판정 중 `HIT` 비율(%)
+      "verificationCount": 5,       // COUNT(skin_measurement)
+      "streakCount": 3,
+      "latest": {                   // 최근 검증 1건
+        "baseDate": "2026-08-09",
+        "hitRate": 67,              // 그날치
+        "verifications": [ /* POST /skin/selfie 와 같은 모양 */ ],
+        "skipped": [ ]
+      } } } }
+```
+
+**`hitRate`는 누적이다** (2026-08-10 확정). 최근 1건만 쓰면 분모가 최대 3이라 숫자가 `0`·`33`·`67`·`100`으로만 튀고 하루마다 요동친다. 배너가 말하려는 것은 *"예보가 얼마나 믿을 만한가"* 이므로 표본이 쌓일수록 안정되는 쪽이 맞다. **그날치는 `latest.hitRate`에 따로 있다.**
+
+**누적 분모에서도 빈 지표는 빠진다.** 그날 예보가 없던 지표는 판정 자체가 없었으므로 세지 않는다 — `POST /skin/selfie`와 같은 규칙이다.
+
+**`latest`는 셀피 응답과 같은 DTO를 쓴다.** 앱이 파싱 코드를 한 번만 쓰면 된다.
+
+**`streakCount`는 오늘 또는 어제부터 하루도 빠짐없이 이어진 `base_date`의 개수다** ([prd.md](prd.md) §4.2). **오늘 미검증이 연속을 끊지 않는다** — 저녁에 검증하는 사용자가 아침에 앱을 열었을 때 어제까지 쌓은 연속이 `0`으로 보이면 **아직 하지 않은 일로 사용자를 벌주는 것**처럼 읽힌다. `baseDate`가 필수인 이유이며, 없이 계산하면 연속이 하루 밀린다.
+
+> ⚠️ **MY-01 프로필이 `verificationCount`·`streakCount`에 같은 숫자를 써야 한다.** 계산은 한 곳에 두고 두 API가 같은 Service를 호출한다 — 각자 계산하면 어긋난다.
+
 **4. 내 모델** (REP-12) — `personal_weight`를 일반 가중치와 비교해 "각성에 1.6배 민감" 같은 문장을 만든다. **`personal_weight`가 유일한 출처다.**
+
+```jsonc
+{ "success": true,
+  "data": {
+    "status": "AVAILABLE",          // 또는 NO_VERIFICATION (개인화 전)
+    "message": null,
+    "model": {                      // 빈 상태면 null
+      "verificationCount": 5,
+      "headline": "야간 각성에 1.6배 민감해요",
+      "metrics": [
+        { "metric": "DARK_CIRCLE",
+          "features": [
+            { "feature": "AWAKE_COUNT", "label": "야간 각성",
+              "generalShare": 0.5, "personalShare": 0.615, "ratio": 1.23 },
+            { "feature": "TOTAL_SLEEP", "label": "총 수면 시간",
+              "generalShare": 0.5, "personalShare": 0.385, "ratio": 0.77 }
+          ] }
+      ] } } }
+```
+
+**비율은 같은 지표 안에서만 의미를 갖는다.** `weight`는 일반 가중치에 곱하는 배수이고 곱한 뒤 **지표 내 합이 1로 재정규화**되므로 절댓값 자체에는 의미가 없다([erd.md](erd.md) §3.7). `headline`은 **지표 안에서 최대/최소 비가 가장 큰 지표**를 골라 만든다.
+
+- **`personalShare`는 재정규화된 비중** — 예보가 실제로 쓰는 숫자와 같은 것이라야 화면과 계산이 어긋나지 않는다
+- **`generalShare`는 지표 내 균등**(`1/n`). 개인화 전 기준선이다
+- **`ratio`가 전부 `1.0`인 지표는 아직 배울 게 없었던 것**이다 — 신규 사용자에게 정상이며 오류가 아니다
+
+**신뢰도 등급을 서버가 만들지 않는다** ([prd.md](prd.md) §4.5 · L8 해결). `verificationCount`를 그대로 주고 등급 해석은 클라이언트가 한다 — 컷오프를 서버에 두면 바꿀 때마다 배포해야 한다.
+
+**`baseDate`를 받지 않는다.** 누적 검증 횟수와 가중치는 "오늘"이 필요 없다. **`personal_weight` 행이 0개면 `NO_VERIFICATION`이다** — 행의 존재 자체가 개인화 시작 여부다.
 
 ### 2.4 `todo` — 행동 처방
 
@@ -388,3 +551,5 @@ Content-Type: application/json
 | 게이미피케이션 (HOME-04) | — | 방향 미확정 |
 
 **백엔드 구현 대상이 아닌 것** (클라이언트 전용): ONB-01, ONB-04, HOME-01, HOME-05, REP-01, MY-05
+
+> **ONB-01은 화면만 클라이언트 전용이다.** 진입 분기(온보딩을 띄울지 건너뛸지)의 근거는 `GET /api/v1/users/me`가 준다(§2.1). 원래는 앱의 로컬 플래그로만 판단할 계획이었으나, **로컬 플래그로는 약관 개정에 따른 재동의를 감지할 수 없어** 서버 조회로 바꿨다 (2026-08-10).

@@ -7,6 +7,7 @@ import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
 import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -111,6 +112,23 @@ public final class ScoringPolicy {
     }
 
     /**
+     * 피처가 붙은 지표. <b>매핑이 1:1이라 성립한다</b>(§10.3) — 한 피처가 두 지표에 붙게 되면
+     * 이 메서드도, {@code ScoringCommand.personalWeights}의 키도 함께 넓혀야 한다.
+     *
+     * <p>{@code personal_weight}의 한 행이 (피처, 지표) 쌍인데 <b>학습은 피처 단위로 돌기</b>
+     * 때문에 역방향이 필요하다. {@link #FEATURES_BY_METRIC}에서 유도하므로 §10.3을 고치면
+     * 여기도 자동으로 따라온다 — 두 표를 손으로 맞추지 않는다.
+     */
+    public static SkinMetric metricOf(SleepFeature feature) {
+        return FEATURES_BY_METRIC.entrySet().stream()
+                .filter(entry -> entry.getValue().contains(feature))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "지표에 매핑되지 않은 피처다 — §10.3과 어긋났다 feature=" + feature));
+    }
+
+    /**
      * 초기(일반) 가중치 — <b>지표 내 균등</b> (§10.4).
      * {@code DARK_CIRCLE}·{@code BARRIER} 각 {@code 0.5}, {@code COMPLEXION} 각 {@code 1/3}.
      *
@@ -172,6 +190,64 @@ public final class ScoringPolicy {
 
     /** 개인 가중치가 없는 사용자(첫 검증 전)의 배수. 이때 {@code w'}는 일반 가중치와 같다. */
     public static final BigDecimal DEFAULT_PERSONAL_WEIGHT = BigDecimal.ONE;
+
+    // ===== §10.7 개인 가중치 보정 (2026-08-07 확정) =====
+
+    /**
+     * 고정 학습률 {@code η}. <b>문헌이 아니라 도달 속도에서 역산한 값이다</b> — 비슷한 밤이 20번
+     * 쌓이면 지표 안에서 약 1.6배 차이가 나도록 맞췄다(§10.7).
+     *
+     * <p>더 크면 몇 번의 우연한 오차로 가중치가 튀고, 더 작으면 해커톤 기간에 개인화가 눈에
+     * 보이지 않는다.
+     *
+     * <p><b>고정이라 보정식에 학습 횟수가 들어가지 않는다.</b> {@code personal_weight}에 피처별
+     * 학습 횟수 컬럼이 없는 이유다(erd.md §3.7).
+     */
+    public static final double LEARNING_RATE = 0.5;
+
+    /**
+     * 배수의 하한·상한. 한 피처가 다른 피처보다 최대 <b>4배</b>까지 중요해질 수 있다.
+     *
+     * <p><b>클램프가 있으므로 첫 검증부터 즉시 예보에 반영해도 안전하다</b> — 최소 검증 횟수를
+     * 따로 두지 않는 근거다. 검증 표본이 적은 초기에 우연한 오차 몇 번으로 한 피처가 지표를
+     * 지배하는 것을 막는다.
+     */
+    public static final BigDecimal WEIGHT_MIN = new BigDecimal("0.5000");
+    public static final BigDecimal WEIGHT_MAX = new BigDecimal("2.0000");
+
+    /** {@code personal_weight.weight}의 스케일. {@code DECIMAL(6,4)}와 맞춘다. */
+    public static final int WEIGHT_SCALE = 4;
+
+    /**
+     * 오차를 부분점수 편차로 배분한 보정량 {@code Δw(f)} (§10.7).
+     *
+     * <pre>
+     * Δw(f) = η × (e / 100) × ((s(f) − 지표점수) / 100)
+     * e     = 실측 − 예보
+     * </pre>
+     *
+     * <p><b>지표점수가 가중평균이라 {@code ∂지표점수/∂w(f) ∝ s(f) − 지표점수}인 데서 그대로
+     * 나온다.</b> 실측이 예보보다 나빴으면({@code e < 0}) 부분점수가 평균보다 낮았던 피처의
+     * 비중이 올라간다 — "이 사람에겐 각성이 더 치명적이더라".
+     *
+     * <p><b>두 피처의 부분점수가 같으면 {@code 0}이다.</b> 오차가 어느 쪽 탓인지 데이터가
+     * 말해주지 않는 날이므로 아무것도 학습하지 않는 것이 맞다 — 버그가 아니다.
+     *
+     * @param measured     실측 점수 (셀피)
+     * @param forecast     예보 점수. <b>저장된 값을 그대로 쓴다</b> — 대조 기준과 같아야 한다
+     * @param featureScore 그 피처의 부분점수 {@code s(f)}
+     */
+    public static BigDecimal weightDelta(int measured, int forecast, double featureScore) {
+        double error = (measured - forecast) / 100.0;
+        double deviation = (featureScore - forecast) / 100.0;
+        return BigDecimal.valueOf(LEARNING_RATE * error * deviation)
+                .setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /** 보정 후 배수를 상·하한에 가둔다. <b>빠지면 몇 번의 오차로 한 피처가 지표를 지배한다.</b> */
+    public static BigDecimal clampWeight(BigDecimal weight) {
+        return weight.max(WEIGHT_MIN).min(WEIGHT_MAX).setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
+    }
 
     // ===== §10.6 취침 규칙성 이력 =====
 
