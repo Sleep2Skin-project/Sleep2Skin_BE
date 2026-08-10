@@ -23,6 +23,18 @@ server:
 spring:
   application:
     name: sleep2skin_be
+  servlet:
+    multipart:
+      # 셀피는 멀티파트로 들어온다 (POST /api/v1/skin/selfie).
+      #
+      # ⚠️ 스프링 기본 상한은 파일 1MB 다. 아이폰 카메라 원본은 보통 2~5MB 라
+      #    이 설정이 없으면 실기기에서 거의 매번 MaxUploadSizeExceededException 이 난다.
+      #    로컬에서 작은 샘플로만 테스트하면 끝까지 안 보인다.
+      #
+      # 상한을 무한정 키우지도 않는다. 이미지는 base64 로 부풀어(약 4/3배) 요청 본문에
+      # 실려 나가고, 그동안 힙에 통째로 올라가 있다.
+      max-file-size: 10MB
+      max-request-size: 12MB
   jackson:
     datatype:
       datetime:
@@ -96,3 +108,30 @@ springdoc:
 
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:8081}
+
+openai:
+  # ⚠️ 기본값을 빈 문자열로 둔 것은 의도한 것이다.
+  #
+  #   ${OPENAI_API_KEY} 로 두면 키가 없는 환경에서 앱이 아예 기동하지 못한다.
+  #   그러면 키를 받지 못한 팀원이 수면·예보 쪽 작업조차 못 하고, CI 와 테스트도
+  #   더미 키를 넣어야 돈다 — 없는 값을 있는 척하는 설정이 늘어난다.
+  #
+  #   대신 셀피 분석만 502(SELFIE_ANALYSIS_FAILED)로 실패하고 기동 시 WARN 이 뜬다.
+  #
+  #   운영에서 키가 빠지는 사고는 이 기본값이 아니라 CD 가 막는다 —
+  #   배포 전에 EC2 app.env 를 선검사한다 (.github/workflows/cd.yml, docs/workflow.md §7).
+  api-key: ${OPENAI_API_KEY:}
+
+  base-url: https://api.openai.com
+
+  # 모델 ID 를 코드에 박지 않는다 — 비용 문제로 gpt-5.6-luna 로 갈아타는 것은
+  # 배포 설정 변경이지 코드 변경이 아니다 (docs/architecture.md §7).
+  vision-model: ${OPENAI_VISION_MODEL:gpt-5.6-terra}
+
+  # 읽기 타임아웃. 초과하면 SELFIE_ANALYSIS_TIMEOUT(504) 로 나가고 앱이 재시도한다.
+  # 지정하지 않으면 무제한이라 OpenAI 가 응답하지 않을 때 톰캣 워커가 영구히 묶인다.
+  timeout: 30s
+
+  # 연결 타임아웃은 읽기와 따로 둔다. 연결이 안 되는 것(장애)과 분석이 오래 걸리는 것은
+  # 앱이 할 일이 다르고, 30초를 연결에도 주면 OpenAI 가 죽었을 때 30초를 기다린다.
+  connect-timeout: 5s

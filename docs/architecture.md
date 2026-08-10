@@ -400,10 +400,18 @@ public SkinForecastResponse getForecast(Long userId, LocalDate date)
 
 ```yaml
 openai:
-  api-key: ${OPENAI_API_KEY}
-  vision-model: gpt-5.6-terra
-  timeout-seconds: 30
+  api-key: ${OPENAI_API_KEY:}          # 비어 있어도 앱은 뜬다 — 아래 참조
+  base-url: https://api.openai.com
+  vision-model: ${OPENAI_VISION_MODEL:gpt-5.6-terra}
+  timeout: 30s                          # 읽기 — 초과 시 SELFIE_ANALYSIS_TIMEOUT(504)
+  connect-timeout: 5s                   # 연결 — 장애와 지연은 앱이 할 일이 다르다
 ```
+
+**SDK를 쓰지 않고 Spring `RestClient`로 직접 호출한다** (2026-08-10 확정). 보내는 것은 Responses API 한 엔드포인트뿐이라 SDK의 이득이 작고, 대신 **Structured Outputs 스키마를 우리 손으로 통제해야 한다** — 점수 방향이 뒤집히면 아무 제약에도 안 걸리는 구조라 그 자리가 라이브러리 뒤에 숨으면 안 된다. 의존성도 늘지 않는다(`RestClient`는 이미 있다).
+
+**`api-key`의 기본값이 빈 문자열인 것은 의도한 것이다.** `${OPENAI_API_KEY}`로 두면 키가 없는 환경에서 앱이 아예 기동하지 못해, 키를 받지 못한 팀원이 수면·예보 쪽 작업조차 못 하고 CI·테스트도 더미 키를 넣어야 돈다. 대신 **셀피 분석만 502로 실패**하고 기동 시 WARN이 남는다. 운영에서 키가 빠지는 사고는 이 기본값이 아니라 **CD가 배포 전 `app.env`를 선검사**해서 막는다([workflow.md](workflow.md) §7).
+
+**타임아웃을 반드시 지정한다.** 기본값은 무제한이라 OpenAI가 응답하지 않으면 톰캣 워커 스레드가 영구히 묶이고, 스레드 풀이 하나라 **수면 업로드까지 같이 막힌다.**
 
 Structured Outputs로 응답 스키마를 강제하면 파싱 실패가 사라진다. 자유 텍스트 응답을 정규식으로 긁는 방식은 쓰지 않는다.
 
@@ -420,6 +428,10 @@ Structured Outputs로 응답 스키마를 강제하면 파싱 실패가 사라�
 > 프롬프트 수정 시 회귀 확인: 눈 밑이 뚜렷하게 어두운 샘플에서 `darkCircle`이 **낮게** 나오는지 본다. 스텁이 아닌 실제 호출로 한 번은 확인해야 한다.
 
 **인터페이스로 감싼다** — 제공자를 바꿀 가능성이 있으므로 `SkinVisionClient` 인터페이스를 두고 `OpenAiSkinVisionClient`로 구현한다. **인터페이스는 `byte[]`(또는 `MultipartFile`)를 받는다 — 스토리지 키를 받지 않는다.** 테스트에서는 고정값을 반환하는 스텁으로 대체한다.
+
+**반환 타입은 `SkinVisionScores`(필드 3개)이고 `SkinMetric`을 쓰지 않는다.** 이 패키지는 `global`이라 `domain`을 참조할 수 없다(§2). 지표가 3종 고정이라 필드로 펴도 늘어날 일이 없다.
+
+**범위를 벗어난 점수는 자르지 않고 실패시킨다.** strict 스키마가 `minimum`/`maximum`을 지원하지 않아(넣으면 요청이 400이다) 0~100은 코드가 지켜야 하는데, 클램프하면 **모델이 다른 척도로 답했다는 사실이 숨는다** — 101을 100으로 만들면 저장은 되고 적중률만 틀린다. 실패하면 앱이 재시도하고 행은 생기지 않는다([erd.md](erd.md) §3.6).
 
 ### AWS RDS (MySQL)
 
