@@ -25,6 +25,8 @@ class SkinApiDocsTest {
 
     private static final String FORECAST_GET = "$.paths.['/api/v1/skin/forecast'].get";
     private static final String SELFIE_POST = "$.paths.['/api/v1/skin/selfie'].post";
+    private static final String SUMMARY_GET = "$.paths.['/api/v1/skin/verification/summary'].get";
+    private static final String MODEL_GET = "$.paths.['/api/v1/skin/model'].get";
 
     @Autowired
     private MockMvc mockMvc;
@@ -176,6 +178,79 @@ class SkinApiDocsTest {
                 // "어디에도 저장되지 않습니다"는 확인되지 않은 주장이라 쓸 수 없다
                 .andExpect(jsonPath(SELFIE_POST + ".description")
                         .value(not(containsString("어디에도 저장되지"))));
+    }
+
+    /**
+     * <b>앱이 두 숫자를 바꿔 쓰면 화면이 다른 뜻을 말한다.</b> 최상위는 "예보가 얼마나 믿을
+     * 만한가", {@code latest}는 "어제 예보가 얼마나 맞았나"다. 문서가 이 구분을 잃으면 프론트가
+     * 알아낼 방법이 없다.
+     */
+    @Test
+    @DisplayName("배너의 적중률이 누적이라는 것과 latest와 다르다는 것이 문서에 있다")
+    void 누적_적중률_구분이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(SUMMARY_GET + ".summary").value(containsString("HOME-09")))
+                .andExpect(jsonPath(SUMMARY_GET + ".description")
+                        .value(containsString("`hitRate`는 누적이다")))
+                .andExpect(jsonPath(SUMMARY_GET + ".description")
+                        .value(containsString("latest.hitRate")))
+                .andExpect(jsonPath(SUMMARY_GET + ".description")
+                        .value(containsString("검증 일수 × 3이 아니다")));
+    }
+
+    /**
+     * 연속 규칙이 문서에서 사라지면 앱이 "오늘 안 했으니 0"으로 표시하게 된다 —
+     * <b>아직 하지 않은 일로 사용자를 벌주는 것</b>처럼 읽힌다.
+     */
+    @Test
+    @DisplayName("오늘 미검증이 연속을 끊지 않는다는 규칙이 문서에 있다")
+    void 연속_규칙이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(SUMMARY_GET + ".description")
+                        .value(containsString("끊기지 않는다")))
+                .andExpect(jsonPath(SUMMARY_GET + ".description")
+                        .value(containsString("연속이 하루 밀린다")))
+                .andExpect(jsonPath(SUMMARY_GET + ".parameters[?(@.name == 'baseDate')].required")
+                        .value(hasItem(true)));
+    }
+
+    /**
+     * 재정규화 때문에 지표를 넘은 비교는 성립하지 않는다. 이 경고가 사라지면 앱이 다크서클의
+     * {@code 1.23}과 장벽의 {@code 1.8}을 나란히 놓고 "장벽이 더 민감"이라고 말하게 된다.
+     */
+    @Test
+    @DisplayName("비율이 같은 지표 안에서만 의미를 갖는다는 것이 문서에 있다")
+    void 비율의_범위가_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MODEL_GET + ".summary").value(containsString("REP-12")))
+                .andExpect(jsonPath(MODEL_GET + ".description")
+                        .value(containsString("같은 지표 안에서만 의미를 갖는다")))
+                .andExpect(jsonPath(MODEL_GET + ".description")
+                        .value(containsString("다른 지표의 숫자와 비교하지 말 것")))
+                .andExpect(jsonPath(MODEL_GET + ".description")
+                        .value(containsString("오류가 아니다")));
+    }
+
+    /**
+     * 등급 컷오프를 서버에 두면 바꿀 때마다 배포해야 한다(L8 해결). 문서가 이걸 말하지 않으면
+     * 앱이 서버에 등급을 요구하게 된다.
+     */
+    @Test
+    @DisplayName("신뢰도 등급을 클라이언트가 만든다는 것과 baseDate가 없다는 것이 문서에 있다")
+    void 등급과_파라미터_규칙이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MODEL_GET + ".description")
+                        .value(containsString("등급은 클라이언트가 만든다")))
+                .andExpect(jsonPath(MODEL_GET + ".description")
+                        .value(containsString("바꿀 때마다 배포")))
+                .andExpect(jsonPath(MODEL_GET + ".description")
+                        .value(containsString("`baseDate`를 받지 않는다")))
+                // 날짜를 받는 다른 조회 API와 달리 파라미터가 헤더 하나뿐이다
+                .andExpect(jsonPath(MODEL_GET + ".parameters[?(@.name == 'baseDate')]").isEmpty());
     }
 
 }

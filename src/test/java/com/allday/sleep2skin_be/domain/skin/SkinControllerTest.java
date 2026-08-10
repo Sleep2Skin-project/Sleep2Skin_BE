@@ -3,6 +3,10 @@ package com.allday.sleep2skin_be.domain.skin;
 import com.allday.sleep2skin_be.domain.skin.dto.SkinGrade;
 import com.allday.sleep2skin_be.domain.skin.dto.UnavailableReason;
 import com.allday.sleep2skin_be.domain.skin.dto.response.MetricVerificationResponse;
+import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelResponse;
+import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelResponse.FeatureWeight;
+import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelResponse.MetricWeights;
+import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelResponse.Model;
 import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelUpdateResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelUpdateResponse.WeightChangeResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SelfieVerificationResponse;
@@ -11,6 +15,9 @@ import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.MetricScore;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.UnavailableMetricResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkippedMetricResponse;
+import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse;
+import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse.LatestVerification;
+import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse.Summary;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
 import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
 import com.allday.sleep2skin_be.global.exception.BusinessException;
@@ -63,6 +70,12 @@ class SkinControllerTest {
 
     @MockitoBean
     private SelfieAnalysisService selfieAnalysisService;
+
+    @MockitoBean
+    private SkinVerificationSummaryService skinVerificationSummaryService;
+
+    @MockitoBean
+    private SkinModelQueryService skinModelQueryService;
 
     @Test
     @DisplayName("예보가 있으면 200과 함께 점수·등급을 반환한다")
@@ -322,6 +335,119 @@ class SkinControllerTest {
                             List.of(new WeightChangeResponse(SleepFeature.AWAKE_COUNT,
                                     SkinMetric.DARK_CIRCLE, "야간 각성",
                                     new BigDecimal("1.0000"), new BigDecimal("1.0110")))));
+        }
+    }
+
+    @Nested
+    @DisplayName("적중률 배너 (GET /skin/verification/summary)")
+    class VerificationSummary {
+
+        private static final String SUMMARY_PATH = "/api/v1/skin/verification/summary";
+
+        /**
+         * <b>누적과 그날치가 다른 숫자라는 것이 요점이다.</b> 앱이 둘을 바꿔 쓰면 화면이 다른
+         * 뜻을 말하게 된다.
+         */
+        @Test
+        @DisplayName("누적 적중률과 최근 1건의 적중률을 따로 내보낸다")
+        void 누적과_그날치를_모두_준다() throws Exception {
+            given(skinVerificationSummaryService.getSummary(USER_ID, BASE_DATE))
+                    .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(58, 5, 3,
+                            new LatestVerification(BASE_DATE.minusDays(1), 67,
+                                    List.of(MetricVerificationResponse.of(SkinMetric.DARK_CIRCLE, 67, 65)),
+                                    List.of()))));
+
+            mockMvc.perform(get(SUMMARY_PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-07"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("AVAILABLE"))
+                    .andExpect(jsonPath("$.data.summary.hitRate").value(58))
+                    .andExpect(jsonPath("$.data.summary.verificationCount").value(5))
+                    .andExpect(jsonPath("$.data.summary.streakCount").value(3))
+                    .andExpect(jsonPath("$.data.summary.latest.hitRate").value(67))
+                    .andExpect(jsonPath("$.data.summary.latest.baseDate").value("2026-08-06"));
+        }
+
+        @Test
+        @DisplayName("검증 이력이 없어도 200이고 status로 알린다")
+        void 빈_상태도_200이다() throws Exception {
+            given(skinVerificationSummaryService.getSummary(USER_ID, BASE_DATE))
+                    .willReturn(VerificationSummaryResponse.empty(BASE_DATE));
+
+            mockMvc.perform(get(SUMMARY_PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-07"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("NO_VERIFICATION"))
+                    .andExpect(jsonPath("$.data.message").isNotEmpty())
+                    .andExpect(content().string(containsString("\"summary\":null")));
+        }
+
+        /** 서버는 "오늘"을 모른다 — 없이 계산하면 연속 횟수가 하루 밀린다. */
+        @Test
+        @DisplayName("baseDate가 없으면 400이고 서비스를 호출하지 않는다")
+        void 기준일이_없으면_400이다() throws Exception {
+            mockMvc.perform(get(SUMMARY_PATH).header(USER_ID_HEADER, USER_ID))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+
+            verify(skinVerificationSummaryService, never()).getSummary(anyLong(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("내 모델 (GET /skin/model)")
+    class PersonalModel {
+
+        private static final String MODEL_PATH = "/api/v1/skin/model";
+
+        @Test
+        @DisplayName("지표별 비중과 헤드라인을 반환한다")
+        void 모델을_반환한다() throws Exception {
+            given(skinModelQueryService.getModel(USER_ID)).willReturn(
+                    PersonalModelResponse.of(new Model(20, "야간 각성에 1.6배 민감해요",
+                            List.of(new MetricWeights(SkinMetric.DARK_CIRCLE, List.of(
+                                    new FeatureWeight(SleepFeature.AWAKE_COUNT, "야간 각성",
+                                            0.5, 0.62, 1.23)))))));
+
+            mockMvc.perform(get(MODEL_PATH).header(USER_ID_HEADER, USER_ID))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("AVAILABLE"))
+                    .andExpect(jsonPath("$.data.model.verificationCount").value(20))
+                    .andExpect(jsonPath("$.data.model.headline").value("야간 각성에 1.6배 민감해요"))
+                    .andExpect(jsonPath("$.data.model.metrics[0].metric").value("DARK_CIRCLE"))
+                    .andExpect(jsonPath("$.data.model.metrics[0].features[0].label").value("야간 각성"))
+                    .andExpect(jsonPath("$.data.model.metrics[0].features[0].ratio").value(1.23));
+        }
+
+        @Test
+        @DisplayName("개인화 전이어도 200이고 status로 알린다")
+        void 빈_상태도_200이다() throws Exception {
+            given(skinModelQueryService.getModel(USER_ID)).willReturn(PersonalModelResponse.empty());
+
+            mockMvc.perform(get(MODEL_PATH).header(USER_ID_HEADER, USER_ID))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("NO_VERIFICATION"))
+                    .andExpect(content().string(containsString("\"model\":null")));
+        }
+
+        /** 누적 검증 횟수와 가중치는 "오늘"이 필요 없다 — 날짜를 받는 다른 조회 API와 다르다. */
+        @Test
+        @DisplayName("baseDate 없이 호출된다")
+        void 기준일이_필요_없다() throws Exception {
+            given(skinModelQueryService.getModel(USER_ID)).willReturn(PersonalModelResponse.empty());
+
+            mockMvc.perform(get(MODEL_PATH).header(USER_ID_HEADER, USER_ID))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("X-User-Id 헤더가 없으면 400이다")
+        void 헤더가_없으면_400이다() throws Exception {
+            mockMvc.perform(get(MODEL_PATH))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("USER_ID_HEADER_INVALID"));
+
+            verify(skinModelQueryService, never()).getModel(anyLong());
         }
     }
 

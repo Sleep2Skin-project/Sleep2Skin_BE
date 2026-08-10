@@ -1,7 +1,9 @@
 package com.allday.sleep2skin_be.domain.skin;
 
+import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SelfieVerificationResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastQueryResponse;
+import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,8 @@ public class SkinController implements SkinControllerSpec {
 
     private final SkinForecastService skinForecastService;
     private final SelfieAnalysisService selfieAnalysisService;
+    private final SkinVerificationSummaryService skinVerificationSummaryService;
+    private final SkinModelQueryService skinModelQueryService;
 
     @Override
     @GetMapping("/forecast")
@@ -60,6 +64,25 @@ public class SkinController implements SkinControllerSpec {
 
         return ApiResponse.success(
                 selfieAnalysisService.analyzeAndVerify(userId, baseDate, image));
+    }
+
+    @Override
+    @GetMapping("/verification/summary")
+    public ApiResponse<VerificationSummaryResponse> getVerificationSummary(
+            @CurrentUserId Long userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate) {
+
+        return ApiResponse.success(skinVerificationSummaryService.getSummary(userId, baseDate));
+    }
+
+    /**
+     * <b>여기만 {@code baseDate}를 받지 않는다.</b> 누적 검증 횟수와 가중치는 "오늘"이 필요 없다 —
+     * 날짜가 필요한 API만 받는다는 규약(conventions.md §8)의 반대편이다.
+     */
+    @Override
+    @GetMapping("/model")
+    public ApiResponse<PersonalModelResponse> getModel(@CurrentUserId Long userId) {
+        return ApiResponse.success(skinModelQueryService.getModel(userId));
     }
 
 }
