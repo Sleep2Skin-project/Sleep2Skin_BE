@@ -139,12 +139,14 @@ public interface SkinControllerSpec {
                     required = true, example = "2026-08-07")
             LocalDate baseDate);
 
-    @Operation(summary = "셀피 분석·검증 (HOME-06→07)", description = """
-            셀피를 분석해 피부 지표 3종을 실측하고, 그날 예보와 대조해 판정한다.
+    @Operation(summary = "셀피 분석·검증·학습 (HOME-06→07→08)", description = """
+            셀피를 분석해 피부 지표 3종을 실측하고, 그날 예보와 대조해 판정한 뒤,
+            오차로 개인 가중치를 보정한다.
 
             ```
             멀티파트 수신 → 메모리에서 OpenAI Vision 호출     (HOME-06)
             → 지표 3종 실측 저장 → 예보와 대조·판정            (HOME-07)
+            → 개인 가중치 보정 → 다음 예보에 즉시 반영          (HOME-08)
             ```
 
             ### 셀피 원본은 보관하지 않는다
@@ -195,7 +197,16 @@ public interface SkinControllerSpec {
                     "reason": "MISSING_FEATURES" }
                 ],
                 "hitRate": 50,
-                "model": { "updated": false }
+                "model": {
+                  "updated": true,
+                  "message": "야간 각성을(를) 조금 더 중요하게 보도록 학습했어요.",
+                  "changes": [
+                    { "feature": "AWAKE_COUNT", "metric": "DARK_CIRCLE", "label": "야간 각성",
+                      "before": 1.0000, "after": 1.0110 },
+                    { "feature": "TOTAL_SLEEP", "metric": "DARK_CIRCLE", "label": "총 수면 시간",
+                      "before": 1.0000, "after": 0.9890 }
+                  ]
+                }
               } }
             ```
 
@@ -221,6 +232,25 @@ public interface SkinControllerSpec {
             사진을 못 읽은 것이 아니다.
 
             `verifications`는 **비지 않는다** — 다크서클은 예보가 빈 상태가 될 수 없다.
+
+            ### 개인 모델은 첫 검증부터 바로 움직인다
+
+            오차를 부분점수 편차로 피처에 배분해 `personal_weight`를 보정하고, **다음 예보에
+            즉시 반영**된다. 최소 검증 횟수를 두지 않는다 — 배수가 `0.5`~`2.0`으로 클램프되어
+            우연한 오차 몇 번으로 한 피처가 지표를 지배하지 못한다.
+
+            **`changes`는 값이 실제로 바뀐 행만 담는다.** 그날 참여하지 않은 피처(워치 미착용 등)와,
+            참여했지만 보정량이 0이던 피처는 빠진다. **보정량 0은 버그가 아니다** — 두 피처의
+            부분점수가 같으면 오차를 어느 쪽 탓으로 돌릴 근거가 없는 날이다.
+
+            **첫 검증은 `changes`가 비어 있어도 `updated: true`다.** 그때 7행이 `1.0`으로
+            만들어지고, **행의 존재 자체가 "개인화가 시작됐다"는 뜻**이기 때문이다.
+
+            **한 피처가 올라가면 같은 지표의 다른 피처는 반드시 내려간다.** `message`가 올라간
+            쪽만 말하는 이유다 — 내려간 쪽까지 말하면 같은 사실을 두 번 말하게 된다.
+
+            `label`은 서버가 함께 내려준다. **앱이 한국어 이름을 따로 하드코딩하면 수면 통역
+            카드(HOME-02)의 문구와 어긋난다.**
 
             ### 하루 1회다
 

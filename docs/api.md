@@ -200,7 +200,7 @@ X-User-Id: 1
 >
 > `status` 값은 `global/response/QueryStatus`에 모은다: `AVAILABLE` · `NO_SLEEP_DATA` · `INSUFFICIENT_HISTORY` · `NO_VERIFICATION`.
 
-**2. 셀피 분석·검증·학습** (HOME-06→07→08) — 멀티파트 이미지를 받아 **세 가지를 한 트랜잭션에서** 처리한다.
+**2. 셀피 분석·검증·학습** (HOME-06→07→08) — 멀티파트 이미지를 받아 **세 가지를 한 트랜잭션에서** 처리한다. **구현 완료** (2026-08-10).
 
 ```
 멀티파트 수신 → 메모리에서 OpenAI Vision 호출        (HOME-06)
@@ -252,9 +252,24 @@ image: (파일)
         "reason": "MISSING_FEATURES" }
     ],
     "hitRate": 50,                      // 대조한 지표 중 `HIT` 비율(%)
-    "model": { "updated": false }       // 개인 가중치 학습 결과 — HOME-08에서 채워진다
+    "model": {                          // 개인 가중치 학습 결과 (HOME-08)
+      "updated": true,
+      "message": "야간 각성을(를) 조금 더 중요하게 보도록 학습했어요.",
+      "changes": [
+        { "feature": "AWAKE_COUNT", "metric": "DARK_CIRCLE", "label": "야간 각성",
+          "before": 1.0000, "after": 1.0110 },
+        { "feature": "TOTAL_SLEEP", "metric": "DARK_CIRCLE", "label": "총 수면 시간",
+          "before": 1.0000, "after": 0.9890 }
+      ]
+    }
   } }
 ```
+
+**`changes`는 값이 실제로 바뀐 행만 담는다.** 그날 참여하지 않은 피처와, 참여했지만 보정량이 0이던 피처는 빠진다. **보정량 0은 버그가 아니다** — 두 피처의 부분점수가 같으면 오차를 어느 쪽 탓으로 돌릴 근거가 없어 `Δw = 0`이 된다(§10.7).
+
+**첫 검증은 `changes`가 비어 있어도 `updated: true`다.** 그때 7행이 `1.0`으로 만들어지며, **행의 존재 자체가 "개인화가 시작됐다"는 뜻**이기 때문이다([erd.md](erd.md) §3.7).
+
+**한 피처가 올라가면 같은 지표의 다른 피처는 반드시 내려간다** (§10.7 "합이 0이다"). `message`가 올라간 쪽만 말하는 이유이며, 내려간 쪽까지 말하면 같은 사실을 두 번 말하는 셈이다.
 
 **`difference`는 `예보 − 실측`이다.** 판정 구간(§10.2)이 이 방향으로 정의돼 있다. `verdict`는 `HIT`(±5) · `CLOSE`(±6~15) · `UNDERESTIMATED`(−16 이하) · `OVERESTIMATED`(+16 이상)이며, **`UNDERESTIMATED`는 점수를 낮게 예측한 것 = 피부 위험을 과대평가한 것**이다. 두 축이 반대라 문구에서 뒤집히기 쉽다.
 

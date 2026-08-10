@@ -63,8 +63,12 @@ public class SkinScoringEngine {
     /**
      * 참여한 피처만 담는다. <b>{@code null}은 0점이 아니라 키의 부재로 표현한다</b> — 0점으로 두면
      * 존재하지 않은 값이 점수에도 학습에도 그대로 반영된다.
+     *
+     * <p><b>개인 가중치와 무관하다.</b> 부분점수는 가중치를 곱하기 전 단계이므로 같은 밤이면
+     * 항상 같은 값이 나온다. HOME-08이 검증 시점에 이걸 다시 계산해도 예보 때와 같은 값을
+     * 얻는 근거이며(§10.7), 그래서 부분점수를 저장하지 않는다.
      */
-    private Map<SleepFeature, Double> featureScores(ScoringCommand command) {
+    public Map<SleepFeature, Double> featureScores(ScoringCommand command) {
         Map<SleepFeature, Double> scores = new EnumMap<>(SleepFeature.class);
 
         // 이 둘은 세션이 존재하는 이상 항상 있다 — 결측되지 않는다 (§10.3)
