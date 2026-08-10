@@ -9,6 +9,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -68,6 +69,23 @@ public class GlobalExceptionHandler {
             MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ApiResponse<Void>> handleBadRequest(Exception e) {
         log.info("잘못된 요청 {}", e.getMessage());
+        return toResponse(ErrorCode.INVALID_INPUT);
+    }
+
+    /**
+     * 멀티파트 요청 처리 실패 — 파일이 상한을 넘었거나 본문이 멀티파트 형식이 아니다.
+     *
+     * <p><b>이 핸들러가 없으면 용량 초과가 500으로 나간다.</b> 서버 잘못이 아니라 클라이언트가
+     * 상한을 넘긴 것이므로 400이 맞다. 상한은 {@code spring.servlet.multipart}에 있으며, 셀피가
+     * 아이폰 원본으로 들어오는 것을 감안한 값이다.
+     *
+     * <p><b>여기서 {@code SELFIE_IMAGE_INVALID}로 바꾸지 않는다.</b> 멀티파트를 쓰는 API가 셀피
+     * 하나뿐이라 그러고 싶어지지만, {@code global}이 도메인 사정을 알게 되면 의존 방향
+     * ({@code domain → global})이 깨진다. 파트 자체에 대한 판정은 Service가 한다.
+     */
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMultipart(MultipartException e) {
+        log.info("멀티파트 요청 처리 실패 {}", e.getMessage());
         return toResponse(ErrorCode.INVALID_INPUT);
     }
 

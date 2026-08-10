@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,6 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SkinApiDocsTest {
 
     private static final String FORECAST_GET = "$.paths.['/api/v1/skin/forecast'].get";
+    private static final String SELFIE_POST = "$.paths.['/api/v1/skin/selfie'].post";
 
     @Autowired
     private MockMvc mockMvc;
@@ -104,6 +106,76 @@ class SkinApiDocsTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(FORECAST_GET + ".responses.['200'].content.['application/json'].schema.['$ref']")
                         .value("#/components/schemas/ApiResponseSkinForecastQueryResponse"));
+    }
+
+    /**
+     * 셀피 API의 문서가 프론트에게 특히 중요한 이유는 <b>여기만 규칙이 반대</b>이기 때문이다 —
+     * 다른 곳에서 200 + 빈 상태인 상황이 여기서는 4xx다.
+     */
+    @Test
+    @DisplayName("셀피 API의 예보 부재가 404라는 것과 그 이유가 문서에 있다")
+    void 셀피는_예보_부재가_404다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(SELFIE_POST + ".summary").value(containsString("셀피 분석·검증")))
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("SKIN_FORECAST_NOT_FOUND")))
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("동작 자체가 성립하지 않는다")))
+                .andExpect(jsonPath(SELFIE_POST + ".responses.['404'].content.['application/json'].examples.SKIN_FORECAST_NOT_FOUND.['$ref']")
+                        .value("#/components/examples/SKIN_FORECAST_NOT_FOUND"))
+                .andExpect(jsonPath(SELFIE_POST + ".responses.['409'].content.['application/json'].examples.VERIFICATION_ALREADY_DONE.['$ref']")
+                        .value("#/components/examples/VERIFICATION_ALREADY_DONE"));
+    }
+
+    /**
+     * <b>분모를 3으로 읽으면 앱이 서버와 다른 적중률을 표시한다.</b> 빈 지표가 있는 날에만
+     * 어긋나므로 신규 사용자에게서만 드러나고, 값 범위는 정상이라 알아채기 어렵다.
+     */
+    @Test
+    @DisplayName("적중률 분모와 skipped에도 실측이 실린다는 것이 문서에 있다")
+    void 적중률_분모가_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("분모는 `verifications`의 길이이지 3이 아니다")))
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("실측은 항상 3종이 나온다")));
+    }
+
+    /**
+     * 점수 축과 위험 축이 반대라 <b>문구에서 뒤집히기 가장 쉬운 자리</b>다. 프론트가 읽는 유일한
+     * 방어선이 이 문서다.
+     */
+    @Test
+    @DisplayName("과소·과대가 점수 축 기준이라는 설명이 문서에 있다")
+    void 판정_방향이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("예보 − 실측")))
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("피부 위험을 과대평가")))
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("점수 축과 위험 축이 반대다")));
+    }
+
+    /**
+     * 고지 문구는 <b>주어를 생략하지 않는다</b>(prd.md §2). "저장하지 않습니다"는 주어가 없어
+     * "아무도 저장하지 않는다"로 읽히는데, 제공자 쪽 보관 여부는 우리가 모른다.
+     */
+    @Test
+    @DisplayName("셀피 취급 고지가 주어를 붙인 형태로 문서에 있다")
+    void 셀피_고지가_주어를_붙인다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("외부 AI(OpenAI)로 이미지가 전송됩니다")))
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("**서버에** 저장하지 않으며")))
+                // "어디에도 저장되지 않습니다"는 확인되지 않은 주장이라 쓸 수 없다
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(not(containsString("어디에도 저장되지"))));
     }
 
 }

@@ -1,5 +1,6 @@
 package com.allday.sleep2skin_be.domain.skin;
 
+import com.allday.sleep2skin_be.domain.skin.dto.response.SelfieVerificationResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastQueryResponse;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
@@ -8,6 +9,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 
@@ -136,5 +138,149 @@ public interface SkinControllerSpec {
             @Parameter(description = "조회 기준일 (`YYYY-MM-DD`). **기상일 기준이며 앱의 로컬 날짜를 보낸다**",
                     required = true, example = "2026-08-07")
             LocalDate baseDate);
+
+    @Operation(summary = "셀피 분석·검증 (HOME-06→07)", description = """
+            셀피를 분석해 피부 지표 3종을 실측하고, 그날 예보와 대조해 판정한다.
+
+            ```
+            멀티파트 수신 → 메모리에서 OpenAI Vision 호출     (HOME-06)
+            → 지표 3종 실측 저장 → 예보와 대조·판정            (HOME-07)
+            ```
+
+            ### 셀피 원본은 보관하지 않는다
+
+            이미지는 **멀티파트 → 서버 메모리 → 외부 AI(OpenAI)** 로 흐르고, 저장되는 것은
+            **지표 숫자 3개뿐**이다. 오브젝트 스토리지를 거치지 않으며 DB에 이미지 경로·URL
+            컬럼 자체가 없다.
+
+            사용자 고지 문구는 **주어를 생략하지 않는다**:
+            *"분석을 위해 외부 AI(OpenAI)로 이미지가 전송됩니다. **서버에** 저장하지 않으며,
+            분석 직후 즉시 삭제하고 얼굴을 복원할 수 있는 데이터를 보관하지 않습니다."*
+
+            ### 요청
+
+            `X-User-Id` 헤더 · `baseDate` 쿼리 파라미터 · `image` 멀티파트 파트.
+
+            **동작 API인데도 `baseDate`를 받는다.** 이 요청은 **어느 날짜의 예보와 대조할지**를
+            알아야 하는데 서버는 "오늘"이 언제인지 모른다 — 서버 시각으로 정하면 한국 시간
+            오전 9시 이전에 하루 밀린 예보와 대조하게 되고, **값 범위는 정상이라 아무 제약에도
+            안 걸리고 적중률만 무너진다.**
+
+            **멀티파트 요청이라도 폼 필드가 아니라 쿼리 파라미터다.** 다른 API와 같은 자리다.
+
+            **과거 날짜도 받는다.** 지난 날짜의 검증을 만들 수 있다.
+
+            ### 응답
+
+            ```jsonc
+            { "success": true,
+              "data": {
+                "baseDate": "2026-08-07",
+                "analyzedAt": "2026-08-07T12:33:12Z",
+                "verifications": [
+                  { "metric": "DARK_CIRCLE",
+                    "forecast": { "score": 67, "grade": "NORMAL" },
+                    "measured": { "score": 61, "grade": "NORMAL" },
+                    "difference": 6,
+                    "verdict": "CLOSE" },
+                  { "metric": "BARRIER",
+                    "forecast": { "score": 81, "grade": "STABLE" },
+                    "measured": { "score": 78, "grade": "STABLE" },
+                    "difference": 3,
+                    "verdict": "HIT" }
+                ],
+                "skipped": [
+                  { "metric": "COMPLEXION",
+                    "measured": { "score": 55, "grade": "NORMAL" },
+                    "reason": "MISSING_FEATURES" }
+                ],
+                "hitRate": 50,
+                "model": { "updated": false }
+              } }
+            ```
+
+            **`difference`는 `예보 − 실측`이다.**
+
+            | `verdict` | 차이 | 의미 |
+            |---|---|---|
+            | `HIT` | ±5 이내 | 거의 일치 |
+            | `CLOSE` | ±6~15 | 비슷하게 예측 |
+            | `UNDERESTIMATED` | −16 이하 | 점수를 낮게 예측 = **피부 위험을 과대평가** |
+            | `OVERESTIMATED` | +16 이상 | 점수를 높게 예측 = **피부 위험을 과소평가** |
+
+            **점수 축과 위험 축이 반대다.** 문구에서 어느 축인지 밝히지 않으면 뜻이 뒤집힌다.
+
+            ### 대조하지 못한 지표가 있을 수 있다
+
+            **실측은 항상 3종이 나온다.** 갈리는 것은 예보 쪽이다 — 워치를 안 찬 밤은 혈색이,
+            단계가 안 잡힌 밤은 장벽이 비어 있다. 그 지표는 `skipped`로 가고 **적중률 분모에서도
+            빠진다.**
+
+            **`hitRate`의 분모는 `verifications`의 길이이지 3이 아니다.** `skipped`에도
+            `measured`가 실리므로 앱은 실측값 3종을 모두 보여줄 수 있다 — 판정만 못 한 것이지
+            사진을 못 읽은 것이 아니다.
+
+            `verifications`는 **비지 않는다** — 다크서클은 예보가 빈 상태가 될 수 없다.
+
+            ### 하루 1회다
+
+            같은 날 두 번째 요청은 `409 VERIFICATION_ALREADY_DONE`이다. 셀피를 다시 찍는 것은
+            다시 분석하는 것이고 실측값은 갱신되지 않는다.
+
+            **실패하면 행이 생기지 않으므로 재시도는 안전하다.** 502·504를 받았다면 그대로 다시
+            보내면 된다.
+
+            ### 예외
+
+            | 코드 | `error.code` | 언제 | 앱이 할 일 |
+            |---|---|---|---|
+            | `400` | `SELFIE_IMAGE_INVALID` | `image` 파트가 없거나 비었음 · 이미지가 아닌 타입 | 다시 촬영 |
+            | `400` | `INVALID_INPUT` | `baseDate` 누락·형식 오류 · 파일이 상한(10MB) 초과 | 요청 버그 또는 리사이즈 |
+            | `400` | `USER_ID_HEADER_INVALID` | `X-User-Id` 누락 | 헤더를 넣고 재호출 |
+            | `404` | `USER_NOT_FOUND` | 없는 사용자 | — |
+            | `404` | `SKIN_FORECAST_NOT_FOUND` | 그날 예보가 없음 | **수면을 먼저 업로드해야 한다** |
+            | `409` | `VERIFICATION_ALREADY_DONE` | 그날 이미 검증함 | 결과 화면으로 |
+            | `502` | `SELFIE_ANALYSIS_FAILED` | LLM 호출·파싱 실패 | 재시도 |
+            | `504` | `SELFIE_ANALYSIS_TIMEOUT` | LLM 응답 지연(30초 초과) | 재시도 |
+
+            **여기서만 예보 부재가 에러다.** 조회 API(`GET /skin/forecast`)에서는 `200` + 빈
+            상태이지만, 이 API는 대조할 기준이 없으면 동작 자체가 성립하지 않는다.
+            """)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "분석·검증 성공")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "`SELFIE_IMAGE_INVALID` — 이미지 파트가 없거나 이미지가 아님",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "SELFIE_IMAGE_INVALID",
+                    ref = "#/components/examples/SELFIE_IMAGE_INVALID")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`SKIN_FORECAST_NOT_FOUND` — 그날 예보가 없어 대조 불가",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "SKIN_FORECAST_NOT_FOUND",
+                    ref = "#/components/examples/SKIN_FORECAST_NOT_FOUND")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409", description = "`VERIFICATION_ALREADY_DONE` — 하루 1회 제약",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "VERIFICATION_ALREADY_DONE",
+                    ref = "#/components/examples/VERIFICATION_ALREADY_DONE")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "502", description = "`SELFIE_ANALYSIS_FAILED` — 분석 실패. 재시도 가능",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "SELFIE_ANALYSIS_FAILED",
+                    ref = "#/components/examples/SELFIE_ANALYSIS_FAILED")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "504", description = "`SELFIE_ANALYSIS_TIMEOUT` — 분석 지연. 재시도 가능",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "SELFIE_ANALYSIS_TIMEOUT",
+                    ref = "#/components/examples/SELFIE_ANALYSIS_TIMEOUT")))
+    ApiResponse<SelfieVerificationResponse> verifySelfie(
+            @CurrentUserId Long userId,
+
+            @Parameter(description = "대조할 예보의 기준일 (`YYYY-MM-DD`). **폼 필드가 아니라 쿼리다**",
+                    required = true, example = "2026-08-07")
+            LocalDate baseDate,
+
+            @Parameter(description = "셀피 이미지. **서버에 저장되지 않는다** — 메모리에서 바로 분석된다")
+            MultipartFile image);
 
 }

@@ -178,10 +178,19 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - **테스트 유저 시딩** — `TestUserSeeder`(`CommandLineRunner`). 멱등하며 운영 포함 전 환경에서 돈다. 사용자가 한 명이라도 있으면 건너뛴다
 - `GET /api/v1/health` 헬스체크
 - **`POST /api/v1/users/me/consents`** (ONB-02) · **`PATCH /api/v1/users/me/onboarding`** (ONB-05)
-- `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)
-- 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI
+- **수면 정규화·집계 코어** — `SleepSessionNormalizer`·`SleepNormalizationPolicy`·`BedtimeRegularityCalculator`
+- **예보 스코어링 코어** — `ScoringPolicy`·`SkinScoringEngine` (§10.3~§10.7 확정값 전부)
+- **`POST /api/v1/sleep/sessions`** (수면 업로드 + 예보 산출) · **`GET /api/v1/sleep/interpretation`** (HOME-02)
+- **`GET /api/v1/skin/forecast`** (HOME-03) · **`POST /api/v1/skin/selfie`** (HOME-06→07)
+- **OpenAI Vision 연동** — `global/infra/openai/`의 `SkinVisionClient`(인터페이스) + `OpenAiSkinVisionClient`(Responses API + Structured Outputs)
+- `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`OpenAiConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)·`QueryStatus`
+- 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI/CD
 
-**미도입**: OpenAI. `sleep`·`skin`·`todo`·`report`의 Service·Controller는 아직 없다.
+**미도입**: 개인 가중치 학습(HOME-08 — `personal_weight`는 아직 아무도 쓰지 않는다). `todo`·`report`의 Service·Controller.
+
+**`OPENAI_API_KEY`가 없어도 앱은 뜬다.** 셀피 분석만 502로 실패하고 기동 시 WARN이 남는다 — 키 없는 팀원도 수면·예보 쪽을 개발할 수 있게 한 것이다. 운영에서 키가 빠지는 것은 CD 선검사가 경고한다.
+
+**LLM 호출은 트랜잭션 밖이다.** `SelfieAnalysisService`(선검사 + Vision 호출) → `SkinVerificationService`(`@Transactional` 저장·대조)로 빈을 나눈 이유가 그것이다. 30초짜리 외부 호출이 DB 커넥션을 잡으면 셀피가 몰릴 때 **수면 업로드까지 함께 막힌다.**
 
 ### 굳어진 패턴 — 이후 API가 그대로 복제한다
 
@@ -208,13 +217,17 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 **스키마는 엔티티에서 만든다.** `ddl-auto: update`로 결정됐고 DDL 스크립트를 따로 두지 않는다 (근거는 `application.yml` 주석). `update`는 컬럼 추가만 반영하므로 **엔티티를 파괴적으로 바꿨다면 DB를 지우고 다시 만든다** — `docker compose down -v && docker compose up -d mysql`.
 
-다음 착수 순서 (api.md §4 · prd.md §8) — **1단계 6개 중 2개가 끝났다.**
+다음 착수 순서 (api.md §4 · prd.md §8) — **1단계 6개가 전부 끝났다.**
 
 1. ~~엔티티 9개 + Repository~~ · ~~테스트 유저 시딩~~ · ~~동의 저장(ONB-02)~~ · ~~온보딩 완료(ONB-05)~~ — 완료
-2. **수면 세션 수신 `POST /api/v1/sleep/sessions`** ← 여기부터 (페이로드 해시로 중복 차단 — 위 규칙 필수)
-3. 피부 예보 산출 (HOME-03) — **블로커 없음.** 스코어링 명세가 prd.md §10.3~§10.6으로 확정됐다
-4. 수면 통역 카드 `GET /api/v1/sleep/interpretation` (HOME-02)
-5. 셀피 분석·검증·학습 `POST /api/v1/skin/selfie` (HOME-06→07→08)
+2. ~~수면 세션 수신 `POST /api/v1/sleep/sessions`~~ — 완료
+3. ~~피부 예보 산출 (HOME-03)~~ · ~~수면 통역 카드 (HOME-02)~~ — 완료
+4. ~~셀피 분석·검증 `POST /api/v1/skin/selfie` (HOME-06→07)~~ — 완료
+5. **개인 가중치 학습 (HOME-08)** ← 여기부터. 규칙은 prd.md §10.7로 확정돼 있다
+
+**HOME-08에 필요한 것은 `s(f)` 재계산뿐이다.** 지표점수는 저장된 `skin_forecast` 값을 그대로 쓴다 — `e = 실측 − 예보`의 예보와 같은 값이어야 하므로 재계산이 아니라 조회가 맞다. 그리고 **부분점수는 개인 가중치와 무관하다**(가중치를 곱하기 전 단계라) `SkinScoringEngine`이 이미 내보내는 `featureScores`를 그대로 쓸 수 있다. 새로 필요한 것은 `SleepSession` → `ScoringCommand` 변환 하나다 — 지금은 `SleepNormalizationResult.toScoringCommand()` 경로만 있다.
+
+**응답 자리는 이미 나가 있다.** `PersonalModelUpdateResponse`가 `{ "updated": false }`로 응답에 실려 있고, 학습이 붙으면 `changes`·`message`가 **추가**된다 — 기존 필드는 바뀌지 않는다.
 
 ## 스코어링 명세 (prd.md §10 — 확정)
 
