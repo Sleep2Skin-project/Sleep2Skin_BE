@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 실측 저장 + 예보 대조 (HOME-07).
+ * 실측 저장 + 예보 대조 + 학습 트리거 (HOME-07→08).
  *
  * <p><b>여기서부터가 트랜잭션이다.</b> LLM 호출은 {@link SelfieAnalysisService}가 이 앞에서
  * 트랜잭션 밖에 두고 끝낸다 — 최대 30초짜리 외부 호출이 DB 커넥션을 잡고 있으면 셀피가 몰릴 때
@@ -53,6 +53,7 @@ public class SkinVerificationService {
     private final SkinForecastRepository skinForecastRepository;
     private final SkinMeasurementRepository skinMeasurementRepository;
     private final SleepSessionRepository sleepSessionRepository;
+    private final SkinModelService skinModelService;
 
     /**
      * 실측을 저장하고 그날 예보와 대조한다.
@@ -67,7 +68,10 @@ public class SkinVerificationService {
 
         SkinMeasurement measurement = save(userId, baseDate, scores);
 
-        boolean watchDataMissing = watchDataMissing(userId, baseDate);
+        // 세션을 한 번만 읽는다 — 빈 지표의 사유와 학습의 부분점수가 같은 행에서 나온다
+        Optional<SleepSession> session = sleepSessionRepository.findByUserIdAndSleepDate(userId, baseDate);
+        boolean watchDataMissing = watchDataMissing(session, userId, baseDate);
+
         List<MetricVerificationResponse> verifications = new ArrayList<>();
         List<SkippedMetricResponse> skipped = new ArrayList<>();
 
@@ -85,7 +89,21 @@ public class SkinVerificationService {
 
         return new SelfieVerificationResponse(baseDate, measurement.getAnalyzedAt(),
                 List.copyOf(verifications), List.copyOf(skipped), hitRate(verifications),
-                PersonalModelUpdateResponse.notYetImplemented());
+                learn(userId, session, verifications));
+    }
+
+    /**
+     * 학습 (HOME-08). <b>검증과 같은 트랜잭션이다</b> — 실측만 남고 가중치가 안 바뀌면 그날의
+     * 오차를 영영 학습하지 못한다. 하루 1회 제약 때문에 다시 시도할 방법도 없다.
+     *
+     * <p>세션이 없으면 부분점수를 계산할 수 없어 건너뛴다. 예보가 있는데 세션이 없는 것은 데이터가
+     * 어긋난 상태이지만, <b>검증 자체는 이미 성립했으므로</b> 응답까지 실패시키지 않는다.
+     */
+    private PersonalModelUpdateResponse learn(Long userId, Optional<SleepSession> session,
+                                              List<MetricVerificationResponse> verifications) {
+        return session
+                .map(found -> skinModelService.learn(userId, found, verifications))
+                .orElseGet(PersonalModelUpdateResponse::notUpdated);
     }
 
     /**
@@ -135,8 +153,7 @@ public class SkinVerificationService {
      * 빈 예보의 사유를 가르는 유일한 입력. 예보에 사유 컬럼이 없어(파생값이라 두지 않았다)
      * 그날 세션에서 되짚는다 — {@code SkinForecastService}가 조회 경로에서 하는 것과 같다.
      */
-    private boolean watchDataMissing(Long userId, LocalDate baseDate) {
-        Optional<SleepSession> session = sleepSessionRepository.findByUserIdAndSleepDate(userId, baseDate);
+    private boolean watchDataMissing(Optional<SleepSession> session, Long userId, LocalDate baseDate) {
         if (session.isEmpty()) {
             log.warn("예보는 있는데 수면 세션이 없다 userId={} baseDate={}", userId, baseDate);
             return true;

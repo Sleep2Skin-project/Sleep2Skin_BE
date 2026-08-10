@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import java.math.BigDecimal;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
@@ -163,6 +165,90 @@ class ScoringPolicyTest {
         void 과소예측은_점수_축_기준이다() {
             // 예보 30점(위험) · 실측 80점(안정) — 위험을 크게 잡았지만 점수 축에서는 과소예측이다
             assertThat(ScoringPolicy.verdict(30, 80)).isEqualTo(VerificationVerdict.UNDERESTIMATED);
+        }
+    }
+
+    @Nested
+    @DisplayName("개인 가중치 보정 (§10.7)")
+    class WeightLearning {
+
+        /**
+         * §10.7의 예시 그대로다 — 다크서클 예보 68 / 실측 55인 밤, 각성 부분점수 50 · 총 수면 85.
+         *
+         * <p>명세는 지표점수를 반올림 전 {@code 67.5}로 잡아 {@code ±0.011}을 보이지만, 구현은
+         * <b>저장된 예보값 {@code 68}</b>을 쓴다(가중치에 의존하지 않는 값이라 과거 날짜 검증에서도
+         * 흔들리지 않는다). 차이는 반올림 수준이다.
+         */
+        @Test
+        @DisplayName("실측이 예보보다 나쁘면 부분점수가 낮았던 피처의 비중이 올라간다")
+        void 오차를_부분점수_편차로_배분한다() {
+            BigDecimal awakeCount = ScoringPolicy.weightDelta(55, 68, 50);   // 평균보다 낮았다
+            BigDecimal totalSleep = ScoringPolicy.weightDelta(55, 68, 85);   // 평균보다 높았다
+
+            assertThat(awakeCount).isPositive();
+            assertThat(totalSleep).isNegative();
+            assertThat(awakeCount).isEqualByComparingTo("0.0117");
+            assertThat(totalSleep).isEqualByComparingTo("-0.0111");
+        }
+
+        @Test
+        @DisplayName("실측이 예보보다 좋으면 방향이 반대가 된다")
+        void 오차_방향이_뒤집히면_보정도_뒤집힌다() {
+            assertThat(ScoringPolicy.weightDelta(81, 68, 50)).isNegative();
+            assertThat(ScoringPolicy.weightDelta(81, 68, 85)).isPositive();
+        }
+
+        /**
+         * <b>버그가 아니다.</b> 오차가 어느 피처 탓인지 데이터가 말해주지 않는 날이므로 아무것도
+         * 학습하지 않는 것이 맞다(§10.7).
+         */
+        @Test
+        @DisplayName("부분점수가 지표점수와 같으면 보정량이 0이다")
+        void 편차가_없으면_학습하지_않는다() {
+            assertThat(ScoringPolicy.weightDelta(55, 68, 68)).isEqualByComparingTo("0");
+        }
+
+        @Test
+        @DisplayName("예보가 정확히 맞은 날은 어느 피처도 움직이지 않는다")
+        void 오차가_없으면_학습하지_않는다() {
+            assertThat(ScoringPolicy.weightDelta(68, 68, 50)).isEqualByComparingTo("0");
+            assertThat(ScoringPolicy.weightDelta(68, 68, 85)).isEqualByComparingTo("0");
+        }
+
+        /**
+         * 클램프가 있으므로 <b>첫 검증부터 즉시 예보에 반영해도 안전하다</b> — 최소 검증 횟수를
+         * 두지 않는 근거다.
+         */
+        @ParameterizedTest(name = "{0} → {1}")
+        @CsvSource({
+                "1.0000, 1.0000",
+                "0.4999, 0.5000",   // 하한
+                "0.1000, 0.5000",
+                "2.0001, 2.0000",   // 상한
+                "9.9000, 2.0000"
+        })
+        @DisplayName("배수는 0.5~2.0으로 가둔다 — 한 피처가 지표를 지배하지 못한다")
+        void 클램프(String raw, String expected) {
+            assertThat(ScoringPolicy.clampWeight(new BigDecimal(raw)))
+                    .isEqualByComparingTo(expected);
+        }
+
+        /**
+         * {@code personal_weight}의 한 행이 (피처, 지표) 쌍인데 학습은 피처 단위로 돈다.
+         * 역방향이 §10.3의 매핑에서 유도되지 않으면 <b>학습이 예보와 다른 근거를 쓰게 된다.</b>
+         */
+        @Test
+        @DisplayName("피처 7종이 전부 지표에 매핑된다 — personal_weight 7행과 같은 짝이다")
+        void 피처의_지표를_되찾는다() {
+            assertThat(SleepFeature.values()).hasSize(7);
+
+            assertThat(ScoringPolicy.metricOf(SleepFeature.AWAKE_COUNT)).isEqualTo(SkinMetric.DARK_CIRCLE);
+            assertThat(ScoringPolicy.metricOf(SleepFeature.TOTAL_SLEEP)).isEqualTo(SkinMetric.DARK_CIRCLE);
+            assertThat(ScoringPolicy.metricOf(SleepFeature.DEEP_SLEEP)).isEqualTo(SkinMetric.BARRIER);
+            assertThat(ScoringPolicy.metricOf(SleepFeature.REM_SLEEP)).isEqualTo(SkinMetric.BARRIER);
+            assertThat(ScoringPolicy.metricOf(SleepFeature.BEDTIME_REGULARITY)).isEqualTo(SkinMetric.COMPLEXION);
+            assertThat(ScoringPolicy.metricOf(SleepFeature.HRV)).isEqualTo(SkinMetric.COMPLEXION);
+            assertThat(ScoringPolicy.metricOf(SleepFeature.RESTING_HEART_RATE)).isEqualTo(SkinMetric.COMPLEXION);
         }
     }
 

@@ -4,6 +4,7 @@ import com.allday.sleep2skin_be.domain.skin.dto.SkinGrade;
 import com.allday.sleep2skin_be.domain.skin.dto.UnavailableReason;
 import com.allday.sleep2skin_be.domain.skin.dto.response.MetricVerificationResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelUpdateResponse;
+import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelUpdateResponse.WeightChangeResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SelfieVerificationResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastQueryResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse;
@@ -11,6 +12,7 @@ import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.Me
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.UnavailableMetricResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkippedMetricResponse;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
+import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
 import com.allday.sleep2skin_be.global.exception.BusinessException;
 import com.allday.sleep2skin_be.global.exception.ErrorCode;
 import com.allday.sleep2skin_be.global.response.QueryStatus;
@@ -23,6 +25,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -203,7 +206,11 @@ class SkinControllerTest {
                     .andExpect(jsonPath("$.data.skipped[0].metric").value("COMPLEXION"))
                     .andExpect(jsonPath("$.data.skipped[0].measured.score").value(55))
                     .andExpect(jsonPath("$.data.hitRate").value(50))
-                    .andExpect(jsonPath("$.data.model.updated").value(false));
+                    .andExpect(jsonPath("$.data.model.updated").value(true))
+                    .andExpect(jsonPath("$.data.model.changes[0].feature").value("AWAKE_COUNT"))
+                    .andExpect(jsonPath("$.data.model.changes[0].metric").value("DARK_CIRCLE"))
+                    .andExpect(jsonPath("$.data.model.changes[0].label").value("야간 각성"))
+                    .andExpect(jsonPath("$.data.model.changes[0].after").value(1.0110));
         }
 
         /**
@@ -310,7 +317,11 @@ class SkinControllerTest {
                             MetricVerificationResponse.of(SkinMetric.BARRIER, 81, 78)),
                     List.of(SkippedMetricResponse.of(SkinMetric.COMPLEXION, 55, true)),
                     50,
-                    PersonalModelUpdateResponse.notYetImplemented());
+                    new PersonalModelUpdateResponse(true,
+                            "야간 각성을(를) 조금 더 중요하게 보도록 학습했어요.",
+                            List.of(new WeightChangeResponse(SleepFeature.AWAKE_COUNT,
+                                    SkinMetric.DARK_CIRCLE, "야간 각성",
+                                    new BigDecimal("1.0000"), new BigDecimal("1.0110")))));
         }
     }
 

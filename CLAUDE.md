@@ -181,12 +181,13 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - **수면 정규화·집계 코어** — `SleepSessionNormalizer`·`SleepNormalizationPolicy`·`BedtimeRegularityCalculator`
 - **예보 스코어링 코어** — `ScoringPolicy`·`SkinScoringEngine` (§10.3~§10.7 확정값 전부)
 - **`POST /api/v1/sleep/sessions`** (수면 업로드 + 예보 산출) · **`GET /api/v1/sleep/interpretation`** (HOME-02)
-- **`GET /api/v1/skin/forecast`** (HOME-03) · **`POST /api/v1/skin/selfie`** (HOME-06→07)
-- **OpenAI Vision 연동** — `global/infra/openai/`의 `SkinVisionClient`(인터페이스) + `OpenAiSkinVisionClient`(Responses API + Structured Outputs)
+- **`GET /api/v1/skin/forecast`** (HOME-03) · **`POST /api/v1/skin/selfie`** (HOME-06→07→08)
+- **개인 가중치 학습** — `SkinModelService`. 첫 검증에 7행을 `1.0`으로 만들고, 그날 참여한 피처만 보정한다
+- **OpenAI Vision 연동** — `global/infra/openai/`의 `SkinVisionClient`(인터페이스) + `OpenAiSkinVisionClient`(Responses API + Structured Outputs). **점수 방향은 2026-08-10 실호출로 확인됨**
 - `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`OpenAiConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)·`QueryStatus`
 - 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI/CD
 
-**미도입**: 개인 가중치 학습(HOME-08 — `personal_weight`는 아직 아무도 쓰지 않는다). `todo`·`report`의 Service·Controller.
+**미도입**: `todo`·`report`의 Service·Controller. **핵심 루프(수면 → 예보 → 검증 → 학습)는 전부 돈다.**
 
 **`OPENAI_API_KEY`가 없어도 앱은 뜬다.** 셀피 분석만 502로 실패하고 기동 시 WARN이 남는다 — 키 없는 팀원도 수면·예보 쪽을 개발할 수 있게 한 것이다. 운영에서 키가 빠지는 것은 CD 선검사가 경고한다.
 
@@ -222,12 +223,12 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 1. ~~엔티티 9개 + Repository~~ · ~~테스트 유저 시딩~~ · ~~동의 저장(ONB-02)~~ · ~~온보딩 완료(ONB-05)~~ — 완료
 2. ~~수면 세션 수신 `POST /api/v1/sleep/sessions`~~ — 완료
 3. ~~피부 예보 산출 (HOME-03)~~ · ~~수면 통역 카드 (HOME-02)~~ — 완료
-4. ~~셀피 분석·검증 `POST /api/v1/skin/selfie` (HOME-06→07)~~ — 완료
-5. **개인 가중치 학습 (HOME-08)** ← 여기부터. 규칙은 prd.md §10.7로 확정돼 있다
+4. ~~셀피 분석·검증·학습 `POST /api/v1/skin/selfie` (HOME-06→07→08)~~ — 완료
+5. **2단계** ← 여기부터. 일간 리포트(REP-02·04·05) · TODO 추천 엔진(TODO-02) · 배너/프로필(HOME-09·MY-01)
 
-**HOME-08에 필요한 것은 `s(f)` 재계산뿐이다.** 지표점수는 저장된 `skin_forecast` 값을 그대로 쓴다 — `e = 실측 − 예보`의 예보와 같은 값이어야 하므로 재계산이 아니라 조회가 맞다. 그리고 **부분점수는 개인 가중치와 무관하다**(가중치를 곱하기 전 단계라) `SkinScoringEngine`이 이미 내보내는 `featureScores`를 그대로 쓸 수 있다. 새로 필요한 것은 `SleepSession` → `ScoringCommand` 변환 하나다 — 지금은 `SleepNormalizationResult.toScoringCommand()` 경로만 있다.
+**2단계 착수 전에 정해야 할 것이 두 가지 있다.** 일간 리포트는 **B6(수면 목표값)** 이 필요하고, TODO는 **P5(액션 마스터 데이터)** 가 콘텐츠 작업이라 개발보다 오래 걸린다.
 
-**응답 자리는 이미 나가 있다.** `PersonalModelUpdateResponse`가 `{ "updated": false }`로 응답에 실려 있고, 학습이 붙으면 `changes`·`message`가 **추가**된다 — 기존 필드는 바뀌지 않는다.
+**⚠️ HOME-08은 §10.7의 문구 하나를 의도적으로 따르지 않았다.** 명세는 "`s(f)`와 **지표점수**를 검증 시점에 다시 계산한다"고 적었지만, 구현은 **지표점수를 저장된 예보값으로 쓴다.** 지표점수만 개인 가중치에 의존하는데 가중치는 **다른 날짜의 검증으로** 바뀔 수 있어(api.md가 "과거 날짜도 받는다"고 명시), 재계산하면 대조 기준과 다른 값이 나온다. 근거는 `SkinModelService` javadoc에 있다.
 
 ## 스코어링 명세 (prd.md §10 — 확정)
 

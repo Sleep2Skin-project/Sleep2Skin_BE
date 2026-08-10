@@ -18,6 +18,7 @@ import com.allday.sleep2skin_be.global.infra.openai.SkinVisionScores;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -26,12 +27,14 @@ import org.springframework.dao.DataIntegrityViolationException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -48,6 +51,8 @@ class SkinVerificationServiceTest {
     private SkinMeasurementRepository skinMeasurementRepository;
     @Mock
     private SleepSessionRepository sleepSessionRepository;
+    @Mock
+    private SkinModelService skinModelService;
 
     @InjectMocks
     private SkinVerificationService skinVerificationService;
@@ -175,6 +180,46 @@ class SkinVerificationServiceTest {
         assertThatThrownBy(() -> analyze(61, 55, 78))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.VERIFICATION_ALREADY_DONE);
+    }
+
+    /**
+     * <b>학습은 대조한 지표만 받는다.</b> {@code skipped}까지 넘기면 예보가 없어 오차가 존재하지
+     * 않는 지표로 가중치를 움직이게 된다 — 값 범위는 정상이라 아무 제약에도 안 걸린다.
+     */
+    @Test
+    @DisplayName("학습에는 대조한 지표만 넘긴다 — skipped는 넘기지 않는다")
+    void 학습에_대조_결과만_넘긴다() {
+        forecastIs(67, null, 81);       // 혈색은 예보가 없다
+        watchNotWorn();
+        savesWhatItGets();
+
+        analyze(61, 55, 78);
+
+        ArgumentCaptor<List<MetricVerificationResponse>> captor = ArgumentCaptor.captor();
+        verify(skinModelService).learn(eq(USER_ID), any(SleepSession.class), captor.capture());
+
+        assertThat(captor.getValue()).extracting(MetricVerificationResponse::metric)
+                .containsExactly(SkinMetric.DARK_CIRCLE, SkinMetric.BARRIER)
+                .doesNotContain(SkinMetric.COMPLEXION);
+    }
+
+    /**
+     * 예보가 있는데 세션이 없는 것은 데이터가 어긋난 상태다. 그래도 <b>검증 자체는 성립했으므로</b>
+     * 응답까지 실패시키지 않는다 — 하루 1회 제약 때문에 재시도할 방법도 없다.
+     */
+    @Test
+    @DisplayName("수면 세션이 없으면 학습을 건너뛰고 검증 결과는 그대로 낸다")
+    void 세션이_없으면_학습을_건너뛴다() {
+        forecastIs(67, 62, 81);
+        given(sleepSessionRepository.findByUserIdAndSleepDate(USER_ID, BASE_DATE))
+                .willReturn(Optional.empty());
+        savesWhatItGets();
+
+        SelfieVerificationResponse response = analyze(61, 55, 78);
+
+        assertThat(response.model().updated()).isFalse();
+        assertThat(response.verifications()).isNotEmpty();
+        verify(skinModelService, never()).learn(any(), any(), any());
     }
 
     // ===== 픽스처 =====

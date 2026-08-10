@@ -1,6 +1,7 @@
 package com.allday.sleep2skin_be.domain.skin.dto;
 
 import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
+import com.allday.sleep2skin_be.domain.sleep.entity.SleepSession;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -49,6 +50,30 @@ public record ScoringCommand(
 
         Map<SleepFeature, BigDecimal> personalWeights
 ) {
+
+    /**
+     * 저장된 세션으로 부분점수만 다시 계산할 때 쓴다 (HOME-08 — §10.7).
+     *
+     * <p><b>개인 가중치를 받지 않는다.</b> 부분점수 {@code s(f)}는 가중치를 곱하기 전 단계라
+     * 결과가 같고, 빈 맵을 넘기는 호출부가 "여기서 가중치는 의미가 없다"를 말하지 못한다.
+     * 지표점수까지 다시 계산하려 들면 그때는 이 팩토리가 아니라 저장된 예보를 봐야 한다 —
+     * <b>대조 기준은 산출 시점의 값이어야 하기 때문</b>이다.
+     *
+     * @param bedtimeRegularitySd 최근 7일 표준편차. <b>세션 밖에서 와야 한다</b> —
+     *                            {@code sleep_session} 한 행에서 나오지 않는다
+     */
+    public static ScoringCommand forFeatureScores(SleepSession session, Double bedtimeRegularitySd) {
+        return new ScoringCommand(
+                session.getAwakeCount(),
+                session.getTotalSleepMinutes(),
+                session.getDeepSleepMinutes(),
+                session.getRemSleepMinutes(),
+                session.stagedSleepMinutes(),
+                bedtimeRegularitySd,
+                session.getHrv(),
+                session.getRestingHeartRate(),
+                Map.of());
+    }
 
     /** 워치를 차지 않고 잔 밤인가. {@code HRV}와 안정시 심박은 같은 착용 여부에 의존해 함께 결측된다. */
     public boolean isWatchDataMissing() {
