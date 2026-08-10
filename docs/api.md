@@ -299,7 +299,64 @@ image: (파일)
 
 **3. 적중률 · 연속 검증 배너** (HOME-09) — 최근 검증 1건 + 적중률 + 연속 검증 횟수.
 
+```jsonc
+{ "success": true,
+  "data": {
+    "status": "AVAILABLE",          // 또는 NO_VERIFICATION
+    "message": null,
+    "baseDate": "2026-08-10",
+    "summary": {                    // 빈 상태면 null
+      "hitRate": 58,                // 누적 — 지금까지 모든 판정 중 `HIT` 비율(%)
+      "verificationCount": 5,       // COUNT(skin_measurement)
+      "streakCount": 3,
+      "latest": {                   // 최근 검증 1건
+        "baseDate": "2026-08-09",
+        "hitRate": 67,              // 그날치
+        "verifications": [ /* POST /skin/selfie 와 같은 모양 */ ],
+        "skipped": [ ]
+      } } } }
+```
+
+**`hitRate`는 누적이다** (2026-08-10 확정). 최근 1건만 쓰면 분모가 최대 3이라 숫자가 `0`·`33`·`67`·`100`으로만 튀고 하루마다 요동친다. 배너가 말하려는 것은 *"예보가 얼마나 믿을 만한가"* 이므로 표본이 쌓일수록 안정되는 쪽이 맞다. **그날치는 `latest.hitRate`에 따로 있다.**
+
+**누적 분모에서도 빈 지표는 빠진다.** 그날 예보가 없던 지표는 판정 자체가 없었으므로 세지 않는다 — `POST /skin/selfie`와 같은 규칙이다.
+
+**`latest`는 셀피 응답과 같은 DTO를 쓴다.** 앱이 파싱 코드를 한 번만 쓰면 된다.
+
+**`streakCount`는 오늘 또는 어제부터 하루도 빠짐없이 이어진 `base_date`의 개수다** ([prd.md](prd.md) §4.2). **오늘 미검증이 연속을 끊지 않는다** — 저녁에 검증하는 사용자가 아침에 앱을 열었을 때 어제까지 쌓은 연속이 `0`으로 보이면 **아직 하지 않은 일로 사용자를 벌주는 것**처럼 읽힌다. `baseDate`가 필수인 이유이며, 없이 계산하면 연속이 하루 밀린다.
+
+> ⚠️ **MY-01 프로필이 `verificationCount`·`streakCount`에 같은 숫자를 써야 한다.** 계산은 한 곳에 두고 두 API가 같은 Service를 호출한다 — 각자 계산하면 어긋난다.
+
 **4. 내 모델** (REP-12) — `personal_weight`를 일반 가중치와 비교해 "각성에 1.6배 민감" 같은 문장을 만든다. **`personal_weight`가 유일한 출처다.**
+
+```jsonc
+{ "success": true,
+  "data": {
+    "status": "AVAILABLE",          // 또는 NO_VERIFICATION (개인화 전)
+    "message": null,
+    "model": {                      // 빈 상태면 null
+      "verificationCount": 5,
+      "headline": "야간 각성에 1.6배 민감해요",
+      "metrics": [
+        { "metric": "DARK_CIRCLE",
+          "features": [
+            { "feature": "AWAKE_COUNT", "label": "야간 각성",
+              "generalShare": 0.5, "personalShare": 0.615, "ratio": 1.23 },
+            { "feature": "TOTAL_SLEEP", "label": "총 수면 시간",
+              "generalShare": 0.5, "personalShare": 0.385, "ratio": 0.77 }
+          ] }
+      ] } } }
+```
+
+**비율은 같은 지표 안에서만 의미를 갖는다.** `weight`는 일반 가중치에 곱하는 배수이고 곱한 뒤 **지표 내 합이 1로 재정규화**되므로 절댓값 자체에는 의미가 없다([erd.md](erd.md) §3.7). `headline`은 **지표 안에서 최대/최소 비가 가장 큰 지표**를 골라 만든다.
+
+- **`personalShare`는 재정규화된 비중** — 예보가 실제로 쓰는 숫자와 같은 것이라야 화면과 계산이 어긋나지 않는다
+- **`generalShare`는 지표 내 균등**(`1/n`). 개인화 전 기준선이다
+- **`ratio`가 전부 `1.0`인 지표는 아직 배울 게 없었던 것**이다 — 신규 사용자에게 정상이며 오류가 아니다
+
+**신뢰도 등급을 서버가 만들지 않는다** ([prd.md](prd.md) §4.5 · L8 해결). `verificationCount`를 그대로 주고 등급 해석은 클라이언트가 한다 — 컷오프를 서버에 두면 바꿀 때마다 배포해야 한다.
+
+**`baseDate`를 받지 않는다.** 누적 검증 횟수와 가중치는 "오늘"이 필요 없다. **`personal_weight` 행이 0개면 `NO_VERIFICATION`이다** — 행의 존재 자체가 개인화 시작 여부다.
 
 ### 2.4 `todo` — 행동 처방
 

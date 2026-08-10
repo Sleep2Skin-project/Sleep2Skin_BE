@@ -1,7 +1,9 @@
 package com.allday.sleep2skin_be.domain.skin;
 
+import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SelfieVerificationResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastQueryResponse;
+import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -312,5 +314,149 @@ public interface SkinControllerSpec {
 
             @Parameter(description = "셀피 이미지. **서버에 저장되지 않는다** — 메모리에서 바로 분석된다")
             MultipartFile image);
+
+    @Operation(summary = "적중률 · 연속 검증 배너 (HOME-09)", description = """
+            최근 검증 1건 + 누적 적중률 + 연속 검증 횟수.
+
+            ### 응답
+
+            ```jsonc
+            { "success": true,
+              "data": {
+                "status": "AVAILABLE",          // 또는 NO_VERIFICATION
+                "message": null,
+                "baseDate": "2026-08-10",
+                "summary": {
+                  "hitRate": 58,                // **누적**
+                  "verificationCount": 5,
+                  "streakCount": 3,
+                  "latest": {
+                    "baseDate": "2026-08-09",
+                    "hitRate": 67,              // 그날치
+                    "verifications": [ /* POST /skin/selfie 와 같은 모양 */ ],
+                    "skipped": [ ]
+                  } } } }
+            ```
+
+            ### `hitRate`는 누적이다 — `latest.hitRate`와 다른 숫자다
+
+            **최상위 `hitRate`는 지금까지 모든 판정 중 `HIT` 비율이다.** 최근 1건만 쓰면 분모가
+            최대 3이라 숫자가 `0`·`33`·`67`·`100`으로만 튀고 하루마다 요동친다. 배너가 말하려는
+            것은 **"예보가 얼마나 믿을 만한가"** 이므로 표본이 쌓일수록 안정돼야 한다.
+
+            **그날치가 필요하면 `latest.hitRate`를 쓴다.** 두 숫자를 바꿔 쓰면 화면이 다른 뜻을
+            말하게 된다.
+
+            **누적 분모에서도 빈 지표는 빠진다.** 그날 예보가 없던 지표는 판정 자체가 없었으므로
+            세지 않는다 — `POST /skin/selfie`와 같은 규칙이다. **검증 일수 × 3이 아니다.**
+
+            ### 연속 검증 횟수 — 오늘 미검증이 연속을 끊지 않는다
+
+            `base_date`가 **오늘 또는 어제부터** 하루도 빠짐없이 이어진 날짜의 개수다.
+
+            | 상황 | 결과 |
+            |---|---|
+            | 오늘 ✅ · 어제 ✅ · 그제 ❌ | `2` |
+            | 오늘 ❌ · 어제 ✅ · 그제 ✅ | `2` — **끊기지 않는다** |
+            | 오늘 ❌ · 어제 ❌ | `0` |
+            | 오늘 첫 검증 | `1` |
+
+            저녁에 검증하는 사용자가 아침에 앱을 열었을 때 어제까지 쌓은 연속이 `0`으로 보이면
+            **아직 하지 않은 일로 사용자를 벌주는 것**처럼 읽힌다.
+
+            **`baseDate`가 필수인 이유가 여기 있다.** 서버는 "오늘"을 모르므로 없이 계산하면
+            연속이 하루 밀린다.
+
+            ### 빈 상태 — 에러가 아니다
+
+            검증 이력이 없으면 `200` + `status: NO_VERIFICATION`이다. 신규 사용자에게 일상적으로
+            발생한다. **`status`로 분기한다.**
+            """)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "조회 성공. **검증 이력이 없는 경우도 여기에 해당한다** (`status: NO_VERIFICATION`)")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "`INVALID_INPUT` — `baseDate` 누락 또는 형식 오류",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "INVALID_INPUT",
+                    ref = "#/components/examples/INVALID_INPUT")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
+    ApiResponse<VerificationSummaryResponse> getVerificationSummary(
+            @CurrentUserId Long userId,
+
+            @Parameter(description = "조회 기준일 (`YYYY-MM-DD`). **연속 횟수 계산에 필요하다**",
+                    required = true, example = "2026-08-10")
+            LocalDate baseDate);
+
+    @Operation(summary = "내 모델 — 일반 vs 개인화 (REP-12)", description = """
+            셀피 검증으로 학습된 개인 가중치를 일반 가중치와 비교해 보여준다.
+
+            ### 응답
+
+            ```jsonc
+            { "success": true,
+              "data": {
+                "status": "AVAILABLE",          // 또는 NO_VERIFICATION (개인화 전)
+                "message": null,
+                "model": {
+                  "verificationCount": 5,
+                  "headline": "야간 각성에 1.6배 민감해요",
+                  "metrics": [
+                    { "metric": "DARK_CIRCLE",
+                      "features": [
+                        { "feature": "AWAKE_COUNT", "label": "야간 각성",
+                          "generalShare": 0.5, "personalShare": 0.62, "ratio": 1.23 },
+                        { "feature": "TOTAL_SLEEP", "label": "총 수면 시간",
+                          "generalShare": 0.5, "personalShare": 0.38, "ratio": 0.77 }
+                      ] }
+                  ] } } }
+            ```
+
+            ### 비율은 같은 지표 안에서만 의미를 갖는다
+
+            개인 가중치는 일반 가중치에 곱하는 배수이고, 곱한 뒤 **지표 내 합이 1이 되도록
+            재정규화**된다. **절댓값 자체에는 의미가 없고 같은 지표의 다른 피처와의 비율만이
+            의미를 갖는다.**
+
+            **다른 지표의 숫자와 비교하지 말 것.** 재정규화 때문에 스케일이 달라 비교 자체가
+            성립하지 않는다. `headline`도 **한 지표 안에서** 최대/최소 비가 가장 큰 곳을 골라
+            만든 문장이다.
+
+            | 필드 | 뜻 |
+            |---|---|
+            | `generalShare` | 개인화 전 기준선. 지표 내 균등이라 `1/n` |
+            | `personalShare` | 학습된 비중. **예보가 실제로 쓰는 숫자와 같다** |
+            | `ratio` | `personalShare / generalShare` — 일반 대비 몇 배 |
+
+            **`ratio`가 전부 `1.0`인 것은 오류가 아니다.** 아직 배울 게 없었던 것이며 신규
+            사용자에게 정상이다. 그때 `headline`은 "아직은 일반 모델과 같아요"가 된다.
+
+            ### 신뢰도 등급은 클라이언트가 만든다
+
+            서버는 `verificationCount`(누적 검증 횟수)를 **그대로** 준다. 下/中/上 같은 등급
+            해석은 앱이 한다 — 컷오프를 서버에 두면 **바꿀 때마다 배포**해야 한다.
+
+            ### `baseDate`를 받지 않는다
+
+            누적 검증 횟수와 가중치는 "오늘"이 필요 없다. 날짜를 받는 다른 조회 API와 다르다.
+
+            ### 빈 상태 — 에러가 아니다
+
+            아직 검증한 적이 없으면 `200` + `status: NO_VERIFICATION`이다. **개인 가중치 행의
+            존재 자체가 "개인화가 시작됐다"는 뜻**이다.
+            """)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "조회 성공. **개인화 전인 경우도 여기에 해당한다** (`status: NO_VERIFICATION`)")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
+    ApiResponse<PersonalModelResponse> getModel(@CurrentUserId Long userId);
 
 }
