@@ -30,6 +30,8 @@ docker compose up -d mysql
 
 `application.yml`이 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` 환경변수를 참조하므로, 실행 전 현재 셸에 `.env` 값을 주입해야 합니다.
 
+`OPENAI_API_KEY`는 **없어도 앱이 뜹니다.** 비어 있으면 기동 로그에 WARN이 남고, 셀피 분석(`POST /api/v1/skin/selfie`)만 502로 실패합니다 — 수면·예보 쪽을 개발할 때는 키가 필요 없습니다.
+
 ```bash
 # Bash
 set -a
