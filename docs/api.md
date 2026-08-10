@@ -227,6 +227,61 @@ image: (파일)
 
 **이미지는 어디에도 쓰지 않는다** — 엔티티에 이미지 컬럼 자체가 없어 저장할 곳이 없다. **동작 API이므로 그날 예보가 없으면 `404 SKIN_FORECAST_NOT_FOUND`다.** 대조할 기준이 없으면 검증이 성립하지 않는다.
 
+응답이다 (2026-08-10 확정).
+
+```jsonc
+{ "success": true,
+  "data": {
+    "baseDate": "2026-08-07",
+    "analyzedAt": "2026-08-07T12:33:12Z",   // 서버 시각. 운영은 UTC 라 오프셋이 Z 다
+    "verifications": [                  // 예보와 대조한 지표만
+      { "metric": "DARK_CIRCLE",
+        "forecast": { "score": 67, "grade": "NORMAL" },
+        "measured": { "score": 61, "grade": "NORMAL" },
+        "difference": 6,                // 예보 − 실측
+        "verdict": "CLOSE" },
+      { "metric": "BARRIER",
+        "forecast": { "score": 81, "grade": "STABLE" },
+        "measured": { "score": 78, "grade": "STABLE" },
+        "difference": 3,
+        "verdict": "HIT" }
+    ],
+    "skipped": [                        // 예보가 없어 대조하지 못한 지표
+      { "metric": "COMPLEXION",
+        "measured": { "score": 55, "grade": "NORMAL" },
+        "reason": "MISSING_FEATURES" }
+    ],
+    "hitRate": 50,                      // 대조한 지표 중 `HIT` 비율(%)
+    "model": { "updated": false }       // 개인 가중치 학습 결과 — HOME-08에서 채워진다
+  } }
+```
+
+**`difference`는 `예보 − 실측`이다.** 판정 구간(§10.2)이 이 방향으로 정의돼 있다. `verdict`는 `HIT`(±5) · `CLOSE`(±6~15) · `UNDERESTIMATED`(−16 이하) · `OVERESTIMATED`(+16 이상)이며, **`UNDERESTIMATED`는 점수를 낮게 예측한 것 = 피부 위험을 과대평가한 것**이다. 두 축이 반대라 문구에서 뒤집히기 쉽다.
+
+**실측 3종은 항상 나온다.** LLM은 예보와 무관하게 셋을 모두 산출하고 `skin_measurement`도 셋 다 `NOT NULL`이다. **갈리는 것은 실측이 아니라 대조 가능 여부**이며, 그래서 `skipped`에도 `measured`가 실린다 — 예보가 없어 판정만 못 한 것이지 사진을 못 읽은 것이 아니다.
+
+**`hitRate`의 분모는 `verifications`의 길이다 — 3이 아니다.** 빈 지표를 0점으로 취급하면 존재하지 않는 오차가 적중률에 섞이고, 같은 값이 HOME-08의 학습 입력으로 들어가 **없던 값이 개인 가중치를 움직인다.** `verifications`는 비지 않는다 — `DARK_CIRCLE`은 예보가 빈 상태가 될 수 없기 때문이다([erd.md](erd.md) §3.5).
+
+**`skipped[].reason`은 예보 조회 API의 `unavailable[].reason`과 같은 집합**이며 같은 코드(`ScoringPolicy.reasonFor`)에서 나온다. 두 화면이 같은 상황에 다른 문구를 띄우지 않게 하는 것이 요점이다.
+
+**한 트랜잭션이라는 것은 저장·검증·학습 셋을 말한다.** LLM 호출은 그 앞이고 **트랜잭션 밖이다** — 최대 30초 걸리는 외부 호출이 DB 커넥션을 잡고 있으면 셀피가 몰릴 때 커넥션 풀이 고갈되어 **수면 업로드까지 함께 막힌다.**
+
+**중복·예보 부재 검사는 LLM 호출보다 먼저 한다.** 순서가 뒤바뀌면 어차피 `409`/`404`로 끝날 요청에 분석 비용을 쓴다.
+
+| 코드 | `ErrorCode` | 언제 | 앱이 할 일 |
+|---|---|---|---|
+| `400` | `SELFIE_IMAGE_INVALID` | `image` 파트가 없거나 비었음 · 이미지가 아닌 타입 | 다시 촬영 |
+| `400` | `INVALID_INPUT` | `baseDate` 누락·형식 오류 · 파일이 상한(10MB) 초과 | 요청 버그 또는 리사이즈 |
+| `404` | `USER_NOT_FOUND` | 없는 사용자 | — |
+| `404` | `SKIN_FORECAST_NOT_FOUND` | 그날 예보가 없음 | **먼저 수면을 업로드해야 한다** |
+| `409` | `VERIFICATION_ALREADY_DONE` | 그날 이미 검증함 (하루 1회) | 결과 화면으로 |
+| `502` | `SELFIE_ANALYSIS_FAILED` | LLM 호출·파싱 실패 | 재시도 |
+| `504` | `SELFIE_ANALYSIS_TIMEOUT` | LLM 응답 지연(30초 초과) | 재시도 |
+
+**여기서만 `404`가 에러다.** 조회 API였다면 예보 부재는 `200` + 빈 상태이지만, 이 API는 **대조할 기준이 없으면 동작 자체가 성립하지 않는다**([conventions.md](conventions.md) §2).
+
+**실패하면 `skin_measurement` 행이 생기지 않는다.** 분석 상태 컬럼을 두지 않은 이유이며([erd.md](erd.md) §3.6), 그래서 재시도가 안전하다 — 하루 1회 제약에 걸리지 않는다.
+
 **3. 적중률 · 연속 검증 배너** (HOME-09) — 최근 검증 1건 + 적중률 + 연속 검증 횟수.
 
 **4. 내 모델** (REP-12) — `personal_weight`를 일반 가중치와 비교해 "각성에 1.6배 민감" 같은 문장을 만든다. **`personal_weight`가 유일한 출처다.**
