@@ -43,6 +43,7 @@ public enum ErrorCode {
 
     // ===== TODO =====
     ACTION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 액션 항목입니다."),
+    ACTION_NOT_CHECKABLE(HttpStatus.BAD_REQUEST, "이 항목은 체크할 수 없습니다."),
     TODO_NOT_FOUND(HttpStatus.NOT_FOUND, "오늘의 TODO를 찾을 수 없습니다."),
     TODO_ALREADY_ADDED(HttpStatus.CONFLICT, "이미 오늘의 목록에 있는 항목입니다."),
 
