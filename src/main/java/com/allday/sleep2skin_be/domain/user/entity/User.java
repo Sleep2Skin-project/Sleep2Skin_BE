@@ -40,15 +40,28 @@ public class User extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean onboardingCompleted;
 
+    /** 캐릭터 경험치 누적 총합. TODO(DO) 완료 시 +10. */
+    @Column(nullable = false)
+    private int exp;
+
     @Builder
     private User(String nickname) {
         this.nickname = nickname;
         this.onboardingCompleted = false;
+        this.exp = 0;
     }
 
     /** 온보딩 완료 처리 (ONB-05). 되돌리는 경로는 없다. */
     public void completeOnboarding() {
         this.onboardingCompleted = true;
+    }
+
+    /** exp 적립 (TODO DO 완료 시). 음수 방어만 하고 상한은 두지 않는다. */
+    public void addExp(int amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException("exp는 음수가 될 수 없습니다: " + amount);
+        }
+        this.exp += amount;
     }
 
 }
