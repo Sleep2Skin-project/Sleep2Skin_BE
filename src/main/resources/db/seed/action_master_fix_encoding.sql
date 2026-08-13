@@ -1,0 +1,25 @@
+-- action_master 한글 인코딩 수정 (id 유지, title/reason만 정정)
+UPDATE action_master SET title='눈 비비기·문지르기', reason='눈가를 반복해서 문지르면 자극으로 인해 다크서클이 더 도드라져 보일 수 있어요' WHERE id=1;
+UPDATE action_master SET title='오후 카페인 과다 섭취', reason='늦은 시간의 카페인 섭취는 숙면을 방해해 눈가 회복에 영향을 줄 수 있어요' WHERE id=2;
+UPDATE action_master SET title='짠 음식·야식', reason='과도한 나트륨 섭취는 눈가가 부어 다크서클이 더 도드라져 보이게 할 수 있어요' WHERE id=3;
+UPDATE action_master SET title='취침 전 스마트폰 장시간 사용', reason='취침 전 장시간 화면 사용은 숙면을 방해할 수 있어요' WHERE id=4;
+UPDATE action_master SET title='충분한 수면 시간 확보', reason='충분한 수면은 눈가의 피로하고 어두운 인상을 줄이는 데 도움을 줄 수 있어요' WHERE id=5;
+UPDATE action_master SET title='눈가 냉찜질 5분', reason='차가운 찜질은 눈가 붓기를 완화해 다크서클이 덜 도드라져 보이도록 도울 수 있어요' WHERE id=6;
+UPDATE action_master SET title='눈가 보습 제품 사용', reason='눈가의 건조함을 줄여 피부가 칙칙해 보이지 않도록 관리해요' WHERE id=7;
+UPDATE action_master SET title='베개 살짝 높여 자기', reason='머리를 약간 높여 자면 눈가에 체액이 고여 붓는 것을 줄이는 데 도움을 줄 수 있어요' WHERE id=8;
+UPDATE action_master SET title='과도한 음주', reason='과도한 음주는 수면과 다음 날 전반적인 컨디션에 영향을 줄 수 있어요' WHERE id=9;
+UPDATE action_master SET title='끼니 거르기', reason='식사를 거르면 충분한 영양을 섭취하기 어려워 전반적인 컨디션과 혈색에 영향을 줄 수 있어요' WHERE id=10;
+UPDATE action_master SET title='장시간 같은 자세로 있기', reason='오랫동안 움직이지 않으면 몸의 활력이 떨어지고 생기 없는 인상으로 이어질 수 있어요' WHERE id=11;
+UPDATE action_master SET title='과로·휴식 부족', reason='충분히 쉬지 못하면 피로가 쌓여 얼굴이 생기 없어 보일 수 있어요' WHERE id=12;
+UPDATE action_master SET title='충분한 수분 섭취', reason='충분한 수분을 섭취해 전반적인 피부 컨디션을 관리해 주세요' WHERE id=13;
+UPDATE action_master SET title='아침에 가볍게 스트레칭하기', reason='가벼운 스트레칭은 몸을 움직이고 활기 있는 하루를 시작하는 데 도움을 줘요' WHERE id=14;
+UPDATE action_master SET title='단백질 포함한 식사 챙기기', reason='단백질을 포함해 다양한 영양소를 섭취하면 건강한 컨디션을 유지하는 데 도움을 줘요' WHERE id=15;
+UPDATE action_master SET title='가벼운 유산소 운동 15분', reason='가벼운 유산소 운동은 혈액순환을 돕고 생기 있는 컨디션을 유지하는 데 도움을 줘요' WHERE id=16;
+UPDATE action_master SET title='강한 각질 제거', reason='과도한 각질 제거는 피부를 자극하고 장벽을 약하게 만들 수 있어요' WHERE id=17;
+UPDATE action_master SET title='뜨거운 물 세안', reason='뜨거운 물은 피부의 자연적인 유분을 제거해 건조함을 악화시킬 수 있어요' WHERE id=18;
+UPDATE action_master SET title='새 제품 바로 얼굴 전체에 사용', reason='새 제품이 피부에 맞지 않을 경우 자극이 생길 수 있어요' WHERE id=19;
+UPDATE action_master SET title='세안 후 피부 세게 문지르기', reason='세안 후 피부를 세게 문지르면 자극이 쌓여 장벽이 약해질 수 있어요' WHERE id=20;
+UPDATE action_master SET title='수분 세럼 바르기', reason='수분 세럼을 사용해 피부에 수분을 공급해 주세요' WHERE id=21;
+UPDATE action_master SET title='보습 크림 바르기', reason='보습 크림은 피부의 수분 손실을 줄이고 촉촉함을 유지하는 데 도움을 줘요' WHERE id=22;
+UPDATE action_master SET title='SPF50 자외선 차단제 도포', reason='자외선 차단제를 사용해 자외선으로 인한 피부 손상을 예방해 주세요' WHERE id=23;
+UPDATE action_master SET title='세라마이드 함유 크림 사용', reason='세라마이드가 함유된 보습제는 피부 장벽을 유지하고 회복하는 데 도움을 줄 수 있어요' WHERE id=24;
