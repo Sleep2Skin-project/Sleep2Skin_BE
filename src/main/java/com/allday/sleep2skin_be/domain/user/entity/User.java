@@ -64,4 +64,22 @@ public class User extends BaseTimeEntity {
         this.exp += amount;
     }
 
+    /**
+     * exp 회수 (TODO DO 되돌리기).
+     *
+     * <p><b>적립과 대칭이어야 한다.</b> 회수하지 않으면 {@code DONE → PENDING → DONE}을 반복하는
+     * 것만으로 exp가 계속 붙는다 — 판정이 "이번에 DONE이 됐는가"뿐이라 중복 호출만 막히고
+     * 껐다 켜는 것은 막히지 않는다.
+     *
+     * <p><b>0 밑으로 내려가지 않는다.</b> 데이터를 손으로 건드려 {@code exp}가 실제 완료 개수와
+     * 어긋난 상태에서 되돌리면 음수가 될 수 있는데, 누적 경험치에 음수는 뜻을 갖지 않는다.
+     * 실제로 얼마나 줄었는지는 호출부가 전후 값을 비교해 안다.
+     */
+    public void subtractExp(int amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException("회수량은 음수가 될 수 없습니다: " + amount);
+        }
+        this.exp = Math.max(0, this.exp - amount);
+    }
+
 }

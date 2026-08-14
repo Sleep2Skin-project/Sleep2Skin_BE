@@ -7,6 +7,8 @@ import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
@@ -54,13 +56,31 @@ public interface TodoControllerSpec {
                     표시는 클라이언트가 `status`를 세어 계산한다 — 서버는 계산된 진행도를 내려주지
                     않는다.
 
-                    ### 예외
+                    ### 빈 상태는 200이다 — 404가 아니다
 
-                    그날 예보가 없으면(수면 데이터 미동기화) `404 SKIN_FORECAST_NOT_FOUND`다.
+                    그날 예보가 없으면(수면 데이터 미동기화) `status`가 **`NO_SLEEP_DATA`** 이고
+                    두 배열이 `[]`로 나간다. **에러가 아니다** — 수면을 아직 올리지 않은 신규
+                    사용자가 TODO 탭을 열면 일상적으로 발생한다. 앱은 `message`가 아니라
+                    **`status`로 분기**한다.
+
+                    후보가 0개인 날(그날 모든 지표가 임계값보다 좋음)은 `AVAILABLE`인데 배열만
+                    비어 있다. **"예보가 없다"와 "처방할 것이 없다"는 다른 상태**이므로 문구도
+                    달라야 한다.
                     """
     )
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공 (첫 조회 시 생성 포함)")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "`SKIN_FORECAST_NOT_FOUND` — 그날 예보가 없어 TODO를 만들 수 없음")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "조회 성공 (첫 조회 시 생성 포함). **예보가 없는 경우도 여기로 나간다** (`status: NO_SLEEP_DATA`)")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "`INVALID_INPUT` — `baseDate` 누락 또는 형식 오류",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "INVALID_INPUT",
+                    ref = "#/components/examples/INVALID_INPUT")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
     ApiResponse<TodoListResponse> getTodos(
             @CurrentUserId Long userId,
             @Parameter(description = "기준일", example = "2026-08-13")
@@ -77,17 +97,37 @@ public interface TodoControllerSpec {
                     "오늘은 피하세요" 카드는 완료 개념이 없다. 해당 id로 요청하면
                     **`400 ACTION_NOT_CHECKABLE`** 을 반환한다.
 
-                    ### exp 지급
+                    ### exp는 상태가 실제로 바뀔 때만 움직인다
 
-                    DO 항목이 처음 `PENDING → DONE`으로 바뀔 때만 exp 10을 지급하고 응답의
-                    `expGained`에 10이 담긴다. 이미 `DONE`인 항목을 다시 호출하거나
-                    `DONE → PENDING`으로 되돌리는 요청은 `expGained`가 0이다(중복 지급 방지).
-                    `totalExp`는 지급 이후 사용자의 누적 exp다.
+                    | 요청 | `expGained` |
+                    |---|---|
+                    | `PENDING` → `DONE` | `+10` |
+                    | `DONE` → `PENDING` (되돌리기) | `-10` |
+                    | 같은 상태로 재요청 | `0` |
+
+                    **되돌리면 회수한다.** 회수하지 않으면 체크를 껐다 켜는 것만으로 exp가 계속
+                    붙는다 — 중복 호출만 막는 것으로는 닫히지 않는다.
+
+                    `expGained`는 요청한 양이 아니라 **실제 증감**이다. 누적 exp는 0 밑으로
+                    내려가지 않으므로, 0에서 되돌리면 `-10`보다 작은 값이 담긴다.
+                    `totalExp`는 조정 이후 사용자의 누적 exp다.
                     """
     )
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "변경 성공")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "`ACTION_NOT_CHECKABLE` — AVOID 항목은 체크할 수 없음")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "`TODO_NOT_FOUND` — 해당 사용자의 TODO 항목이 없음")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "`ACTION_NOT_CHECKABLE` — AVOID 항목은 체크할 수 없음 · `INVALID_INPUT` — `status` 누락 또는 알 수 없는 값",
+            content = @Content(mediaType = "application/json", examples = {
+                    @ExampleObject(name = "ACTION_NOT_CHECKABLE",
+                            ref = "#/components/examples/ACTION_NOT_CHECKABLE"),
+                    @ExampleObject(name = "INVALID_INPUT",
+                            ref = "#/components/examples/INVALID_INPUT")}))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`TODO_NOT_FOUND` — 해당 사용자의 TODO 항목이 없음 (**남의 항목도 404다** — 403이면 그 id의 존재가 새어 나간다) · `USER_NOT_FOUND`",
+            content = @Content(mediaType = "application/json", examples = {
+                    @ExampleObject(name = "TODO_NOT_FOUND",
+                            ref = "#/components/examples/TODO_NOT_FOUND"),
+                    @ExampleObject(name = "USER_NOT_FOUND",
+                            ref = "#/components/examples/USER_NOT_FOUND")}))
     ApiResponse<TodoStatusUpdateResponse> updateStatus(
             @CurrentUserId Long userId,
             @Parameter(description = "daily_todo PK") Long id,
