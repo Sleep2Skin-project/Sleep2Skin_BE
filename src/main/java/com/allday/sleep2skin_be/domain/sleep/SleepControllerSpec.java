@@ -87,19 +87,55 @@ public interface SleepControllerSpec {
                   "wakeTime": "2026-08-06T22:10:00Z",
                   "totalSleepMinutes": 402, "deepSleepMinutes": 54,
                   "remSleepMinutes": 71, "coreSleepMinutes": 277,
-                  "awakeCount": 3, "awakeMinutes": 21
+                  "awakeCount": 3, "awakeMinutes": 21,
+                  "sleepScore": 78            // 참여 피처가 0개면 null
                 },
                 "forecast": {
                   "darkCircle": { "score": 68, "grade": "NORMAL" },
                   "complexion": { "score": 69, "grade": "NORMAL" },
                   "barrier":    { "score": 98, "grade": "STABLE" },
                   "unavailable": []
+                },
+                "exp": {
+                  "gained": 26,
+                  "reasons": [ { "reason": "SLEEP_SCORE_IMPROVED", "amount": 26 } ],
+                  "totalExp": 320, "level": 3, "levelUp": false, "nextLevelExp": 450
                 }
               } }
             ```
 
             **시각은 UTC(`Z`)로 나간다.** 보낸 오프셋과 표기는 다르지만 가리키는 순간은 같다.
             앱의 타임존으로 변환해 표시하면 된다.
+
+            ### `sleepScore`와 exp 적립 (HOME-04)
+
+            **`sleepScore`는 그날 스코어링에 참여한 피처의 부분점수 평균이다.** 저장하지 않고 매번
+            계산하며, **피부 예보 점수와 다른 값이다** — 이쪽은 수면 자체의 질이다. 두 숫자가 화면에
+            나란히 보이므로 라벨을 섞지 않는다. 참여 피처가 0개인 날은 `null`이다(0점이 아니다).
+
+            수면 점수 보상 두 종이 여기서 지급된다.
+
+            | `reason` | 조건 | 양 |
+            |---|---|---|
+            | `SLEEP_SCORE_IMPROVED` | 전날 수면 점수보다 올랐음 | `(오늘 − 어제) × 2` |
+            | `SLEEP_SCORE_HIGH` | 오늘 수면 점수 `90` 이상 | `+10` |
+
+            **둘은 겹칠 수 있다** — 90점을 넘기며 오른 날은 `reasons`에 둘 다 실린다. 90점 보상은
+            증가 여부와 무관하다(95점을 유지하는 사용자가 보상을 못 받는 일이 없어야 한다).
+
+            **`processed: false`면 적립하지 않는다.** 재처리를 하지 않은 요청이라 새로 산출된 점수가
+            없다 — 앱이 시작할 때마다 호출하므로 여기서 매번 적립하면 앱을 다섯 번 켤 때 다섯 번
+            붙는다. 그때도 `exp` 객체는 나가며 `gained: 0` · `reasons: []`다.
+
+            **전날 수면 점수가 없으면 `SLEEP_SCORE_IMPROVED`는 지급되지 않는다.** 비교 대상이 없는
+            것이지 0점에서 오른 것이 아니다. `SLEEP_SCORE_HIGH`는 전날과 무관하므로 첫날에도 지급된다.
+
+            > ⚠️ **`processed: true`인데 이미 지급된 경우가 있다.** 해시가 다르고 검증 전이면 같은 날
+            > 두 번째 재산출이 일어나고, 그때 점수가 바뀌면 조건이 다시 성립한다. 서버가 하루 1회로
+            > 막으며 그 경우 `exp.gained`는 `0`이고 `reasons`는 `[]`다.
+
+            ⚠️ **앱은 `exp.gained`의 부호를 그대로 반영해야 한다.** 양수로 가정하고 더하면 서버가
+            막은 무한 적립이 화면에서 되살아난다.
 
             ### 같은 데이터를 다시 보내도 안전하다
 

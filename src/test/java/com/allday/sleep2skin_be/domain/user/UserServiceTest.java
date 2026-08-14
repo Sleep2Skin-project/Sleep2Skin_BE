@@ -1,5 +1,6 @@
 package com.allday.sleep2skin_be.domain.user;
 
+import com.allday.sleep2skin_be.domain.game.repository.ExpGrantRepository;
 import com.allday.sleep2skin_be.domain.skin.VerificationStreakCalculator;
 import com.allday.sleep2skin_be.domain.skin.repository.PersonalWeightRepository;
 import com.allday.sleep2skin_be.domain.skin.repository.SkinForecastRepository;
@@ -65,6 +66,8 @@ class UserServiceTest {
     private PersonalWeightRepository personalWeightRepository;
     @Mock
     private DailyTodoRepository dailyTodoRepository;
+    @Mock
+    private ExpGrantRepository expGrantRepository;
 
     private UserService userService;
 
@@ -74,7 +77,7 @@ class UserServiceTest {
         userService = new UserService(userRepository, consentHistoryRepository,
                 skinMeasurementRepository, sleepSessionRepository, new VerificationStreakCalculator(),
                 sleepStageSegmentRepository, skinForecastRepository, personalWeightRepository,
-                dailyTodoRepository);
+                dailyTodoRepository, expGrantRepository);
     }
 
     @Nested
@@ -277,11 +280,14 @@ class UserServiceTest {
     class 전체_삭제 {
 
         /**
-         * <b>DB에 users 외래키가 없어 CASCADE가 걸리지 않는다.</b> users 행만 지우면 나머지 6개
+         * <b>DB에 users 외래키가 없어 CASCADE가 걸리지 않는다.</b> users 행만 지우면 나머지 8개
          * 테이블에 고아 행이 남고, 같은 userId가 재사용되면 남의 이력이 새 사용자에게 붙는다.
+         *
+         * <p><b>exp_grant를 빠뜨리면 특히 조용하다</b> — 남은 행의 유니크에 새 사용자가 걸려
+         * 오늘 출석 보상을 받지 못하는데 에러도 로그도 남지 않는다(erd.md §5).
          */
         @Test
-        @DisplayName("자식 테이블 6개를 전부 지운다")
+        @DisplayName("자식 테이블 8개를 전부 지운다")
         void 자식_테이블을_전부_지운다() {
             User user = user("테스트유저1");
 
@@ -293,6 +299,7 @@ class UserServiceTest {
             verify(skinMeasurementRepository).deleteByUserId(USER_ID);
             verify(personalWeightRepository).deleteByUserId(USER_ID);
             verify(dailyTodoRepository).deleteByUserId(USER_ID);
+            verify(expGrantRepository).deleteByUserId(USER_ID);
             verify(consentHistoryRepository).deleteByUserId(USER_ID);
             verify(userRepository).delete(user);
         }
