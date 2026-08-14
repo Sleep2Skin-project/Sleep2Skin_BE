@@ -330,7 +330,7 @@ PRD §7의 블로커는 코드로 결정할 수 없는 것들이다.
 
 - **B4** OpenAI 데이터 보관 정책 — 셀피 분석(HOME-06) 고지 문구
 - **B5** 수면 단계 매핑 계약 (앱 팀 협의) — 양쪽 다 받게 짜면 개발은 막히지 않는다
-- **B6** 수면 목표값 — 2단계 일간 리포트 착수 전까지
+- ~~**B6** 수면 목표값~~ — **MVP 제외 (2026-08-14).** 목표 달성 판정 자체를 뺐다 (PRD §4.4)
 
 ### 스코어링 파라미터 취급
 
@@ -514,6 +514,48 @@ docker run -it --rm mysql:8 mysql -h "$RDS" -u sleep2skin -p sleep2skin -e "SELE
 
 `1`이 찍히면 앱도 붙는다. 실패하면 그대로 배포해도 CD 2단계에서 걸린다.
 
+### 액션 마스터 시드 — 사람이 한 번 넣는다 (2026-08-13)
+
+**`action_master` 24행은 앱이 만들지 않는다.** 테이블만 Hibernate가 만들고 안은 비어 있다 — `spring.sql.init`도 Flyway도 쓰지 않는다. 테스트 유저와 다르다(`TestUserSeeder`는 `CommandLineRunner`라 자동으로 돈다).
+
+**비어 있으면 TODO 탭이 통째로 빈다.** 예보는 정상이고 API도 `200`이라 `avoidItems`·`checklistItems`가 빈 배열로만 나간다 — **에러가 아니라서 로그에도 안 남는다.** 배포 후 확인 목록에 넣는다.
+
+**배포는 테이블을 만들 뿐 채우지 않으므로, 순서는 `배포 → 시드`다.** 테이블이 없는 상태에서 실행하면 `Unknown table`이 난다.
+
+```bash
+# 파일을 EC2로 옮긴 뒤 (또는 리포지토리를 clone 한 위치에서)
+docker run -i --rm mysql:8 mysql \
+  --default-character-set=utf8mb4 \
+  -h "$RDS" -u sleep2skin -p sleep2skin < action_master.sql
+```
+
+⚠️ **`--default-character-set=utf8mb4`를 반드시 붙인다.** 없으면 클라이언트가 `latin1`로 접속해 **한국어 `title`·`reason`이 `???`로 들어간다.** DB와 컬럼이 `utf8mb4`여도 소용없다 — 깨지는 곳은 클라이언트 ↔ 서버 구간이다. **INSERT는 성공하고 에러도 없다.**
+
+이미 깨진 채로 넣었다면 다시 지우지 말고 `action_master_fix_encoding.sql`을 같은 옵션으로 실행한다 — `id`를 유지한 채 `title`·`reason`만 UPDATE한다. **`daily_todo.action_master_id`가 이미 그 id를 가리키고 있을 수 있어 DELETE 후 재INSERT는 안전하지 않다.**
+
+```bash
+docker run -i --rm mysql:8 mysql --default-character-set=utf8mb4 \
+  -h "$RDS" -u sleep2skin -p sleep2skin < action_master_fix_encoding.sql
+```
+
+**두 파일 모두 `src/main/resources/db/seed/`에 있고 Git에 커밋돼 있다.**
+
+**멱등하지 않다.** `INSERT`에 조건이 없어 두 번 실행하면 24행이 더 생기고, `action_master`에는 유니크 제약이 없어 DB가 막지 않는다. 추천 결과에 같은 항목이 중복으로 뜬다.
+
+```sql
+SELECT COUNT(*) FROM action_master;              -- 24 여야 한다
+SELECT title FROM action_master WHERE id = 1;    -- '눈 비비기·문지르기' — ??? 면 인코딩 실패
+```
+
+**로컬도 같다.** `docker compose down -v` 뒤에는 시드가 함께 지워지므로 다시 넣는다. DB 이름·계정은 `.env`의 `DB_NAME`·`DB_USERNAME`이다.
+
+```bash
+docker compose exec -T mysql mysql --default-character-set=utf8mb4 \
+  -u root -p"$DB_ROOT_PASSWORD" "$DB_NAME" < src/main/resources/db/seed/action_master.sql
+```
+
+**엔티티를 파괴적으로 바꿔 DB를 다시 만들 때마다 이 단계가 따라온다**(§1). 잊으면 TODO 탭만 조용히 빈다.
+
 ### 에러로 어디까지 갔는지 읽는다
 
 | 에러 | 어디서 멈췄나 |
@@ -533,6 +575,12 @@ docker run -it --rm mysql:8 mysql -h "$RDS" -u sleep2skin -p sleep2skin -e "SELE
 ```sql
 SHOW CREATE TABLE sleep_session;   -- (user_id, sleep_date)
 SHOW CREATE TABLE skin_forecast;   -- (user_id, base_date)
+```
+
+**액션 마스터가 채워져 있는지도 본다.** 비어 있으면 TODO 탭이 빈 배열로만 응답한다 — 에러가 아니라 로그에 안 남는다(위 "액션 마스터 시드").
+
+```sql
+SELECT COUNT(*) FROM action_master;   -- 24
 ```
 
 ### 앱은 nginx 뒤에 있다 (2026-08-09)

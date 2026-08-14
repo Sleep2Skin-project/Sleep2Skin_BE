@@ -29,15 +29,18 @@ public record TodoItemResponse(
         @Schema(description = "행동 제목", example = "강한 각질 제거")
         String title,
 
-        @Schema(description = "AVOID 카드에만 노출되는 원인 태그. target_metric에서 자동 생성된다",
+        @Schema(description = "AVOID 카드에만 노출되는 원인 태그. target_metric에서 자동 생성된다. "
+                + "**DO 항목은 항상 `null`**", nullable = true,
                 example = "장벽 약화의 원인")
         String causeLabel,
 
-        @Schema(description = "AVOID 카드를 꾹 눌렀을 때(long press) 추가로 보이는 설명. DO에는 없다",
+        @Schema(description = "AVOID 카드를 꾹 눌렀을 때(long press) 추가로 보이는 설명. "
+                + "**DO 항목은 항상 `null`**", nullable = true,
                 example = "과도한 각질 제거는 피부를 자극하고 장벽을 약하게 만들 수 있어요")
         String reason,
 
-        @Schema(description = "DO 항목의 체크 상태. AVOID는 체크 대상이 아니라 항상 null")
+        @Schema(description = "DO 항목의 체크 상태. **AVOID는 체크 대상이 아니라 항상 `null`**",
+                nullable = true)
         TodoStatus status
 ) {
 
