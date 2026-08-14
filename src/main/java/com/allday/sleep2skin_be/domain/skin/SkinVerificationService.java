@@ -1,5 +1,10 @@
 package com.allday.sleep2skin_be.domain.skin;
 
+import com.allday.sleep2skin_be.domain.game.ExpService;
+import com.allday.sleep2skin_be.domain.game.LevelPolicy;
+import com.allday.sleep2skin_be.domain.game.dto.ExpGrantCommand;
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
+import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
 import com.allday.sleep2skin_be.domain.skin.dto.response.MetricVerificationResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.PersonalModelUpdateResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SelfieVerificationResponse;
@@ -44,6 +49,24 @@ import java.util.Optional;
  *
  * <p>0점으로 채워 대조하면 존재하지 않는 오차가 적중률에 섞이고, 같은 값이 HOME-08의 학습 입력이
  * 되어 <b>없던 값이 개인 가중치를 움직인다.</b>
+ *
+ * <h2>연속 검증 보상이 여기서 지급된다 (HOME-04 — prd.md §10.9)</h2>
+ *
+ * <table border="1">
+ *   <caption>{@code VERIFICATION_STREAK} 지급액</caption>
+ *   <tr><th>{@code streakCount}</th><th>{@code exp.gained}</th></tr>
+ *   <tr><td>{@code 1} (첫 검증 또는 연속이 끊긴 뒤 첫 검증)</td>
+ *       <td>{@code 0} — <b>보상 구간이 2일부터다</b></td></tr>
+ *   <tr><td>{@code 2} / {@code 3} / {@code 4}</td><td>{@code +5} / {@code +10} / {@code +15}</td></tr>
+ *   <tr><td>{@code 5} 이상</td><td>{@code +25} (상한 구간, 매일)</td></tr>
+ * </table>
+ *
+ * <p><b>적립은 저장·검증이 끝난 뒤다.</b> 분석이 실패하면 행도 exp도 생기지 않는다.
+ * 재시도가 이중 지급으로 이어지지도 않는다 — 검증은 하루 1회({@code VERIFICATION_ALREADY_DONE})라
+ * 두 번째 요청은 여기까지 오지 않고, 그래도 {@code exp_grant}의 유니크가 마지막 방어선이다.
+ *
+ * <p><b>출석 체크인이 이 보상을 대신 주지 않는다.</b> 출석은 앱을 켠 사실에, 연속 보상은 검증한
+ * 사실에 붙는다 — 저쪽에서 함께 지급하면 셀피를 찍지 않아도 보상이 나간다.
  */
 @Slf4j
 @Service
@@ -54,6 +77,8 @@ public class SkinVerificationService {
     private final SkinMeasurementRepository skinMeasurementRepository;
     private final SleepSessionRepository sleepSessionRepository;
     private final SkinModelService skinModelService;
+    private final VerificationStreakCalculator streakCalculator;
+    private final ExpService expService;
 
     /**
      * 실측을 저장하고 그날 예보와 대조한다.
@@ -87,9 +112,36 @@ public class SkinVerificationService {
         log.info("셀피 검증 완료 userId={} baseDate={} 적중률={}% 대조={} 제외={}",
                 userId, baseDate, hitRate(verifications), verifications.size(), skipped.size());
 
+        int streakCount = streakCount(userId, baseDate);
+
         return new SelfieVerificationResponse(baseDate, measurement.getAnalyzedAt(),
                 List.copyOf(verifications), List.copyOf(skipped), hitRate(verifications),
-                learn(userId, session, verifications));
+                learn(userId, session, verifications),
+                streakCount, grantStreakExp(userId, baseDate, streakCount));
+    }
+
+    /**
+     * 연속 검증 횟수. <b>방금 저장한 실측을 포함한 값이다</b> — 조회 직전에 영속성 컨텍스트가
+     * flush되므로 오늘 행이 결과에 들어온다. 검증 전 값을 쓰면 응답의 팝업 문구와 지급액이
+     * 하루씩 어긋난다.
+     *
+     * <p><b>계산은 {@link VerificationStreakCalculator} 한 곳에서만 한다.</b> HOME-09 배너·
+     * MY-01 프로필·출석 체크인이 같은 숫자를 써야 하고(prd.md §4.2), 각자 계산하면 화면들이
+     * 어긋난다 — 어긋나도 값 범위는 정상이라 알아채기 어렵다. <b>여기에 계산을 다시 적지 말 것.</b>
+     */
+    private int streakCount(Long userId, LocalDate baseDate) {
+        return streakCalculator.calculate(baseDate,
+                skinMeasurementRepository.findVerifiedBaseDates(userId, baseDate));
+    }
+
+    /**
+     * 연속 검증 보상 (§10.9). <b>1일차는 {@code 0}이라 이력 행도 생기지 않는다</b> —
+     * {@code ExpService}가 0 이하를 건너뛴다.
+     */
+    private ExpResponse grantStreakExp(Long userId, LocalDate baseDate, int streakCount) {
+        return expService.grantDaily(userId, baseDate, List.of(
+                new ExpGrantCommand(ExpReason.VERIFICATION_STREAK,
+                        LevelPolicy.verificationStreakExp(streakCount))));   // 확정값 (PRD §10.9)
     }
 
     /**

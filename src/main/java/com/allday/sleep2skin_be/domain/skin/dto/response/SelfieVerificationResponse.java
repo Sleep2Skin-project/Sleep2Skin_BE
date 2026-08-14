@@ -1,5 +1,6 @@
 package com.allday.sleep2skin_be.domain.skin.dto.response;
 
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.MetricScore;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -22,6 +23,10 @@ import java.util.List;
  * @param skipped       예보가 없어 대조하지 못한 지표. <b>실측값은 여기에도 있다</b>
  * @param hitRate       대조한 지표 중 {@code HIT} 비율(%)
  * @param model         개인 가중치 학습 결과 (HOME-08)
+ * @param streakCount   <b>이번 검증을 포함한</b> 연속 검증 횟수. 팝업 문구("3일 연속!")와 지급액이
+ *                      같은 숫자에서 나와야 한다 — 검증 전 값을 쓰면 화면과 보상이 하루씩 어긋난다
+ * @param exp           연속 검증 보상 적립 결과 (HOME-04). <b>1일차는 {@code gained: 0}이다</b> —
+ *                      보상 구간이 2일부터다
  */
 @Schema(description = "셀피 분석·검증 응답")
 public record SelfieVerificationResponse(
@@ -51,6 +56,16 @@ public record SelfieVerificationResponse(
         int hitRate,
 
         @Schema(description = "개인 가중치 학습 결과 (HOME-08)")
-        PersonalModelUpdateResponse model
+        PersonalModelUpdateResponse model,
+
+        @Schema(description = """
+                **이번 검증을 포함한** 연속 검증 횟수. HOME-09 배너·MY-01 프로필과 같은 계산에서 나온다.
+
+                **오늘 미검증이 연속을 끊지 않는다** — 오늘 또는 어제부터 이어져 있으면 유효하다.
+                """, example = "3")
+        int streakCount,
+
+        @Schema(description = "연속 검증 보상 적립 결과 (HOME-04). 1일차는 `gained: 0`이다")
+        ExpResponse exp
 ) {
 }

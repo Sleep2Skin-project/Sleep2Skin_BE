@@ -166,7 +166,8 @@ class UserControllerTest {
     void 프로필이_분기값과_숫자를_준다() throws Exception {
         given(userService.getProfile(USER_ID, BASE_DATE)).willReturn(new UserProfileResponse(
                 USER_ID, "테스트유저1", true, true, "1.0", "1.0",
-                OffsetDateTime.of(2026, 8, 8, 0, 12, 33, 0, ZoneOffset.UTC), 5L, 3));
+                OffsetDateTime.of(2026, 8, 8, 0, 12, 33, 0, ZoneOffset.UTC), 5L, 3,
+                3, 320, 450));
 
         mockMvc.perform(get("/api/v1/users/me").header(USER_ID_HEADER, USER_ID)
                         .param("baseDate", BASE_DATE.toString()))
@@ -177,6 +178,10 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.data.onboardingCompleted").value(true))
                 .andExpect(jsonPath("$.data.verificationCount").value(5))
                 .andExpect(jsonPath("$.data.streakCount").value(3))
+                // HOME-04 로드맵 3필드 (2026-08-14 추가)
+                .andExpect(jsonPath("$.data.level").value(3))
+                .andExpect(jsonPath("$.data.totalExp").value(320))
+                .andExpect(jsonPath("$.data.nextLevelExp").value(450))
                 // 빈 상태가 없는 API라 status·message를 쓰지 않는다
                 .andExpect(jsonPath("$.data.status").doesNotExist())
                 .andExpect(jsonPath("$.data.message").doesNotExist());
@@ -197,14 +202,18 @@ class UserControllerTest {
     @DisplayName("동의 이력이 없으면 버전·시각이 null로 그대로 나간다")
     void 동의_이력이_없으면_null이_나간다() throws Exception {
         given(userService.getProfile(USER_ID, BASE_DATE)).willReturn(new UserProfileResponse(
-                USER_ID, "테스트유저1", false, false, "1.0", null, null, 0L, 0));
+                USER_ID, "테스트유저1", false, false, "1.0", null, null, 0L, 0,
+                1, 0, 100));
 
         mockMvc.perform(get("/api/v1/users/me").header(USER_ID_HEADER, USER_ID)
                         .param("baseDate", BASE_DATE.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.consentAgreed").value(false))
                 .andExpect(jsonPath("$.data.agreedTermsVersion").doesNotExist())
-                .andExpect(jsonPath("$.data.currentTermsVersion").value("1.0"));
+                .andExpect(jsonPath("$.data.currentTermsVersion").value("1.0"))
+                // 신규 사용자도 레벨 1이라는 정상적인 값을 받는다 — 빈 상태가 아니다
+                .andExpect(jsonPath("$.data.level").value(1))
+                .andExpect(jsonPath("$.data.totalExp").value(0));
     }
 
     @Test

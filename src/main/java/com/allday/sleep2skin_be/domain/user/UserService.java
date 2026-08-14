@@ -1,5 +1,6 @@
 package com.allday.sleep2skin_be.domain.user;
 
+import com.allday.sleep2skin_be.domain.game.repository.ExpGrantRepository;
 import com.allday.sleep2skin_be.domain.skin.VerificationStreakCalculator;
 import com.allday.sleep2skin_be.domain.skin.repository.PersonalWeightRepository;
 import com.allday.sleep2skin_be.domain.skin.repository.SkinForecastRepository;
@@ -38,11 +39,12 @@ public class UserService {
     private final SleepSessionRepository sleepSessionRepository;
     private final VerificationStreakCalculator streakCalculator;
 
-    // 아래 넷은 MY-04 전체 삭제에만 쓰인다 (DB에 users FK가 없어 손으로 지운다 — delete 참조)
+    // 아래 다섯은 MY-04 전체 삭제에만 쓰인다 (DB에 users FK가 없어 손으로 지운다 — delete 참조)
     private final SleepStageSegmentRepository sleepStageSegmentRepository;
     private final SkinForecastRepository skinForecastRepository;
     private final PersonalWeightRepository personalWeightRepository;
     private final DailyTodoRepository dailyTodoRepository;
+    private final ExpGrantRepository expGrantRepository;
 
     /**
      * 온보딩 완료 처리 (ONB-05).
@@ -119,10 +121,12 @@ public class UserService {
      * <p>erd.md §5는 "모든 FK에 {@code ON DELETE CASCADE}를 건다"고 적었지만 <b>실제 스키마에
      * {@code users} 외래키가 하나도 없다.</b> 자식 테이블이 {@code userId}를 연관관계가 아니라
      * 단순 {@code Long} 컬럼으로 들고 있어(architecture.md §4 연관관계 최소화) Hibernate가 제약을
-     * 만들지 않았기 때문이다. {@code users} 행만 지우면 <b>나머지 6개 테이블에 고아 행이 남는다.</b>
+     * 만들지 않았기 때문이다. {@code users} 행만 지우면 <b>나머지 8개 테이블에 고아 행이 남는다.</b>
      *
      * <p>고아 행은 조회에 잡히지 않아 알아채기 어렵고, 같은 {@code userId}가 재사용되는 순간
-     * <b>남의 수면·검증 이력이 새 사용자에게 붙는다.</b>
+     * <b>남의 수면·검증 이력이 새 사용자에게 붙는다.</b> {@code exp_grant}는 그중에서도 특히
+     * 조용하다 — 남은 행의 유니크 {@code (user_id, base_date, reason)}에 새 사용자가 걸려
+     * <b>오늘 출석 보상을 받지 못하는데 에러도 로그도 남지 않는다.</b>
      *
      * <p><b>순서가 하나 강제된다.</b> {@code sleep_stage_segment}만 진짜 FK를 갖고 있어
      * ({@code @ManyToOne}) {@code sleep_session}보다 먼저 지워야 한다. 나머지는 서로 참조하지
@@ -147,6 +151,7 @@ public class UserService {
         skinMeasurementRepository.deleteByUserId(userId);
         personalWeightRepository.deleteByUserId(userId);
         dailyTodoRepository.deleteByUserId(userId);
+        expGrantRepository.deleteByUserId(userId);
         consentHistoryRepository.deleteByUserId(userId);
         userRepository.delete(user);
 

@@ -1,5 +1,8 @@
 package com.allday.sleep2skin_be.domain.skin;
 
+import com.allday.sleep2skin_be.domain.game.ExpService;
+import com.allday.sleep2skin_be.domain.game.dto.ExpGrantCommand;
+import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
 import com.allday.sleep2skin_be.domain.skin.dto.UnavailableReason;
 import com.allday.sleep2skin_be.domain.skin.dto.VerificationVerdict;
 import com.allday.sleep2skin_be.domain.skin.dto.response.MetricVerificationResponse;
@@ -16,11 +19,13 @@ import com.allday.sleep2skin_be.global.exception.BusinessException;
 import com.allday.sleep2skin_be.global.exception.ErrorCode;
 import com.allday.sleep2skin_be.global.infra.openai.SkinVisionScores;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -53,6 +58,12 @@ class SkinVerificationServiceTest {
     private SleepSessionRepository sleepSessionRepository;
     @Mock
     private SkinModelService skinModelService;
+    @Mock
+    private ExpService expService;
+
+    /** 연속 계산은 진짜를 쓴다 — 스텁으로 두면 검증하려는 규칙을 테스트가 직접 정하게 된다. */
+    @Spy
+    private VerificationStreakCalculator streakCalculator = new VerificationStreakCalculator();
 
     @InjectMocks
     private SkinVerificationService skinVerificationService;
@@ -222,7 +233,102 @@ class SkinVerificationServiceTest {
         verify(skinModelService, never()).learn(any(), any(), any());
     }
 
+    @Nested
+    @DisplayName("연속 검증 보상 (HOME-04)")
+    class 연속_검증_보상 {
+
+        /**
+         * <b>이번 검증을 포함한 값이어야 한다.</b> 응답의 팝업 문구("3일 연속!")와 지급액이 같은
+         * 숫자에서 나오지 않으면 화면과 보상이 하루씩 어긋난다.
+         */
+        @Test
+        @DisplayName("streakCount는 방금 저장한 실측을 포함한다")
+        void 이번_검증을_포함한다() {
+            forecastIs(67, 62, 81);
+            watchWorn();
+            savesWhatItGets();
+            verifiedOn(BASE_DATE, BASE_DATE.minusDays(1), BASE_DATE.minusDays(2));
+
+            assertThat(analyze(61, 55, 78).streakCount()).isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName("연속 일수 구간값으로 VERIFICATION_STREAK을 적립한다")
+        void 구간값을_적립한다() {
+            forecastIs(67, 62, 81);
+            watchWorn();
+            savesWhatItGets();
+            verifiedOn(BASE_DATE, BASE_DATE.minusDays(1), BASE_DATE.minusDays(2));
+
+            analyze(61, 55, 78);
+
+            assertThat(grantedCommands()).containsExactly(
+                    new ExpGrantCommand(ExpReason.VERIFICATION_STREAK, 10));   // 3일 → +10
+        }
+
+        /**
+         * <b>보상 구간이 2일부터다.</b> 명령은 실리지만 양이 0이라 {@code ExpService}가 이력 행을
+         * 만들지 않는다 — 행이 생기면 나중에 조건이 성립해도 유니크에 막힌다.
+         */
+        @Test
+        @DisplayName("첫 검증(1일차)은 지급액이 0이다")
+        void 첫_검증은_0이다() {
+            forecastIs(67, 62, 81);
+            watchWorn();
+            savesWhatItGets();
+            verifiedOn(BASE_DATE);
+
+            SelfieVerificationResponse response = analyze(61, 55, 78);
+
+            assertThat(response.streakCount()).isEqualTo(1);
+            assertThat(grantedCommands())
+                    .containsExactly(new ExpGrantCommand(ExpReason.VERIFICATION_STREAK, 0));
+        }
+
+        /** 5일 이상은 상한 구간이라 매일 {@code +25}다. */
+        @Test
+        @DisplayName("5일 이상은 상한 구간이라 +25다")
+        void 상한_구간은_25다() {
+            forecastIs(67, 62, 81);
+            watchWorn();
+            savesWhatItGets();
+            verifiedOn(BASE_DATE, BASE_DATE.minusDays(1), BASE_DATE.minusDays(2),
+                    BASE_DATE.minusDays(3), BASE_DATE.minusDays(4), BASE_DATE.minusDays(5));
+
+            analyze(61, 55, 78);
+
+            assertThat(grantedCommands())
+                    .containsExactly(new ExpGrantCommand(ExpReason.VERIFICATION_STREAK, 25));
+        }
+
+        /** 분석이 실패하면 행도 exp도 생기지 않는다 — 적립은 저장·검증이 끝난 뒤다. */
+        @Test
+        @DisplayName("예보가 없으면 적립하지 않는다")
+        void 예보가_없으면_적립하지_않는다() {
+            given(skinForecastRepository.findByUserIdAndBaseDate(USER_ID, BASE_DATE))
+                    .willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> analyze(61, 55, 78))
+                    .isInstanceOf(BusinessException.class);
+
+            verify(expService, never()).grantDaily(any(), any(), any());
+        }
+    }
+
     // ===== 픽스처 =====
+
+    @SuppressWarnings("unchecked")
+    private List<ExpGrantCommand> grantedCommands() {
+        ArgumentCaptor<List<ExpGrantCommand>> captor = ArgumentCaptor.forClass(List.class);
+        verify(expService).grantDaily(eq(USER_ID), eq(BASE_DATE), captor.capture());
+        return captor.getValue();
+    }
+
+    /** 조회는 최신순으로 준다 — 연속 계산이 앞에서부터 읽는다. */
+    private void verifiedOn(LocalDate... dates) {
+        given(skinMeasurementRepository.findVerifiedBaseDates(USER_ID, BASE_DATE))
+                .willReturn(List.of(dates));
+    }
 
     private SelfieVerificationResponse analyze(int darkCircle, int complexion, int barrier) {
         return skinVerificationService.record(USER_ID, BASE_DATE,

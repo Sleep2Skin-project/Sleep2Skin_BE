@@ -1,5 +1,8 @@
 package com.allday.sleep2skin_be.domain.sleep;
 
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse.ExpReasonResponse;
+import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
 import com.allday.sleep2skin_be.domain.skin.dto.SkinGrade;
 import com.allday.sleep2skin_be.domain.skin.dto.UnavailableReason;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse;
@@ -111,7 +114,8 @@ class SleepControllerTest {
                 List.of(new UnavailableMetricResponse(SkinMetric.COMPLEXION,
                         UnavailableReason.MISSING_FEATURES)));
         given(sleepSessionService.upload(anyLong(), any())).willReturn(new SleepSessionUploadResult(
-                true, new SleepSessionUploadResponse(true, LocalDate.of(2026, 8, 7), sleep(), forecast)));
+                true, new SleepSessionUploadResponse(true, LocalDate.of(2026, 8, 7), sleep(),
+                forecast, exp())));
 
         mockMvc.perform(post(PATH).header(USER_ID_HEADER, USER_ID)
                         .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
@@ -317,14 +321,21 @@ class SleepControllerTest {
                         new MetricScore(68, SkinGrade.NORMAL),
                         new MetricScore(69, SkinGrade.NORMAL),
                         new MetricScore(98, SkinGrade.STABLE),
-                        List.of()));
+                        List.of()),
+                exp());
     }
 
     private static SleepSummary sleep() {
         return new SleepSummary(
                 OffsetDateTime.parse("2026-08-06T14:40:00Z"),
                 OffsetDateTime.parse("2026-08-06T22:10:00Z"),
-                402, 54, 71, 277, 3, 21);
+                402, 54, 71, 277, 3, 21, 78);
+    }
+
+    /** 수면 점수 증가 보상이 붙은 응답 (HOME-04). */
+    private static ExpResponse exp() {
+        return ExpResponse.of(294, 320,
+                List.of(new ExpReasonResponse(ExpReason.SLEEP_SCORE_IMPROVED, 26)));
     }
 
 }

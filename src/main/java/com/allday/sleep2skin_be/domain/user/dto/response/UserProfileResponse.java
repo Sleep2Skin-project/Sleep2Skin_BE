@@ -1,5 +1,6 @@
 package com.allday.sleep2skin_be.domain.user.dto.response;
 
+import com.allday.sleep2skin_be.domain.game.LevelPolicy;
 import com.allday.sleep2skin_be.domain.user.ConsentPolicy;
 import com.allday.sleep2skin_be.domain.user.entity.ConsentHistory;
 import com.allday.sleep2skin_be.domain.user.entity.User;
@@ -28,6 +29,10 @@ import java.time.OffsetDateTime;
  *                           클라이언트가 한다(prd.md §4.5 L8). 등급만 내려주면 원본 숫자가 가려져
  *                           REP-12와 어긋나도 알아채기 어렵다
  * @param streakCount        연속 검증 횟수. <b>HOME-09 배너와 같은 계산에서 나온다</b>(§4.2)
+ * @param level              현재 레벨 (1~5). <b>{@code users.exp}에서 계산되며 저장된 컬럼이
+ *                           아니다</b>(erd.md §3.1) — 두 컬럼을 두면 이중 상태가 되고 컷오프를
+ *                           바꿀 때 전 행을 다시 계산해야 한다
+ * @param nextLevelExp       다음 레벨 <b>컷오프 절대값</b>. 만렙(5)이면 {@code null}
  */
 @Schema(description = "온보딩·동의 상태 + 프로필")
 public record UserProfileResponse(
@@ -60,7 +65,19 @@ public record UserProfileResponse(
         long verificationCount,
 
         @Schema(description = "연속 검증 횟수 (MY-01). HOME-09 배너와 같은 값", example = "3")
-        int streakCount
+        int streakCount,
+
+        @Schema(description = "현재 레벨 (1~5, HOME-04). `totalExp`에서 계산되며 저장된 컬럼이 아니다",
+                example = "3")
+        int level,
+
+        @Schema(description = "누적 경험치 (HOME-04)", example = "320")
+        int totalExp,
+
+        @Schema(description = "다음 레벨 **컷오프 절대값**. 만렙(5)이면 `null` — "
+                + "\"남은 exp\"는 앱이 `nextLevelExp − totalExp`로 계산한다",
+                nullable = true, example = "450")
+        Integer nextLevelExp
 ) {
 
     /**
@@ -80,7 +97,10 @@ public record UserProfileResponse(
                 latestConsent == null ? null : latestConsent.getTermsVersion(),
                 latestConsent == null ? null : latestConsent.getCreatedAt(),
                 verificationCount,
-                streakCount);
+                streakCount,
+                LevelPolicy.levelOf(user.getExp()),
+                user.getExp(),
+                LevelPolicy.nextLevelExp(user.getExp()));
     }
 
 }

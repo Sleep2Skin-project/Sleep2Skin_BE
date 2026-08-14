@@ -1,5 +1,8 @@
 package com.allday.sleep2skin_be.domain.sleep;
 
+import com.allday.sleep2skin_be.domain.game.ExpService;
+import com.allday.sleep2skin_be.domain.game.dto.ExpGrantCommand;
+import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
 import com.allday.sleep2skin_be.domain.skin.SkinScoringEngine;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinForecast;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMeasurement;
@@ -19,8 +22,10 @@ import com.allday.sleep2skin_be.global.exception.BusinessException;
 import com.allday.sleep2skin_be.global.exception.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -63,6 +68,8 @@ class SleepSessionServiceTest {
     private SkinMeasurementRepository skinMeasurementRepository;
     @Mock
     private PersonalWeightRepository personalWeightRepository;
+    @Mock
+    private ExpService expService;
 
     private SleepSessionService service;
 
@@ -70,10 +77,16 @@ class SleepSessionServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 스코어링·규칙성·수면 점수는 진짜를 쓴다 — 스텁으로 두면 검증하려는 규칙을 테스트가 정하게 된다
+        SkinScoringEngine scoringEngine = new SkinScoringEngine();
+        BedtimeRegularityCalculator regularityCalculator =
+                new BedtimeRegularityCalculator(sleepSessionRepository);
+
         service = new SleepSessionService(userRepository, sleepSessionRepository,
                 sleepStageSegmentRepository, skinForecastRepository, skinMeasurementRepository,
-                personalWeightRepository, normalizer, new SkinScoringEngine(),
-                new BedtimeRegularityCalculator(sleepSessionRepository));
+                personalWeightRepository, normalizer, scoringEngine, regularityCalculator,
+                new SleepScoreCalculator(sleepSessionRepository, regularityCalculator, scoringEngine),
+                expService);
     }
 
     @Test
@@ -239,10 +252,110 @@ class SleepSessionServiceTest {
                 USER_ID, SLEEP_DATE.minusDays(6), SLEEP_DATE.minusDays(1));
     }
 
+    @Nested
+    @DisplayName("수면 점수와 exp 적립 (HOME-04)")
+    class 수면_점수와_적립 {
+
+        @Test
+        @DisplayName("첫 수신이면 수면 점수를 실어 보내고 두 보상을 판정한다")
+        void 첫_수신은_점수를_내고_적립한다() {
+            userExists();
+            given(sleepSessionRepository.findByUserIdAndSleepDate(USER_ID, SLEEP_DATE))
+                    .willReturn(Optional.empty());
+            stubScoringLookups();
+            given(sleepSessionRepository.save(any())).willAnswer(call -> call.getArgument(0));
+            given(skinForecastRepository.save(any())).willAnswer(call -> call.getArgument(0));
+
+            SleepSessionUploadResult result = service.upload(USER_ID, night());
+
+            assertThat(result.response().sleep().sleepScore()).isBetween(0, 100);
+            verify(expService).grantDaily(eq(USER_ID), eq(SLEEP_DATE), any());
+        }
+
+        /**
+         * <b>앱이 시작할 때마다 호출하므로 여기서 매번 적립하면 앱을 다섯 번 켤 때 다섯 번
+         * 붙는다.</b> 재처리를 하지 않은 요청이라 새로 산출된 점수가 없다.
+         */
+        @Test
+        @DisplayName("processed=false면 적립하지 않고 현재 상태만 싣는다")
+        void 재수신은_적립하지_않는다() {
+            userExists();
+            SleepNormalizationResult stored = normalizer.normalize(night());
+            given(sleepSessionRepository.findByUserIdAndSleepDate(USER_ID, SLEEP_DATE))
+                    .willReturn(Optional.of(stored.toEntity(USER_ID)));
+            given(skinForecastRepository.findByUserIdAndBaseDate(USER_ID, SLEEP_DATE))
+                    .willReturn(Optional.of(forecast(41, 55, 72)));
+
+            SleepSessionUploadResult result = service.upload(USER_ID, night());
+
+            assertThat(result.response().processed()).isFalse();
+            verify(expService, never()).grantDaily(anyLong(), any(), any());
+            verify(expService).current(USER_ID);
+        }
+
+        /**
+         * <b>전날 세션이 없으면 증가 보상을 지급하지 않는다.</b> 0점에서 오른 것으로 치면
+         * 신규 사용자의 첫날이 {@code +180}을 받는다(§10.9).
+         */
+        @Test
+        @DisplayName("전날 세션이 없으면 SLEEP_SCORE_IMPROVED를 지급하지 않는다")
+        void 전날이_없으면_증가_보상이_없다() {
+            userExists();
+            given(sleepSessionRepository.findByUserIdAndSleepDate(USER_ID, SLEEP_DATE))
+                    .willReturn(Optional.empty());
+            given(sleepSessionRepository.findByUserIdAndSleepDate(USER_ID, SLEEP_DATE.minusDays(1)))
+                    .willReturn(Optional.empty());               // 전날 세션 없음
+            stubScoringLookups();
+            given(sleepSessionRepository.save(any())).willAnswer(call -> call.getArgument(0));
+            given(skinForecastRepository.save(any())).willAnswer(call -> call.getArgument(0));
+
+            service.upload(USER_ID, night());
+
+            assertThat(grantedAmountOf(ExpReason.SLEEP_SCORE_IMPROVED)).isZero();
+        }
+
+        /** 90점 보상은 증가 여부와 무관하다 — 잘 자던 사람이 손해 보지 않아야 한다. */
+        @Test
+        @DisplayName("수면 점수가 90 미만이면 SLEEP_SCORE_HIGH 명령 자체가 실리지 않는다")
+        void 점수가_낮으면_90점_보상이_없다() {
+            userExists();
+            given(sleepSessionRepository.findByUserIdAndSleepDate(USER_ID, SLEEP_DATE))
+                    .willReturn(Optional.empty());
+            stubScoringLookups();
+            given(sleepSessionRepository.save(any())).willAnswer(call -> call.getArgument(0));
+            given(skinForecastRepository.save(any())).willAnswer(call -> call.getArgument(0));
+
+            SleepSessionUploadResult result = service.upload(USER_ID, night());
+
+            // 이 밤은 90점에 못 미친다 — 못 미치면 명령이 아예 안 실린다
+            assertThat(result.response().sleep().sleepScore()).isLessThan(90);
+            assertThat(grantedReasons()).doesNotContain(ExpReason.SLEEP_SCORE_HIGH);
+        }
+    }
+
     // ===== 픽스처 =====
 
     private void userExists() {
         given(userRepository.existsById(USER_ID)).willReturn(true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<ExpGrantCommand> capturedCommands() {
+        ArgumentCaptor<List<ExpGrantCommand>> captor = ArgumentCaptor.forClass(List.class);
+        verify(expService).grantDaily(eq(USER_ID), eq(SLEEP_DATE), captor.capture());
+        return captor.getValue();
+    }
+
+    private List<ExpReason> grantedReasons() {
+        return capturedCommands().stream().map(ExpGrantCommand::reason).toList();
+    }
+
+    /** 명령에 실린 양. 없으면 0이며, {@code ExpService}는 0 이하를 건너뛴다. */
+    private int grantedAmountOf(ExpReason reason) {
+        return capturedCommands().stream()
+                .filter(command -> command.reason() == reason)
+                .mapToInt(ExpGrantCommand::amount)
+                .findFirst().orElse(0);
     }
 
     private void stubScoringLookups() {
