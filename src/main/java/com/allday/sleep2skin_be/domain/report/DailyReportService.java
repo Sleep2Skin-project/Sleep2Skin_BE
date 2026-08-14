@@ -4,12 +4,8 @@ import com.allday.sleep2skin_be.domain.report.dto.response.DailyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.SkinForecastSection;
 import com.allday.sleep2skin_be.domain.report.dto.response.SleepSummarySection;
 import com.allday.sleep2skin_be.domain.report.dto.response.SleepSummarySection.SleepSummary;
-import com.allday.sleep2skin_be.domain.skin.SkinScoringEngine;
-import com.allday.sleep2skin_be.domain.skin.dto.ScoringCommand;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinForecast;
-import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
 import com.allday.sleep2skin_be.domain.skin.repository.SkinForecastRepository;
-import com.allday.sleep2skin_be.domain.sleep.BedtimeRegularityCalculator;
 import com.allday.sleep2skin_be.domain.sleep.entity.SleepSession;
 import com.allday.sleep2skin_be.domain.sleep.repository.SleepSessionRepository;
 import com.allday.sleep2skin_be.domain.user.repository.UserRepository;
@@ -21,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -37,6 +32,9 @@ import java.util.Optional;
  * 판정한다.</b> 세션과 예보는 보통 같은 업로드 트랜잭션에서 함께 생기지만, "검증을 마친 날의
  * 예보는 세션이 갱신돼도 재산출하지 않는다"는 정책 때문에 완전히 같이 가지 않는다 — 그래서
  * 한쪽이 없다고 다른 쪽까지 비었다고 가정하지 않는다.
+ *
+ * <p>{@code sleepScore} 계산 자체는 {@link DailySleepScoreCalculator}로 뽑아뒀다 — 주간·월간
+ * 리포트가 같은 계산을 하루마다 반복 호출하기 때문이다.
  */
 @Slf4j
 @Service
@@ -47,8 +45,7 @@ public class DailyReportService {
     private final UserRepository userRepository;
     private final SleepSessionRepository sleepSessionRepository;
     private final SkinForecastRepository skinForecastRepository;
-    private final BedtimeRegularityCalculator bedtimeRegularityCalculator;
-    private final SkinScoringEngine skinScoringEngine;
+    private final DailySleepScoreCalculator dailySleepScoreCalculator;
 
     public DailyReportResponse getDailyReport(Long userId, LocalDate baseDate) {
         if (!userRepository.existsById(userId)) {
@@ -69,31 +66,12 @@ public class DailyReportService {
         return DailyReportResponse.of(baseDate, sleepSummary, skinForecast);
     }
 
-    /**
-     * {@code ScoringCommand.forFeatureScores}는 HOME-08이 검증 시점에 부분점수만 다시 구할 때
-     * 쓰는 것과 같은 팩토리다 — 개인 가중치 없이도 예보 산출 때와 같은 {@code s(f)}를 낸다
-     * (§10.7과 같은 근거: 부분점수는 가중치를 곱하기 전 단계라 같은 밤이면 항상 같은 값이다).
-     */
     private SleepSummary buildSleepSummary(Long userId, LocalDate baseDate, SleepSession session) {
-        Double bedtimeRegularitySd = bedtimeRegularityCalculator.calculate(
-                userId, baseDate, session.getSleepOnsetTime());
-
-        ScoringCommand command = ScoringCommand.forFeatureScores(session, bedtimeRegularitySd);
-        Map<SleepFeature, Double> featureScores = skinScoringEngine.featureScores(command);
-
-        Integer sleepScore = featureScores.isEmpty() ? null : averageRounded(featureScores);
+        Integer sleepScore = dailySleepScoreCalculator.calculate(userId, baseDate, session);
 
         return new SleepSummary(session.getTotalSleepMinutes(), sleepScore,
                 session.getDeepSleepMinutes(), session.getCoreSleepMinutes(),
                 session.getAwakeCount(), session.getAwakeMinutes());
-    }
-
-    private int averageRounded(Map<SleepFeature, Double> featureScores) {
-        double average = featureScores.values().stream()
-                .mapToDouble(Double::doubleValue)
-                .average()
-                .orElseThrow();
-        return (int) Math.round(average);
     }
 
     /**

@@ -3,10 +3,14 @@ package com.allday.sleep2skin_be.domain.report;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse.SegmentResponse;
+import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse;
+import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.WeekScore;
 import com.allday.sleep2skin_be.domain.report.dto.response.SkinForecastSection;
 import com.allday.sleep2skin_be.domain.report.dto.response.SkinForecastSection.MetricDiff;
 import com.allday.sleep2skin_be.domain.report.dto.response.SleepSummarySection;
 import com.allday.sleep2skin_be.domain.report.dto.response.SleepSummarySection.SleepSummary;
+import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse;
+import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse.DailyScore;
 import com.allday.sleep2skin_be.domain.sleep.entity.SleepStage;
 import com.allday.sleep2skin_be.global.exception.BusinessException;
 import com.allday.sleep2skin_be.global.exception.ErrorCode;
@@ -49,6 +53,12 @@ class ReportControllerTest {
 
     @MockitoBean
     private DailyTimelineService dailyTimelineService;
+
+    @MockitoBean
+    private WeeklyReportService weeklyReportService;
+
+    @MockitoBean
+    private MonthlyReportService monthlyReportService;
 
     @Nested
     @DisplayName("일간 리포트 (GET /report/daily)")
@@ -191,6 +201,137 @@ class ReportControllerTest {
         @DisplayName("존재하지 않는 사용자는 404 USER_NOT_FOUND다")
         void 없는_사용자는_404다() throws Exception {
             given(dailyTimelineService.getTimeline(USER_ID, BASE_DATE))
+                    .willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-14"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"));
+        }
+    }
+
+    @Nested
+    @DisplayName("주간 리포트 (GET /report/weekly)")
+    class WeeklyReport {
+
+        private static final String PATH = "/api/v1/report/weekly";
+
+        @Test
+        @DisplayName("FULL이면 일별 점수와 요약을 반환한다")
+        void 일별_점수와_요약을_반환한다() throws Exception {
+            given(weeklyReportService.getWeeklyReport(USER_ID, BASE_DATE)).willReturn(
+                    WeeklyReportResponse.of(BASE_DATE.minusDays(6), BASE_DATE,
+                            List.of(new DailyScore(BASE_DATE.minusDays(6), 62),
+                                    new DailyScore(BASE_DATE.minusDays(5), null)),
+                            new WeeklyReportResponse.Summary(70, 86, 7)));
+
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-14"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.status").value("FULL"))
+                    .andExpect(jsonPath("$.data.periodStart").value("2026-08-08"))
+                    .andExpect(jsonPath("$.data.periodEnd").value("2026-08-14"))
+                    .andExpect(jsonPath("$.data.dailyScores[0].sleepScore").value(62))
+                    .andExpect(jsonPath("$.data.dailyScores[1].sleepScore").doesNotExist())
+                    .andExpect(jsonPath("$.data.summary.avgSleepScore").value(70))
+                    .andExpect(jsonPath("$.data.summary.hitRate").value(86))
+                    .andExpect(jsonPath("$.data.summary.verifiedDays").value(7));
+        }
+
+        @Test
+        @DisplayName("가입한 지 얼마 안 됐으면 INSUFFICIENT_DATA이고 빈 배열이다")
+        void 신규_사용자는_빈_상태다() throws Exception {
+            given(weeklyReportService.getWeeklyReport(USER_ID, BASE_DATE)).willReturn(
+                    WeeklyReportResponse.insufficientData(BASE_DATE.minusDays(6), BASE_DATE));
+
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-14"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("INSUFFICIENT_DATA"))
+                    .andExpect(jsonPath("$.data.dailyScores").isEmpty())
+                    .andExpect(content().string(containsString("\"summary\":null")));
+        }
+
+        @Test
+        @DisplayName("baseDate가 없으면 400이고 서비스를 호출하지 않는다")
+        void 기준일이_없으면_400이다() throws Exception {
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+
+            verify(weeklyReportService, never()).getWeeklyReport(anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 사용자는 404 USER_NOT_FOUND다")
+        void 없는_사용자는_404다() throws Exception {
+            given(weeklyReportService.getWeeklyReport(USER_ID, BASE_DATE))
+                    .willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-14"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"));
+        }
+    }
+
+    @Nested
+    @DisplayName("월간 리포트 (GET /report/monthly)")
+    class MonthlyReport {
+
+        private static final String PATH = "/api/v1/report/monthly";
+
+        @Test
+        @DisplayName("FULL이면 주별 평균과 최고 주를 반환한다")
+        void 주별_평균과_최고_주를_반환한다() throws Exception {
+            given(monthlyReportService.getMonthlyReport(USER_ID, BASE_DATE)).willReturn(
+                    MonthlyReportResponse.of(BASE_DATE.minusDays(27), BASE_DATE,
+                            List.of(new WeekScore("W1", 65, false), new WeekScore("W2", 58, false),
+                                    new WeekScore("W3", 52, false), new WeekScore("W4", 70, true)),
+                            new MonthlyReportResponse.Summary(61, 82, 26)));
+
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-14"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("FULL"))
+                    .andExpect(jsonPath("$.data.periodStart").value("2026-07-18"))
+                    .andExpect(jsonPath("$.data.weeks[0].weekLabel").value("W1"))
+                    .andExpect(jsonPath("$.data.weeks[3].weekLabel").value("W4"))
+                    .andExpect(jsonPath("$.data.weeks[3].avgSleepScore").value(70))
+                    .andExpect(jsonPath("$.data.weeks[3].isHighest").value(true))
+                    .andExpect(jsonPath("$.data.weeks[0].isHighest").value(false))
+                    .andExpect(jsonPath("$.data.summary.avgSleepScore").value(61));
+        }
+
+        @Test
+        @DisplayName("가입한 지 얼마 안 됐으면 INSUFFICIENT_DATA이고 빈 배열이다")
+        void 신규_사용자는_빈_상태다() throws Exception {
+            given(monthlyReportService.getMonthlyReport(USER_ID, BASE_DATE)).willReturn(
+                    MonthlyReportResponse.insufficientData(BASE_DATE.minusDays(27), BASE_DATE));
+
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-14"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("INSUFFICIENT_DATA"))
+                    .andExpect(jsonPath("$.data.weeks").isEmpty())
+                    .andExpect(content().string(containsString("\"summary\":null")));
+        }
+
+        @Test
+        @DisplayName("baseDate가 없으면 400이고 서비스를 호출하지 않는다")
+        void 기준일이_없으면_400이다() throws Exception {
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+
+            verify(monthlyReportService, never()).getMonthlyReport(anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 사용자는 404 USER_NOT_FOUND다")
+        void 없는_사용자는_404다() throws Exception {
+            given(monthlyReportService.getMonthlyReport(USER_ID, BASE_DATE))
                     .willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)

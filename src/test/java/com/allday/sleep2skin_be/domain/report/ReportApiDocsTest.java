@@ -27,6 +27,8 @@ class ReportApiDocsTest {
 
     private static final String DAILY_GET = "$.paths.['/api/v1/report/daily'].get";
     private static final String TIMELINE_GET = "$.paths.['/api/v1/report/daily/timeline'].get";
+    private static final String WEEKLY_GET = "$.paths.['/api/v1/report/weekly'].get";
+    private static final String MONTHLY_GET = "$.paths.['/api/v1/report/monthly'].get";
 
     @Autowired
     private MockMvc mockMvc;
@@ -39,7 +41,7 @@ class ReportApiDocsTest {
                 .andExpect(jsonPath(DAILY_GET + ".summary").value(containsString("일간 리포트 조회")))
                 .andExpect(jsonPath(DAILY_GET + ".summary").value(containsString("REP-02")))
                 .andExpect(jsonPath("$.tags[?(@.name == 'Report')].description")
-                        .value(hasItem(containsString("일간 리포트"))));
+                        .value(hasItem(containsString("리포트 API"))));
     }
 
     /**
@@ -133,6 +135,68 @@ class ReportApiDocsTest {
                 .andExpect(jsonPath(TIMELINE_GET + ".description").value(containsString("NO_SLEEP_DATA")))
                 .andExpect(jsonPath(TIMELINE_GET + ".responses.['200'].description")
                         .value(containsString("수면 데이터가 없는 경우도")));
+    }
+
+    // ===== 주간 (REP-06) =====
+
+    @Test
+    @DisplayName("주간 리포트 문서가 반영되고 최상위 단일 status라는 것이 남아 있다")
+    void 주간_문서가_반영된다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".summary").value(containsString("주간 리포트")))
+                .andExpect(jsonPath(WEEKLY_GET + ".summary").value(containsString("REP-06")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("최상위 단일 `status`")))
+                .andExpect(jsonPath(WEEKLY_GET + ".responses.['200'].content.['application/json'].schema.['$ref']")
+                        .value("#/components/schemas/ApiResponseWeeklyReportResponse"));
+    }
+
+    /**
+     * {@code INSUFFICIENT_DATA}가 가입일 기준이지 "그 주에 기록이 있었는가"가 아니라는 구분이
+     * 빠지면, 프론트가 오래된 사용자의 안 잔 주를 신규 사용자 화면으로 잘못 보여줄 수 있다.
+     */
+    @Test
+    @DisplayName("INSUFFICIENT_DATA가 가입일 기준이라는 것과 hitRate가 지표 기준이라는 것이 문서에 있다")
+    void 주간_빈_상태와_적중률_기준이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("가입일부터 baseDate까지의 일수 + 1")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("여전히 `FULL`이다")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("날짜 기준이 아니라 지표 기준이다")));
+    }
+
+    // ===== 월간 (REP-07) =====
+
+    @Test
+    @DisplayName("월간 리포트 문서가 반영되고 baseDate 기준 역산이라는 것이 남아 있다")
+    void 월간_문서가_반영된다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MONTHLY_GET + ".summary").value(containsString("월간 리포트")))
+                .andExpect(jsonPath(MONTHLY_GET + ".summary").value(containsString("REP-07")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("가입일 앵커가 아니다")))
+                .andExpect(jsonPath(MONTHLY_GET + ".responses.['200'].content.['application/json'].schema.['$ref']")
+                        .value("#/components/schemas/ApiResponseMonthlyReportResponse"));
+    }
+
+    /**
+     * "주 평균의 평균이 아니다"가 문서에서 사라지면, 프론트가 4주 숫자를 단순 평균해 서버 값과
+     * 다른 결과를 계산해 보여줄 수 있다.
+     */
+    @Test
+    @DisplayName("summary.avgSleepScore가 주 평균의 평균이 아니라는 것과 isHighest 동점 규칙이 문서에 있다")
+    void 월간_평균_계산_방식이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("주 평균의 평균이 아니다")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("동점이면 해당하는 주 전부 `true`")));
     }
 
 }
