@@ -72,23 +72,13 @@ public record MonthlyReportResponse(
      *                      아니다.</b> 주마다 결측 일수가 다르면 두 계산이 갈리는데(가중치가
      *                      달라진다), "28일 전부 결측이면 null"이라는 조건이 28일 단위로
      *                      걸려 있어 28일 단위로 계산한다. 전부 결측이면 {@code null}
-     * @param hitRate       기간 내 검증된 지표 판정 중 {@code HIT} 비율(%), 반올림. 날짜 기준이
-     *                      아니라 지표 기준이다. 판정이 없으면 {@code null}
-     * @param verifiedDays  기간 내 검증한 날짜 수
      */
     @Schema(description = "28일 전체 요약")
     public record Summary(
 
             @Schema(description = "28일 전체 평균 수면 점수. 전부 결측이면 `null`", nullable = true,
                     example = "61")
-            Integer avgSleepScore,
-
-            @Schema(description = "기간 내 지표 판정의 적중률(%). 판정이 없으면 `null`",
-                    nullable = true, example = "82")
-            Integer hitRate,
-
-            @Schema(description = "기간 내 검증한 날짜 수", example = "26")
-            int verifiedDays
+            Integer avgSleepScore
     ) {
     }
 

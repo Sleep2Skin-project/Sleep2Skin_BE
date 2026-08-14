@@ -3,10 +3,6 @@ package com.allday.sleep2skin_be.domain.report;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.Summary;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.WeekScore;
-import com.allday.sleep2skin_be.domain.skin.dto.VerifiedDay;
-import com.allday.sleep2skin_be.domain.skin.dto.response.MetricVerificationResponse;
-import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
-import com.allday.sleep2skin_be.domain.skin.repository.SkinMeasurementRepository;
 import com.allday.sleep2skin_be.domain.sleep.entity.SleepSession;
 import com.allday.sleep2skin_be.domain.sleep.repository.SleepSessionRepository;
 import com.allday.sleep2skin_be.domain.user.entity.User;
@@ -36,6 +32,10 @@ import java.util.stream.Collectors;
  * <p>{@code summary.avgSleepScore}는 <b>주 평균 4개의 평균이 아니라 28일 전체를 한 번에
  * 평균낸 값</b>이다 — 주마다 결측 일수가 다르면 두 계산이 갈린다(가중치가 달라진다).
  * "28일 전부 결측이면 null"이라는 조건이 28일 단위로 걸려 있어 28일 단위로 계산한다.
+ *
+ * <p><b>적중률({@code hitRate}·{@code verifiedDays})은 화면에 없어 범위에서 뺐다</b>
+ * (2026-08-15). 검증(예보·실측) 조회는 이제 이 서비스가 하지 않는다 — 필요해지면
+ * {@code SkinVerificationSummaryService}가 쓰는 것과 같은 방식으로 다시 붙인다.
  */
 @Service
 @Transactional(readOnly = true)
@@ -48,7 +48,6 @@ public class MonthlyReportService {
 
     private final UserRepository userRepository;
     private final SleepSessionRepository sleepSessionRepository;
-    private final SkinMeasurementRepository skinMeasurementRepository;
     private final DailySleepScoreCalculator dailySleepScoreCalculator;
 
     public MonthlyReportResponse getMonthlyReport(Long userId, LocalDate baseDate) {
@@ -70,9 +69,8 @@ public class MonthlyReportService {
 
         List<WeekScore> weeks = weeklyScores(dailyScores);
         Integer avgSleepScore = average(dailyScores);
-        Summary summary = summaryOf(userId, baseDate, periodStart, avgSleepScore);
 
-        return MonthlyReportResponse.of(periodStart, baseDate, weeks, summary);
+        return MonthlyReportResponse.of(periodStart, baseDate, weeks, new Summary(avgSleepScore));
     }
 
     /**
@@ -109,48 +107,6 @@ public class MonthlyReportService {
      */
     private long daysSinceJoin(User user, LocalDate baseDate) {
         return ChronoUnit.DAYS.between(user.getCreatedAt().toLocalDate(), baseDate) + 1;
-    }
-
-    /**
-     * <b>적중률은 지표 기준이다 — 날짜 기준이 아니다.</b> {@code SkinVerificationSummaryService}와
-     * 같은 방식으로 지표별 판정을 모아 {@code HIT} 비율을 낸다. {@code skin} 도메인은 건드리지
-     * 않고 같은 계산을 리포트 쪽에서 다시 짠다 — 공용 유틸로 뽑지 않기로 했다({@link
-     * WeeklyReportService}와 중복이지만 의도한 것이다).
-     */
-    private Summary summaryOf(Long userId, LocalDate baseDate, LocalDate periodStart,
-                              Integer avgSleepScore) {
-        List<VerifiedDay> verifiedInPeriod = skinMeasurementRepository.findVerifiedDays(userId, baseDate)
-                .stream()
-                .filter(day -> !day.baseDate().isBefore(periodStart))
-                .toList();
-
-        List<MetricVerificationResponse> verifications = verifiedInPeriod.stream()
-                .flatMap(day -> verificationsOf(day).stream())
-                .toList();
-
-        Integer hitRate = verifications.isEmpty() ? null : hitRate(verifications);
-        return new Summary(avgSleepScore, hitRate, verifiedInPeriod.size());
-    }
-
-    /** 예보가 있는 지표만 판정한다. 다크서클은 항상 있다 — 컬럼이 {@code NOT NULL}이다. */
-    private List<MetricVerificationResponse> verificationsOf(VerifiedDay day) {
-        List<MetricVerificationResponse> verifications = new ArrayList<>();
-        verifications.add(MetricVerificationResponse.of(
-                SkinMetric.DARK_CIRCLE, day.forecastDarkCircle(), day.measuredDarkCircle()));
-        if (day.forecastComplexion() != null) {
-            verifications.add(MetricVerificationResponse.of(
-                    SkinMetric.COMPLEXION, day.forecastComplexion(), day.measuredComplexion()));
-        }
-        if (day.forecastBarrier() != null) {
-            verifications.add(MetricVerificationResponse.of(
-                    SkinMetric.BARRIER, day.forecastBarrier(), day.measuredBarrier()));
-        }
-        return verifications;
-    }
-
-    private int hitRate(List<MetricVerificationResponse> verifications) {
-        long hits = verifications.stream().filter(MetricVerificationResponse::isHit).count();
-        return (int) Math.round(hits * 100.0 / verifications.size());
     }
 
     /** {@code null}은 평균에서 제외한다. 전부 {@code null}이면 평균도 {@code null}이다. */

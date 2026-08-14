@@ -7,7 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * 주간 리포트. 최근 7일({@code baseDate} 포함)의 하루치 수면 점수 추이와 적중률.
+ * 주간 리포트. 최근 7일({@code baseDate} 포함)의 하루치 수면 점수 추이.
  *
  * <p>{@code periodStart}~{@code periodEnd}는 <b>{@code baseDate} 기준으로 역산한다</b> —
  * 가입일에 고정된 창이 아니라 호출할 때마다 최근 7일을 가리키므로 매일 창이 하루씩 밀린다.
@@ -60,24 +60,13 @@ public record WeeklyReportResponse(
     /**
      * @param avgSleepScore 기간 내 {@code sleepScore}가 있는 날짜만의 평균, 반올림. 전부
      *                      결측이면 {@code null}
-     * @param hitRate       기간 내 검증된 지표 판정 중 {@code HIT} 비율(%), 반올림. <b>날짜
-     *                      기준이 아니라 지표 기준이다</b> — 검증한 날의 지표 3종(다크서클·혈색·
-     *                      장벽) 각각이 판정 단위다. 판정 자체가 없으면 {@code null}
-     * @param verifiedDays  기간 내 검증(예보와 실측이 모두 있는) 날짜 수
      */
     @Schema(description = "기간 요약")
     public record Summary(
 
             @Schema(description = "기간 평균 수면 점수. 전부 결측이면 `null`", nullable = true,
                     example = "70")
-            Integer avgSleepScore,
-
-            @Schema(description = "기간 내 지표 판정의 적중률(%). 판정이 없으면 `null`",
-                    nullable = true, example = "86")
-            Integer hitRate,
-
-            @Schema(description = "기간 내 검증한 날짜 수", example = "7")
-            int verifiedDays
+            Integer avgSleepScore
     ) {
     }
 

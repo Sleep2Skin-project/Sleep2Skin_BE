@@ -223,7 +223,7 @@ class ReportControllerTest {
                     WeeklyReportResponse.of(BASE_DATE.minusDays(6), BASE_DATE,
                             List.of(new DailyScore(BASE_DATE.minusDays(6), 62),
                                     new DailyScore(BASE_DATE.minusDays(5), null)),
-                            new WeeklyReportResponse.Summary(70, 86, 7)));
+                            new WeeklyReportResponse.Summary(70)));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -235,8 +235,8 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.dailyScores[0].sleepScore").value(62))
                     .andExpect(jsonPath("$.data.dailyScores[1].sleepScore").doesNotExist())
                     .andExpect(jsonPath("$.data.summary.avgSleepScore").value(70))
-                    .andExpect(jsonPath("$.data.summary.hitRate").value(86))
-                    .andExpect(jsonPath("$.data.summary.verifiedDays").value(7));
+                    .andExpect(jsonPath("$.data.summary.hitRate").doesNotExist())
+                    .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist());
         }
 
         @Test
@@ -289,7 +289,7 @@ class ReportControllerTest {
                     MonthlyReportResponse.of(BASE_DATE.minusDays(27), BASE_DATE,
                             List.of(new WeekScore("W1", 65, false), new WeekScore("W2", 58, false),
                                     new WeekScore("W3", 52, false), new WeekScore("W4", 70, true)),
-                            new MonthlyReportResponse.Summary(61, 82, 26)));
+                            new MonthlyReportResponse.Summary(61)));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -301,7 +301,9 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.weeks[3].avgSleepScore").value(70))
                     .andExpect(jsonPath("$.data.weeks[3].isHighest").value(true))
                     .andExpect(jsonPath("$.data.weeks[0].isHighest").value(false))
-                    .andExpect(jsonPath("$.data.summary.avgSleepScore").value(61));
+                    .andExpect(jsonPath("$.data.summary.avgSleepScore").value(61))
+                    .andExpect(jsonPath("$.data.summary.hitRate").doesNotExist())
+                    .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist());
         }
 
         @Test

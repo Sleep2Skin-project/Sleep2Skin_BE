@@ -181,7 +181,7 @@ public interface ReportControllerSpec {
             LocalDate baseDate);
 
     @Operation(summary = "주간 리포트 조회 (REP-06)", description = """
-            최근 7일(`baseDate` 포함)의 하루치 수면 점수 추이와 적중률을 보여준다.
+            최근 7일(`baseDate` 포함)의 하루치 수면 점수 추이를 보여준다.
 
             ### 요청
 
@@ -199,7 +199,7 @@ public interface ReportControllerSpec {
                   { "date": "2026-08-08", "sleepScore": 62 },
                   { "date": "2026-08-09", "sleepScore": null }
                 ],
-                "summary": { "avgSleepScore": 70, "hitRate": 86, "verifiedDays": 7 }
+                "summary": { "avgSleepScore": 70 }
               } }
             ```
 
@@ -244,13 +244,6 @@ public interface ReportControllerSpec {
 
             `dailyScores` 중 `sleepScore`가 있는 날짜만의 평균, 반올림. 전부 `null`이면
             `avgSleepScore`도 `null`이다.
-
-            ### `summary.hitRate`·`verifiedDays`
-
-            **`hitRate`는 날짜 기준이 아니라 지표 기준이다.** 기간 안에서 검증(예보+실측)한 날의
-            지표 3종(다크서클·혈색·장벽) 각각을 판정해 `HIT` 비율을 낸다 — 하루 안에서도 지표별로
-            결과가 갈릴 수 있어서다. 판정 자체가 없으면(그 주에 검증이 없었으면) `hitRate`는
-            `null`이다. `verifiedDays`는 기간 안에서 검증한 날짜 수다.
 
             ### 예외
 
@@ -301,7 +294,7 @@ public interface ReportControllerSpec {
                   { "weekLabel": "W3", "avgSleepScore": 52, "isHighest": false },
                   { "weekLabel": "W4", "avgSleepScore": 70, "isHighest": true }
                 ],
-                "summary": { "avgSleepScore": 61, "hitRate": 82, "verifiedDays": 26 }
+                "summary": { "avgSleepScore": 61 }
               } }
             ```
 
@@ -352,11 +345,6 @@ public interface ReportControllerSpec {
             **28일 전체 일별 점수를 한 번에 평균낸 값**이다. 주마다 결측 일수가 다르면 "주
             평균 4개의 평균"과 이 값이 갈릴 수 있다(가중치가 달라진다) — 28일 전부 결측이어야
             `null`이라는 조건이 28일 단위로 걸려 있어 여기서도 28일 단위로 낸다.
-
-            ### `summary.hitRate`·`verifiedDays`
-
-            주간 리포트와 같은 방식이며 대상 기간만 최근 28일이다. **날짜 기준이 아니라 지표
-            기준**이고, 판정이 없으면 `hitRate`는 `null`이다.
 
             ### 예외
 

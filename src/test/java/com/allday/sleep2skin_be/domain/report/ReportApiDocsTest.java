@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -157,16 +158,24 @@ class ReportApiDocsTest {
      * 빠지면, 프론트가 오래된 사용자의 안 잔 주를 신규 사용자 화면으로 잘못 보여줄 수 있다.
      */
     @Test
-    @DisplayName("INSUFFICIENT_DATA가 가입일 기준이라는 것과 hitRate가 지표 기준이라는 것이 문서에 있다")
-    void 주간_빈_상태와_적중률_기준이_문서에_있다() throws Exception {
+    @DisplayName("INSUFFICIENT_DATA가 가입일 기준이라는 것이 문서에 있다")
+    void 주간_빈_상태_기준이_문서에_있다() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(WEEKLY_GET + ".description")
                         .value(containsString("가입일부터 baseDate까지의 일수 + 1")))
                 .andExpect(jsonPath(WEEKLY_GET + ".description")
-                        .value(containsString("여전히 `FULL`이다")))
-                .andExpect(jsonPath(WEEKLY_GET + ".description")
-                        .value(containsString("날짜 기준이 아니라 지표 기준이다")));
+                        .value(containsString("여전히 `FULL`이다")));
+    }
+
+    /** 화면에 없어 뺀 필드가 문서에도 남아 있지 않아야 한다 — 문서가 실제 응답보다 앞서가면 안 된다. */
+    @Test
+    @DisplayName("hitRate·verifiedDays는 주간 리포트 문서에서 사라졌다")
+    void 주간_문서에_적중률이_없다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".description").value(not(containsString("hitRate"))))
+                .andExpect(jsonPath(WEEKLY_GET + ".description").value(not(containsString("verifiedDays"))));
     }
 
     // ===== 월간 (REP-07) =====
@@ -197,6 +206,16 @@ class ReportApiDocsTest {
                         .value(containsString("주 평균의 평균이 아니다")))
                 .andExpect(jsonPath(MONTHLY_GET + ".description")
                         .value(containsString("동점이면 해당하는 주 전부 `true`")));
+    }
+
+    /** 화면에 없어 뺀 필드가 문서에도 남아 있지 않아야 한다 — 문서가 실제 응답보다 앞서가면 안 된다. */
+    @Test
+    @DisplayName("hitRate·verifiedDays는 월간 리포트 문서에서 사라졌다")
+    void 월간_문서에_적중률이_없다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MONTHLY_GET + ".description").value(not(containsString("hitRate"))))
+                .andExpect(jsonPath(MONTHLY_GET + ".description").value(not(containsString("verifiedDays"))));
     }
 
 }

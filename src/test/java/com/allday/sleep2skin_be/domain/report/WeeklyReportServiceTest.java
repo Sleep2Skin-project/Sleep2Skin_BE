@@ -3,8 +3,6 @@ package com.allday.sleep2skin_be.domain.report;
 import com.allday.sleep2skin_be.domain.report.dto.ReportPeriodStatus;
 import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse.DailyScore;
-import com.allday.sleep2skin_be.domain.skin.dto.VerifiedDay;
-import com.allday.sleep2skin_be.domain.skin.repository.SkinMeasurementRepository;
 import com.allday.sleep2skin_be.domain.sleep.entity.SleepSession;
 import com.allday.sleep2skin_be.domain.sleep.repository.SleepSessionRepository;
 import com.allday.sleep2skin_be.domain.user.entity.User;
@@ -39,8 +37,10 @@ import static org.mockito.BDDMockito.given;
  * 주간 리포트.
  *
  * <p>{@code sleepScore} 계산 자체는 {@link DailySleepScoreCalculatorTest}가 이미 검증했으므로
- * 여기서는 {@code DailySleepScoreCalculator}를 스텁으로 두고 <b>기간 조립·평균·적중률
- * 필터링</b>만 본다.
+ * 여기서는 {@code DailySleepScoreCalculator}를 스텁으로 두고 <b>기간 조립·평균</b>만 본다.
+ *
+ * <p>적중률(hitRate·verifiedDays) 관련 테스트는 2026-08-15에 화면에서 빠지면서 함께
+ * 제거했다 — {@code SkinMeasurementRepository}를 더 이상 참조하지 않는다.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -55,13 +55,11 @@ class WeeklyReportServiceTest {
     @Mock
     private SleepSessionRepository sleepSessionRepository;
     @Mock
-    private SkinMeasurementRepository skinMeasurementRepository;
-    @Mock
     private DailySleepScoreCalculator dailySleepScoreCalculator;
 
     private WeeklyReportService service() {
         return new WeeklyReportService(userRepository, sleepSessionRepository,
-                skinMeasurementRepository, dailySleepScoreCalculator);
+                dailySleepScoreCalculator);
     }
 
     /**
@@ -95,7 +93,6 @@ class WeeklyReportServiceTest {
     void 가입_7일차부터_FULL이다() {
         joinedOn(BASE_DATE.minusDays(6)); // 가입 당일 포함 7일차
         noSessions();
-        noVerifications();
 
         WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
 
@@ -110,7 +107,6 @@ class WeeklyReportServiceTest {
                 .willReturn(List.of(session(PERIOD_START)));
         given(dailySleepScoreCalculator.calculate(eq(USER_ID), eq(PERIOD_START), any()))
                 .willReturn(62);
-        noVerifications();
 
         WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
 
@@ -130,7 +126,6 @@ class WeeklyReportServiceTest {
                 .willReturn(List.of(session(day1), session(day2)));
         given(dailySleepScoreCalculator.calculate(eq(USER_ID), eq(day1), any())).willReturn(60);
         given(dailySleepScoreCalculator.calculate(eq(USER_ID), eq(day2), any())).willReturn(80);
-        noVerifications();
 
         WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
 
@@ -143,56 +138,10 @@ class WeeklyReportServiceTest {
     void 전부_결측이면_평균도_null이다() {
         joinedLongAgo();
         noSessions();
-        noVerifications();
 
         WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
 
         assertThat(response.summary().avgSleepScore()).isNull();
-    }
-
-    /** <b>분모는 검증 일수 × 3이 아니라 실제 판정한 지표 수다.</b> */
-    @Test
-    @DisplayName("hitRate는 지표 기준이고 기간 밖 검증일은 제외한다")
-    void 적중률은_지표_기준이고_기간을_넘지_않는다() {
-        joinedLongAgo();
-        noSessions();
-        given(skinMeasurementRepository.findVerifiedDays(USER_ID, BASE_DATE)).willReturn(List.of(
-                // 기간 안 — 3개 중 2개 적중(±5)
-                new VerifiedDay(BASE_DATE, 67, 62, 81, 65, 60, 60),
-                // 기간 밖(periodStart 하루 전) — 제외돼야 한다
-                new VerifiedDay(PERIOD_START.minusDays(1), 67, 62, 81, 40, 30, 40)));
-
-        WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
-
-        assertThat(response.summary().hitRate()).isEqualTo(67); // 3개 중 2개 = 67%
-        assertThat(response.summary().verifiedDays()).isEqualTo(1);
-    }
-
-    @Test
-    @DisplayName("혈색 예보가 없던 날은 분모에서 그 지표가 빠진다")
-    void 빈_지표는_분모에서_빠진다() {
-        joinedLongAgo();
-        noSessions();
-        // 혈색(forecastComplexion) 예보가 없다 — 판정은 다크서클·장벽 2개뿐, 둘 다 적중
-        given(skinMeasurementRepository.findVerifiedDays(USER_ID, BASE_DATE))
-                .willReturn(List.of(new VerifiedDay(BASE_DATE, 67, null, 81, 65, 55, 80)));
-
-        WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
-
-        assertThat(response.summary().hitRate()).isEqualTo(100); // 3이 분모였다면 67이다
-    }
-
-    @Test
-    @DisplayName("검증이 없으면 hitRate는 null이고 verifiedDays는 0이다")
-    void 검증이_없으면_적중률은_null이다() {
-        joinedLongAgo();
-        noSessions();
-        noVerifications();
-
-        WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
-
-        assertThat(response.summary().hitRate()).isNull();
-        assertThat(response.summary().verifiedDays()).isEqualTo(0);
     }
 
     @Test
@@ -221,10 +170,6 @@ class WeeklyReportServiceTest {
     private void noSessions() {
         given(sleepSessionRepository.findByUserIdAndSleepDateBetween(USER_ID, PERIOD_START, BASE_DATE))
                 .willReturn(List.of());
-    }
-
-    private void noVerifications() {
-        given(skinMeasurementRepository.findVerifiedDays(USER_ID, BASE_DATE)).willReturn(List.of());
     }
 
     private static SleepSession session(LocalDate sleepDate) {
