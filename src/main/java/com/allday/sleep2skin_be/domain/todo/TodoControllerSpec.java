@@ -23,7 +23,7 @@ import java.time.LocalDate;
  * <p><b>{@link CurrentUserId}는 구현체 쪽에도 반드시 붙어 있어야 한다.</b> 파라미터 어노테이션은
  * 인터페이스에서 상속되지 않는다.
  */
-@Tag(name = "Todo", description = "오늘의 행동 추천 API (TODO-01~05)")
+@Tag(name = "Todo", description = "오늘의 행동 추천 API (TODO-02~05). TODO-01의 요약 멘트는 서버가 만들지 않는다")
 public interface TodoControllerSpec {
 
     @Operation(
@@ -83,7 +83,11 @@ public interface TodoControllerSpec {
                     ref = "#/components/examples/USER_NOT_FOUND")))
     ApiResponse<TodoListResponse> getTodos(
             @CurrentUserId Long userId,
-            @Parameter(description = "기준일", example = "2026-08-13")
+
+            @Parameter(description = "기준일 (`YYYY-MM-DD`). **기상일 기준이며 앱의 로컬 날짜를 보낸다** — "
+                    + "서버는 \"오늘\"이 언제인지 모른다. 서버 시각(UTC)으로 계산하면 한국 시간 "
+                    + "오전 9시 이전에 날짜가 하루 밀린다",
+                    example = "2026-08-13")
             LocalDate baseDate);
 
     @Operation(

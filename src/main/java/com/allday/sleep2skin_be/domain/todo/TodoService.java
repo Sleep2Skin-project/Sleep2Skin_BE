@@ -32,7 +32,9 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * TODO-01~05.
+ * TODO-02~05. <b>TODO-01의 요약 멘트는 서버가 만들지 않는다</b> — 응답에 있는 것은
+ * {@code baseDate}뿐이고, 테마 문구는 클라이언트가 {@code causeLabel}로 구성한다
+ * (서버에 두면 문구 하나 바꾸는 데 배포가 필요하다).
  *
  * <p><b>목록은 첫 조회 시 생성하고 고정한다</b>(DailyTodo 클래스 주석 참조). 이 클래스는
  * "생성이 필요한가"만 판단하고, 실제 매칭·가중·정렬·절단은 {@link TodoScoringPolicy}

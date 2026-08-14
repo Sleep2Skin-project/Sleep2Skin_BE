@@ -450,7 +450,6 @@ X-User-Id: 1
 | 코드 | `ErrorCode` | 언제 |
 |---|---|---|
 | `400` | `INVALID_INPUT` | `baseDate` 누락·형식 오류 |
-| `400` | `USER_ID_HEADER_INVALID` | `X-User-Id` 헤더 없음·숫자 아님 |
 | `404` | `USER_NOT_FOUND` | 없는 사용자 |
 
 **TODO-01(요약 멘트)은 서버가 만들지 않는다.** 응답에 있는 것은 `baseDate`뿐이다. "가장 취약한 지표 기준 테마 문구"는 `avoidItems[0]`의 `causeLabel`로 클라이언트가 만들 수 있고, 서버에 두면 문구 하나 바꾸는 데 배포가 필요하다.

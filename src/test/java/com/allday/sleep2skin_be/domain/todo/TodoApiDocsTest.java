@@ -40,7 +40,10 @@ class TodoApiDocsTest {
                 .andExpect(jsonPath(TODO_GET + ".summary").value(containsString("TODO 목록 조회")))
                 .andExpect(jsonPath(TODO_PATCH + ".summary").value(containsString("TODO-05")))
                 .andExpect(jsonPath("$.tags[?(@.name == 'Todo')].description")
-                        .value(hasItem(containsString("오늘의 행동 추천"))));
+                        .value(hasItem(containsString("오늘의 행동 추천"))))
+                // TODO-01의 요약 멘트는 서버가 만들지 않는다 — 태그가 범위를 부풀리면 안 된다
+                .andExpect(jsonPath("$.tags[?(@.name == 'Todo')].description")
+                        .value(hasItem(containsString("TODO-02~05"))));
     }
 
     /**
@@ -161,7 +164,28 @@ class TodoApiDocsTest {
                 .andExpect(jsonPath(userIdParameter + ".in").value(hasItem("header")))
                 .andExpect(jsonPath(userIdParameter + ".required").value(hasItem(true)))
                 .andExpect(jsonPath(baseDateParameter + ".in").value(hasItem("query")))
-                .andExpect(jsonPath(baseDateParameter + ".required").value(hasItem(true)));
+                .andExpect(jsonPath(baseDateParameter + ".required").value(hasItem(true)))
+                // 서버는 "오늘"을 모른다 — 앱이 로컬 날짜를 보내야 한다는 것이 문서의 유일한 방어선이다
+                .andExpect(jsonPath(baseDateParameter + ".description")
+                        .value(hasItem(containsString("앱의 로컬 날짜를 보낸다"))));
+    }
+
+    /**
+     * <b>AVOID와 DO가 서로 다른 필드를 채운다.</b> nullable을 빼면 코드 생성기가 non-null로
+     * 타입을 만들어, 반대쪽 카테고리를 파싱할 때 클라이언트가 깨진다.
+     */
+    @Test
+    @DisplayName("카테고리에 따라 비는 필드가 nullable로 문서에 표시된다")
+    void 비는_필드가_nullable이다() throws Exception {
+        String item = "$.components.schemas.TodoItemResponse.properties";
+
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(item + ".causeLabel.type").value(hasItem("null")))
+                .andExpect(jsonPath(item + ".reason.type").value(hasItem("null")))
+                .andExpect(jsonPath(item + ".status.description").value(containsString("항상 `null`")))
+                .andExpect(jsonPath("$.components.schemas.TodoListResponse.properties.message.type")
+                        .value(hasItem("null")));
     }
 
     @Test
