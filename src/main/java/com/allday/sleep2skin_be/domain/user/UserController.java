@@ -2,15 +2,24 @@ package com.allday.sleep2skin_be.domain.user;
 
 import com.allday.sleep2skin_be.domain.user.dto.response.ConsentAgreeResponse;
 import com.allday.sleep2skin_be.domain.user.dto.response.OnboardingCompleteResponse;
+import com.allday.sleep2skin_be.domain.user.dto.response.SleepDataStatusResponse;
+import com.allday.sleep2skin_be.domain.user.dto.response.UserDeleteResponse;
+import com.allday.sleep2skin_be.domain.user.dto.response.UserProfileResponse;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
 
 /**
  * 사용자·동의·온보딩 API.
@@ -41,6 +50,27 @@ public class UserController implements UserControllerSpec {
     @PatchMapping("/me/onboarding")
     public ApiResponse<OnboardingCompleteResponse> completeOnboarding(@CurrentUserId Long userId) {
         return ApiResponse.success(userService.completeOnboarding(userId));
+    }
+
+    @Override
+    @GetMapping("/me")
+    public ApiResponse<UserProfileResponse> getProfile(
+            @CurrentUserId Long userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate) {
+
+        return ApiResponse.success(userService.getProfile(userId, baseDate));
+    }
+
+    @Override
+    @GetMapping("/me/data-status")
+    public ApiResponse<SleepDataStatusResponse> getSleepDataStatus(@CurrentUserId Long userId) {
+        return ApiResponse.success(userService.getSleepDataStatus(userId));
+    }
+
+    @Override
+    @DeleteMapping("/me")
+    public ApiResponse<UserDeleteResponse> delete(@CurrentUserId Long userId) {
+        return ApiResponse.success(userService.delete(userId));
     }
 
 }

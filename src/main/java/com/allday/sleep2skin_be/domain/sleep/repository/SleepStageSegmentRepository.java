@@ -26,4 +26,17 @@ public interface SleepStageSegmentRepository extends JpaRepository<SleepStageSeg
     @Query("delete from SleepStageSegment s where s.sleepSession.id = :sleepSessionId")
     void deleteBySleepSessionId(@Param("sleepSessionId") Long sleepSessionId);
 
+    /**
+     * 사용자의 모든 구간 삭제 (MY-04 전체 삭제).
+     *
+     * <p><b>{@code sleep_session}보다 먼저 지워야 한다.</b> 이 테이블만 진짜 FK를 갖고 있어
+     * (엔티티에 {@code @ManyToOne}이 있다) 순서를 바꾸면 제약 위반으로 실패한다.
+     *
+     * <p>{@code userId} 컬럼이 없으므로 세션을 거쳐 찾는다.
+     */
+    @Modifying
+    @Query("delete from SleepStageSegment s where s.sleepSession.id in"
+            + " (select ss.id from SleepSession ss where ss.userId = :userId)")
+    void deleteByUserId(@Param("userId") Long userId);
+
 }

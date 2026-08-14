@@ -3,6 +3,7 @@ package com.allday.sleep2skin_be.domain.skin.repository;
 import com.allday.sleep2skin_be.domain.skin.dto.VerifiedDay;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMeasurement;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -62,5 +63,34 @@ public interface SkinMeasurementRepository extends JpaRepository<SkinMeasurement
      * <p>MY-01·REP-12·HOME-08이 전부 이 숫자를 쓰므로 <b>어긋나면 세 화면이 동시에 틀린다.</b>
      */
     long countByUserId(Long userId);
+
+    /**
+     * 검증한 날짜만 <b>최신순</b>으로. 연속 검증 횟수 계산의 입력이다.
+     *
+     * <p><b>{@link #findVerifiedDays}의 가벼운 형제다.</b> 저쪽은 예보를 조인해 점수 6개를 함께
+     * 끌고 오는데, MY-01 프로필은 <b>날짜만 있으면 된다</b> — 적중률을 계산하지 않기 때문이다.
+     *
+     * <p>{@code baseDate} 이하만 보는 것과 정렬이 최신순인 것은 저쪽과 같은 이유다. 두 메서드가
+     * 같은 날짜 집합을 주어야 <b>HOME-09 배너와 MY-01 프로필의 연속 횟수가 어긋나지 않는다</b>
+     * (prd.md §4.2). <b>조건을 한쪽만 고치지 말 것.</b>
+     */
+    @Query("select m.baseDate from SkinMeasurement m"
+            + " where m.userId = :userId and m.baseDate <= :baseDate"
+            + " order by m.baseDate desc")
+    List<LocalDate> findVerifiedBaseDates(@Param("userId") Long userId,
+                                          @Param("baseDate") LocalDate baseDate);
+
+    /**
+     * 사용자의 실측 전량 삭제 (MY-04 전체 삭제).
+     *
+     * <p><b>DB에 `users` 외래키가 없어 CASCADE가 걸리지 않는다</b> — SkinMeasurement.userId 는 연관관계가
+     * 아니라 단순 컬럼이라 Hibernate 가 제약을 만들지 않았다. 그래서 삭제를 손으로 지운다.
+     *
+     * <p>파생 {@code deleteBy}가 아니라 벌크 삭제인 이유는 전부 엔티티로 읽어 하나씩 지우지
+     * 않기 위해서다.
+     */
+    @Modifying
+    @Query("delete from SkinMeasurement e where e.userId = :userId")
+    void deleteByUserId(@Param("userId") Long userId);
 
 }

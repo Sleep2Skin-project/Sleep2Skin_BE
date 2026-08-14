@@ -245,7 +245,7 @@ spring.jackson.datatype.datetime.adjust-dates-to-context-time-zone: false
 | 컬럼 | 타입 | 제약 | 비고 |
 |---|---|---|---|
 | `id` | BIGINT | PK, AUTO_INCREMENT | |
-| `user_id` | BIGINT | NOT NULL, FK → `users.id` CASCADE | |
+| `user_id` | BIGINT | NOT NULL. **FK 아님** (§5) | |
 | `terms_version` | VARCHAR(20) | NOT NULL | 예: `"1.0"` |
 | `agreed` | BOOLEAN | NOT NULL | |
 | `created_at` | DATETIME(6) | NOT NULL | **= 동의 시각** |
@@ -269,7 +269,7 @@ spring.jackson.datatype.datetime.adjust-dates-to-context-time-zone: false
 | 컬럼 | 타입 | 제약 | 비고 |
 |---|---|---|---|
 | `id` | BIGINT | PK, AUTO_INCREMENT | |
-| `user_id` | BIGINT | NOT NULL, FK → `users.id` CASCADE | |
+| `user_id` | BIGINT | NOT NULL. **FK 아님** (§5) | |
 | `sleep_date` | DATE | NOT NULL | **기상일 기준** — 아래 참조 |
 | `sleep_onset_time` | DATETIME(6) | NOT NULL | **잠든 시각** — 첫 `asleep` 시작. 취침 규칙성의 기준 |
 | `wake_time` | DATETIME(6) | NOT NULL | 기상 시각 |
@@ -355,7 +355,7 @@ awake_count = 1,  awake_minutes = 7
 | 컬럼 | 타입 | 제약 | 비고 |
 |---|---|---|---|
 | `id` | BIGINT | PK, AUTO_INCREMENT | |
-| `sleep_session_id` | BIGINT | NOT NULL, FK → `sleep_session.id` CASCADE | |
+| `sleep_session_id` | BIGINT | NOT NULL, FK → `sleep_session.id`. **`ON DELETE CASCADE`는 없다** (§5) | |
 | `stage` | VARCHAR(20) | NOT NULL | `DEEP` / `REM` / `CORE` / `AWAKE` |
 | `start_time` | DATETIME(6) | NOT NULL | |
 | `end_time` | DATETIME(6) | NOT NULL | |
@@ -375,7 +375,7 @@ awake_count = 1,  awake_minutes = 7
 | 컬럼 | 타입 | 제약 | 비고 |
 |---|---|---|---|
 | `id` | BIGINT | PK, AUTO_INCREMENT | |
-| `user_id` | BIGINT | NOT NULL, FK → `users.id` CASCADE | |
+| `user_id` | BIGINT | NOT NULL. **FK 아님** (§5) | |
 | `base_date` | DATE | NOT NULL | `sleep_session.sleep_date`와 같은 값 |
 | `dark_circle` | INT | **NOT NULL**, CHECK 0~100 | 다크서클 회복 — **높을수록 맑음** |
 | `complexion` | INT | **NULL 허용**, CHECK 0~100 | 혈색 — **높을수록 생기 있음** |
@@ -408,7 +408,7 @@ awake_count = 1,  awake_minutes = 7
 | 컬럼 | 타입 | 제약 | 비고 |
 |---|---|---|---|
 | `id` | BIGINT | PK, AUTO_INCREMENT | |
-| `user_id` | BIGINT | NOT NULL, FK → `users.id` CASCADE | |
+| `user_id` | BIGINT | NOT NULL. **FK 아님** (§5) | |
 | `base_date` | DATE | NOT NULL | 예보와 같은 기준일 |
 | `dark_circle` | INT | NOT NULL, CHECK 0~100 | LLM 산출값 — 예보와 **같은 방향**(높을수록 맑음) |
 | `complexion` | INT | NOT NULL, CHECK 0~100 | 높을수록 생기 있음 |
@@ -441,7 +441,7 @@ awake_count = 1,  awake_minutes = 7
 | 컬럼 | 타입 | 제약 | 비고 |
 |---|---|---|---|
 | `id` | BIGINT | PK, AUTO_INCREMENT | |
-| `user_id` | BIGINT | NOT NULL, FK → `users.id` CASCADE | |
+| `user_id` | BIGINT | NOT NULL. **FK 아님** (§5) | |
 | `sleep_feature` | VARCHAR(30) | NOT NULL | 아래 7종 |
 | `skin_metric` | VARCHAR(20) | NOT NULL | `DARK_CIRCLE` / `COMPLEXION` / `BARRIER` |
 | `weight` | DECIMAL(6,4) | NOT NULL | 배수. REP-12 예시 "1.7배 민감" → `1.7000` |
@@ -604,7 +604,7 @@ verdictBonus = (가장 최근 검증의 verdict == OVERESTIMATED) ? impact_score
 | 컬럼 | 타입 | 제약 | 비고 |
 |---|---|---|---|
 | `id` | BIGINT | PK, AUTO_INCREMENT | |
-| `user_id` | BIGINT | NOT NULL, FK → `users.id` CASCADE | |
+| `user_id` | BIGINT | NOT NULL. **FK 아님** (§5) | |
 | `base_date` | DATE | NOT NULL | 예보·실측과 같은 기준일 |
 | `action_master_id` | BIGINT | **NOT NULL**, FK → `action_master.id` | 마스터에서 골라 추가하는 방식 |
 | `status` | VARCHAR(20) | NOT NULL | 아래 참조 |
@@ -752,7 +752,7 @@ log.info("가중치 보정 user={} date={} feature={} metric={} {} -> {} (오차
 
 MY-04의 "모든 기록 삭제"는 **복구 불가 영구 삭제**다. soft delete 컬럼을 두지 않는다.
 
-**모든 FK에 `ON DELETE CASCADE`를 건다.** `users` 행 하나를 지우면 나머지가 전부 딸려 지워진다.
+지워야 할 것은 이 트리 전부다.
 
 ```
 users
@@ -765,6 +765,26 @@ users
 ```
 
 `action_master`는 사용자에 속하지 않는 콘텐츠이므로 삭제 대상이 아니다.
+
+#### ⚠️ `ON DELETE CASCADE`는 실제로 걸려 있지 않다 (2026-08-14 확인)
+
+이 문서는 원래 "모든 FK에 `ON DELETE CASCADE`를 건다"고 적고 있었다. **스키마를 확인해 보니 `users`를 가리키는 외래키가 하나도 없다.**
+
+자식 테이블이 `userId`를 **연관관계가 아니라 단순 `Long` 컬럼**으로 들고 있기 때문이다([architecture.md](architecture.md) §4 연관관계 최소화). `@ManyToOne`이 없으면 Hibernate는 FK 제약을 만들지 않고, 제약이 없으면 걸 `CASCADE`도 없다.
+
+| 관계 | 진짜 FK인가 |
+|---|---|
+| `sleep_stage_segment` → `sleep_session` | ✅ `@ManyToOne`이 있다 |
+| `daily_todo` → `action_master` | ✅ `@ManyToOne`이 있다 |
+| **나머지 전부 → `users`** | ❌ **없다** — `userId`는 그냥 컬럼이다 |
+
+**그래서 MY-04는 자식 테이블을 손으로 지운다**(`UserService.delete`). `users` 행만 지우면 6개 테이블에 고아 행이 남는데, **조회에 잡히지 않아 알아채기 어렵고** 같은 `userId`가 재사용되는 순간 남의 수면·검증 이력이 새 사용자에게 붙는다.
+
+**순서가 하나 강제된다** — `sleep_stage_segment`가 유일하게 진짜 FK를 갖고 있어 `sleep_session`보다 먼저 지워야 한다.
+
+> **FK를 추가하지 않기로 했다.** 엔티티에 `@ManyToOne`을 넣으면 연관관계 최소화 원칙이 깨지고, `ddl-auto: update`는 **이미 데이터가 있는 테이블에 제약을 안정적으로 추가하지 못한다**(참조 무결성을 만족하지 않는 행이 하나라도 있으면 실패한다).
+>
+> **대가는 새 테이블이 생길 때마다 `UserService.delete`에 한 줄을 추가해야 한다는 것이다.** 빠뜨려도 컴파일도 테스트도 통과하므로, **`userId` 컬럼을 가진 테이블을 만들면 그 목록을 함께 고친다.**
 
 ---
 
