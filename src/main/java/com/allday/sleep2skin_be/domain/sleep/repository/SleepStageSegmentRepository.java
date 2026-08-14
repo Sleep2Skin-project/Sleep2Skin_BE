@@ -6,12 +6,18 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
+
 /**
- * 수면 단계 구간 저장·삭제.
- *
- * <p>타임라인(REP-03) 조회 메서드는 그 기능 구현 시 추가한다.
+ * 수면 단계 구간 저장·삭제·조회.
  */
 public interface SleepStageSegmentRepository extends JpaRepository<SleepStageSegment, Long> {
+
+    /**
+     * 타임라인(REP-03) 조회. <b>정렬은 파생 쿼리의 {@code OrderByStartTimeAsc}가 SQL {@code ORDER BY}로
+     * 보장한다</b> — 호출부(서비스·DTO)가 다시 정렬할 필요가 없다.
+     */
+    List<SleepStageSegment> findBySleepSessionIdOrderByStartTimeAsc(Long sleepSessionId);
 
     /**
      * 세션의 구간 전량 삭제. <b>세션이 갱신되면 구간은 부분 수정이 아니라 전량 교체된다</b>(erd.md §3.4).
