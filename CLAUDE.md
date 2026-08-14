@@ -29,6 +29,7 @@ com.allday.sleep2skin_be
     ├── skin/     피부 예보 · 셀피 실측 · 검증 · 개인 모델
     ├── todo/     추천 엔진 · TODO 리스트
     ├── report/   일간 · 주간 · 월간 · 종합 리포트
+    ├── game/     레벨 · 경험치 적립 (HOME-04, 미구현)
     └── health/   헬스체크 (구현 완료 — 패턴 참고용)
 ```
 
@@ -107,7 +108,11 @@ enum SkinMetric { DARK_CIRCLE, COMPLEXION, BARRIER }   // 다크서클 회복 ·
 
 **예보가 없는 날은 `200` + `NO_SLEEP_DATA` + 빈 배열이다 — 404가 아니다.** 수면을 아직 올리지 않은 신규 사용자가 TODO 탭을 열면 일상적으로 발생한다. **후보가 0개인 날(`AVAILABLE` + 빈 배열)과 다른 상태**이므로 둘을 같은 status로 묶지 말 것.
 
-**exp 적립과 회수는 대칭이라야 한다** — `PENDING → DONE`에 `+10`, `DONE → PENDING`에 `−10`. **회수를 빼면 껐다 켜는 것만으로 무한 적립이 된다.** 판정이 "이번에 `DONE`이 됐는가"뿐이라 중복 호출만 막히기 때문이다. `TodoServiceTest.반복_토글로_적립되지_않는다`가 이 자리를 붙들고 있다.
+**exp 적립과 회수는 대칭이라야 한다** — `PENDING → DONE`에 `+5`, `DONE → PENDING`에 `−5`. 그날 `DO`를 전부 채우면 `+30`이 더 붙고 **하나라도 풀리면 `−30`으로 되돌아간다.** **회수를 빼면 껐다 켜는 것만으로 무한 적립이 된다.** 판정이 "이번에 `DONE`이 됐는가"뿐이라 중복 호출만 막히기 때문이다. `TodoServiceTest.반복_토글로_적립되지_않는다`가 이 자리를 붙들고 있다.
+
+⚠️ **값이 `+10`에서 `+5`로 바뀌었다** (2026-08-14, HOME-04 확정 — prd.md §10.9). **코드는 아직 `+10`이다**(`TodoService.EXP_PER_DONE`) — 문서가 먼저 갔고 구현이 따라가야 한다.
+
+**TODO 적립만 `exp_grant`에 기록하지 않는다.** 되돌릴 수 있는 적립이라 `daily_todo.status`가 이미 지급 여부를 말한다. 나머지 4종(출석·연속 검증·수면 점수 2종)은 상태로 환원되지 않아 이력 행의 유니크로 하루 1회를 막는다 (erd.md §3.10).
 
 **액션 마스터는 앱이 채우지 않는다.** `src/main/resources/db/seed/action_master.sql` 24행을 **사람이 한 번 실행한다** (workflow.md §8). 비어 있으면 TODO 탭이 빈 배열로 나가는데 **에러가 아니라 로그에도 안 남는다.** 실행할 때 `--default-character-set=utf8mb4`가 없으면 한국어가 `???`로 들어가고 INSERT는 성공한다.
 
@@ -117,7 +122,7 @@ enum SkinMetric { DARK_CIRCLE, COMPLEXION, BARRIER }   // 다크서클 회복 ·
 
 진짜 FK는 둘뿐이다 — `sleep_stage_segment → sleep_session`, `daily_todo → action_master`. **`users`를 가리키는 것은 하나도 없다.**
 
-- **MY-04 전체 삭제는 `UserService.delete`가 자식 7개를 손으로 지운다.** `users` 행만 지우면 고아 행이 남고, **조회에 잡히지 않아 알아채기 어렵다** — 같은 `userId`가 재사용되면 남의 이력이 새 사용자에게 붙는다
+- **MY-04 전체 삭제는 `UserService.delete`가 자식을 손으로 지운다** (현재 7개 — `exp_grant`가 들어오면 8개). `users` 행만 지우면 고아 행이 남고, **조회에 잡히지 않아 알아채기 어렵다** — 같은 `userId`가 재사용되면 남의 이력이 새 사용자에게 붙는다
 - **`sleep_stage_segment`를 `sleep_session`보다 먼저 지운다.** 유일하게 진짜 FK가 있어 순서를 바꾸면 제약 위반이다
 - **`userId` 컬럼을 가진 테이블을 새로 만들면 그 삭제 목록에 한 줄을 추가한다.** 빠뜨려도 컴파일도 테스트도 통과한다
 
@@ -192,7 +197,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 |---|---|
 | [docs/prd.md](docs/prd.md) | 기능 요구사항 확인, 기능 ID(HOME-03 등) 조회, 미결정 사항 확인, 구현 우선순위, **확정된 정책값(§10 등급 컷오프·판정 구간)** |
 | [docs/architecture.md](docs/architecture.md) | 새 도메인 설계, 핵심 플로우 파악, 외부 연동(OpenAI) 구현, RDS 구성 |
-| [docs/erd.md](docs/erd.md) | **엔티티 작성 직전** — 테이블 9개의 컬럼과 근거, 일부러 뺀 컬럼, 유니크 제약 |
+| [docs/erd.md](docs/erd.md) | **엔티티 작성 직전** — 테이블 10개의 컬럼과 근거, 일부러 뺀 컬럼, 유니크 제약 |
 | [docs/api.md](docs/api.md) | **엔드포인트 작업 직전** — 경로·요청·응답의 **유일한 출처**. 도메인별 API 19개, `POST /sleep/sessions` 상세 규격, 1단계 구현 순서, **MVP에서 만들지 않는 것** |
 | [docs/conventions.md](docs/conventions.md) | 코드 작성 직전 — 응답 포맷, 에러 코드, DTO/Entity 규칙, 경로 명명 규칙, Swagger |
 | [docs/workflow.md](docs/workflow.md) | 브랜치 생성, PR, 팀 분담, 빌드, **배포·운영 DB 설정(§7·§8)** |
@@ -203,7 +208,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 ## 현재 상태
 
 **구현됨**
-- **엔티티 9개 + Repository 9개** — erd.md의 테이블 전부
+- **엔티티 9개 + Repository 9개** — erd.md 10개 중 `exp_grant`를 뺀 전부 (그건 HOME-04 착수 시 생긴다)
 - **테스트 유저 시딩** — `TestUserSeeder`(`CommandLineRunner`). 멱등하며 운영 포함 전 환경에서 돈다. 사용자가 한 명이라도 있으면 건너뛴다
 - `GET /api/v1/health` 헬스체크
 - **`POST /api/v1/users/me/consents`** (ONB-02) · **`PATCH /api/v1/users/me/onboarding`** (ONB-05)
@@ -219,7 +224,9 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`OpenAiConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)·`QueryStatus`
 - 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI/CD
 
-**미도입**: `report`의 Service·Controller **하나뿐이다.** `user`·`sleep`·`skin`·`todo`는 api.md에 정의된 엔드포인트를 전부 만들었다 — 핵심 루프(수면 → 예보 → 처방 → 검증 → 학습)가 닫혔고 엔드포인트는 12/19다.
+**미도입**: `report`(5개)와 **`game`(출석 체크인 1개)** 이다. 핵심 루프(수면 → 예보 → 처방 → 검증 → 학습)는 닫혔고 **도메인 API 19개 중 13개**가 끝났다.
+
+**게이미피케이션(HOME-04)이 2026-08-14에 확정됐다** — 레벨 5단계 + 적립 6종 (prd.md §10.9 · 수면 점수 정의는 §10.8). **문서만 반영됐고 코드는 아직 없다.** 착수하면 `exp_grant` 테이블·`domain/game` 패키지가 새로 생기고, **기존 API 3개의 응답에 `exp` 객체가 붙는다**(`POST /sleep/sessions` · `POST /skin/selfie` · `PATCH /todo/{id}` — 마지막은 `expGained`·`totalExp` 두 필드를 대체).
 
 **`todo` 도메인도 테스트 4종을 갖췄다** (2026-08-14) — `TodoScoringPolicyTest`(DB 없이 도는 순수 로직) · `TodoServiceTest` · `TodoControllerTest` · `TodoApiDocsTest`. 모든 도메인이 같은 구성이다.
 
@@ -262,7 +269,8 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 4. ~~셀피 분석·검증·학습 `POST /api/v1/skin/selfie` (HOME-06→07→08)~~ — 완료
 5. ~~TODO 추천 엔진·리스트 (TODO-02~05)~~ · ~~배너(HOME-09)·내 모델(REP-12)~~ — 완료
 6. **일간 리포트 (REP-02·04·05)** ← 여기부터. **블로커가 없다** — B6(수면 목표값)이 MVP에서 빠지면서 목표 달성 판정도 함께 빠졌다
-7. 그다음: 타임라인(REP-03) · 주간 리포트(REP-06/07) · 월간(REP-08) · 종합(REP-09~11)
+7. **게이미피케이션 (HOME-04)** — 2026-08-14 확정. **일간 리포트 뒤다** — 적립 트리거 둘이 수면 점수(prd.md §10.8)를 기준으로 삼고, 그 값이 일간 리포트와 같은 자리에서 나온다
+8. 그다음: 타임라인(REP-03) · 주간 리포트(REP-06/07) · 월간(REP-08) · 종합(REP-09~11)
 
 **P5(액션 마스터 데이터)는 해소됐다** — 24행이 시드 SQL로 들어왔다.
 
@@ -313,11 +321,15 @@ w(f)  = clamp(w(f) + Δw(f), 0.5, 2.0)
 
 **수면 목표값(B6)은 MVP에서 빠졌다** (2026-08-14). **`ScoringPolicy`에 목표값 상수를 두지 말 것** — 값이 있으면 어딘가에서 쓰이게 된다. 리포트는 목표 달성 판정 대신 **관측값을 그대로 보여준다**(prd.md §4.4). 목표를 정하는 화면이 없는데 서버가 권장치를 정하면, 근거 없는 숫자가 "목표 달성"이라는 판정문으로 사용자에게 나간다.
 
-**TODO 쪽 세 값도 임시다** — **절단 개수(`AVOID` 3 · `DO` 5) · `verdictBonus` 배율(`× 10`) · 완료 exp(`+10`)**. 구현하며 정해진 값이고 §10에 없다. **`domain/skin/ScoringPolicy`가 아니라 `TodoScoringPolicy`·`TodoService` 상수로 둔다** — 예보 스코어링과 추천 정렬은 다른 축이다.
+**TODO 쪽 두 값도 임시다** — **절단 개수(`AVOID` 3 · `DO` 5) · `verdictBonus` 배율(`× 10`)**. 구현하며 정해진 값이고 §10에 없다. **`domain/skin/ScoringPolicy`가 아니라 `TodoScoringPolicy`·`TodoService` 상수로 둔다** — 예보 스코어링과 추천 정렬은 다른 축이다.
+
+**exp 관련 값은 임시가 아니라 확정이다** (prd.md §10.9). 다만 **셋 중 어디도 아닌 `domain/game/LevelPolicy`에 모은다** — 적립 트리거가 `user`·`sleep`·`skin`·`todo` 네 도메인에 흩어져 있어, 어느 한 도메인의 정책 클래스에 두면 나머지 셋이 그걸 참조하게 된다.
 
 ## 확정이 필요한 것
 
 **블로커가 하나도 남지 않았다.** B1·B2·B3·B7이 확정됐고, B4는 고지 문구가 답에 의존하지 않게 만들어 해소, B5는 MVP 전제로 보류, **B6(수면 목표값)은 2026-08-14에 MVP에서 제외**됐다. 일간 리포트를 바로 시작할 수 있다.
+
+**HOME-04(게이미피케이션)도 2026-08-14에 확정됐다** — 레벨 컷오프·적립량·수면 점수 정의까지 전부 정해졌고(prd.md §10.8·§10.9), S5(캐릭터 클릭 동작)는 **서버가 캐릭터를 모르므로** 클라이언트 영역으로 정리됐다.
 
 **REP-09 트리아지만 조건이 열려 있다** — "수면 목표는 달성했는데 특정 피부 지표만 정체"에서 앞 절반이 사라졌다. 수면 쪽 근거 없이 두면 **잠을 못 잔 사람에게도 "클리닉에 가보라"고 말하게 된다.** 4단계라 지금 개발을 막지는 않으며, 임계값과 함께 L6에서 정한다.
 

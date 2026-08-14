@@ -1,6 +1,6 @@
 # ERD
 
-테이블 **9개**. 컬럼 하나하나의 근거와 **일부러 넣지 않은 것**을 함께 남긴다.
+테이블 **10개**. 컬럼 하나하나의 근거와 **일부러 넣지 않은 것**을 함께 남긴다.
 제품 요구사항은 [prd.md](prd.md), 구조 설계는 [architecture.md](architecture.md), 코드 규칙은 [conventions.md](conventions.md) 참조.
 
 > 스키마는 `ddl-auto: update`로 엔티티에서 생성한다. DDL 스크립트를 따로 두지 않는다.
@@ -19,6 +19,7 @@ erDiagram
     users ||--o{ skin_measurement : "실측"
     users ||--o{ personal_weight : "개인 가중치"
     users ||--o{ daily_todo : "오늘 할 일"
+    users ||--o{ exp_grant : "하루 1회 적립 이력"
     sleep_session ||--o{ sleep_stage_segment : "단계 구간"
     action_master ||--o{ daily_todo : "액션 원본"
 
@@ -26,7 +27,14 @@ erDiagram
         bigint id PK
         varchar nickname
         boolean onboarding_completed
-        int exp "TODO 완료 적립"
+        int exp "누적 경험치 · 레벨의 유일 출처"
+    }
+    exp_grant {
+        bigint id PK
+        bigint user_id FK
+        date base_date UK
+        varchar reason UK
+        int amount
     }
     consent_history {
         bigint id PK
@@ -138,7 +146,7 @@ erDiagram
 
 ### ④ 유니크 제약은 장식이 아니라 정확성 장치다
 
-⚠️ **아래 5개는 반드시 실제로 걸렸는지 확인한다.** `ddl-auto: update`는 새 테이블을 만들 때 제약을 함께 만들지만, 기존 테이블에 제약을 추가하는 것은 보장되지 않는다.
+⚠️ **아래 6개는 반드시 실제로 걸렸는지 확인한다.** `ddl-auto: update`는 새 테이블을 만들 때 제약을 함께 만들지만, 기존 테이블에 제약을 추가하는 것은 보장되지 않는다.
 
 | 테이블 | 제약 | 지키는 것 |
 |---|---|---|
@@ -147,6 +155,7 @@ erDiagram
 | `skin_measurement` | `(user_id, base_date)` | 하루 1회 검증 |
 | `personal_weight` | `(user_id, sleep_feature, skin_metric)` | 가중치 중복 학습 차단 |
 | `daily_todo` | `(user_id, base_date, action_master_id)` | 같은 항목 중복 추가 차단 |
+| `exp_grant` | `(user_id, base_date, reason)` | **하루 1회 보상의 중복 지급 차단** (§3.10) |
 
 ```sql
 SHOW CREATE TABLE sleep_session;
@@ -165,25 +174,38 @@ SHOW CREATE TABLE sleep_session;
 | `id` | BIGINT | PK, AUTO_INCREMENT | |
 | `nickname` | VARCHAR(50) | NOT NULL | MY-01 프로필 |
 | `onboarding_completed` | BOOLEAN | NOT NULL, DEFAULT false | ONB-05 |
-| `exp` | INT | NOT NULL, DEFAULT 0 | 누적 경험치. TODO(`DO`) 완료 시 +10 (2026-08-13 추가) |
+| `exp` | INT | NOT NULL, DEFAULT 0 | 누적 경험치. **레벨의 유일 출처** ([prd.md](prd.md) §10.9) |
 | `created_at` | DATETIME(6) | NOT NULL | `BaseTimeEntity` |
 | `updated_at` | DATETIME(6) | NOT NULL | |
 
 인증이 없으므로 `email`·`password`·`provider_id`가 없다. 테스트 유저를 DB에 직접 주입한다.
 
-#### `exp`는 컬럼 하나로 끝낸다 — 적립 이력 테이블을 만들지 않는다
+#### `exp`는 컬럼 하나이고 `level` 컬럼은 없다
 
-HOME-04(게이미피케이션)는 **방향 미확정으로 MVP에서 빠져 있고**([prd.md](prd.md) §8), 2026-08-13에 들어온 것은 적립 트리거 하나뿐이다 — `PATCH /todo/{id}`가 `PENDING → DONE`을 처음 처리할 때 `+10`. **누적 총합만 저장하고 레벨·캐릭터 테이블은 만들지 않는다**는 것이 그때 함께 정해졌다.
+**레벨은 `exp`에서 계산한다** ([prd.md](prd.md) §10.9의 컷오프 표). 두 컬럼을 두면 이중 상태가 되고, 컷오프를 바꿀 때 전 행을 다시 계산해야 한다 — §2 원칙 ① 그대로다. **만렙(700) 이후에도 `exp`는 계속 오른다.**
 
-**"언제 무엇으로 얼마를 벌었는가"는 남기지 않는다.** 그 이력은 `daily_todo`가 이미 갖고 있다 — `status = DONE`인 행의 개수 × 10이 곧 적립 총액이다. 별도 테이블을 파면 두 곳이 같은 사실을 말하게 되고 어긋날 때 어느 쪽이 진실인지 알 수 없다(§2 원칙 ①).
+**적립과 회수가 대칭이라야 검산이 성립한다** (2026-08-14 수정). 되돌릴 때 회수하지 않으면 판정이 "이번에 `DONE`이 됐는가"뿐이라 **`DONE → PENDING → DONE`을 반복하는 것만으로 exp가 계속 붙었다** — 중복 호출(`DONE → DONE`)만 막는 것으로는 닫히지 않는다. 지금은 `PENDING → DONE`에 `+5`, `DONE → PENDING`에 `−5`이며, **그날 `DO` 전부 완료 보너스 `±30`도 같은 대칭**을 따른다.
 
-**적립과 회수가 대칭이라야 검산이 성립한다** (2026-08-14 수정). 되돌릴 때 회수하지 않으면 판정이 "이번에 `DONE`이 됐는가"뿐이라 **`DONE → PENDING → DONE`을 반복하는 것만으로 exp가 계속 붙었다** — 중복 호출(`DONE → DONE`)만 막는 것으로는 닫히지 않는다. 지금은 `PENDING → DONE`에 `+10`, `DONE → PENDING`에 `−10`이다.
+> **대안은 `daily_todo`에 "지급 완료" 표시를 남기는 것이었다.** 컬럼이 하나 늘고, `status`와 별개의 상태가 또 생겨 § "도메인 컬럼은 5개뿐이다"의 판단과 부딪힌다. **TODO 쪽은 컬럼도 이력 행도 늘리지 않는다** — `status`가 이미 지급 여부를 말한다.
 
-> **대안은 `daily_todo`에 "지급 완료" 표시를 남기는 것이었다.** 컬럼이 하나 늘고, `status`와 별개의 상태가 또 생겨 § "도메인 컬럼은 5개뿐이다"의 판단과 부딪힌다. **회수 쪽은 컬럼을 늘리지 않는다.**
+**회수는 0에서 멈춘다.** 누적 경험치에 음수는 뜻을 갖지 않는다. 데이터를 손으로 건드려 `exp`가 실제 완료 개수와 어긋난 상태에서만 걸리는 경로이며, 그때는 응답의 `expGained`에 실제 증감(요청한 `−5`보다 작은 값)이 담긴다.
 
-**회수는 0에서 멈춘다.** 누적 경험치에 음수는 뜻을 갖지 않는다. 데이터를 손으로 건드려 `exp`가 실제 완료 개수와 어긋난 상태에서만 걸리는 경로이며, 그때는 응답의 `expGained`에 실제 증감(요청한 `−10`보다 작은 값)이 담긴다.
+#### ⚠️ 적립 이력 테이블은 결국 만들었다 (2026-08-14 — 방침 변경)
 
-> 레벨 테이블이 확정되면 `level` 컬럼이 아니라 **`exp`에서 계산**한다. 두 컬럼을 두면 이중 상태가 되고, 컷오프를 바꿀 때 전 행을 다시 계산해야 한다.
+**이 문서는 원래 "적립 이력 테이블을 만들지 않는다"고 적고 있었다.** 근거는 *"이력은 `daily_todo`가 이미 갖고 있다 — `status = DONE`인 행의 개수가 곧 적립 총액이다"* 였고, **적립 트리거가 TODO 하나뿐이던 동안에는 맞는 말이었다.**
+
+HOME-04이 확정되며 트리거가 6종이 됐고([prd.md](prd.md) §10.9), **그중 넷은 어떤 행으로도 환원되지 않는다.**
+
+| 트리거 | "오늘 이미 받았다"를 무엇이 말해주나 |
+|---|---|
+| `TODO_DONE` · `TODO_ALL_DONE` | `daily_todo.status` — **그대로 유효하다** |
+| `ATTENDANCE` | **없다.** "오늘 앱을 켰다"는 사실을 담은 행이 어디에도 없다 |
+| `VERIFICATION_STREAK` | `skin_measurement`가 하루 1행이라 사실상 막히지만, 지급 여부 자체는 남지 않는다 |
+| `SLEEP_SCORE_IMPROVED` · `SLEEP_SCORE_HIGH` | **없다.** 게다가 §5.1 재산출 경로에서 수면 점수가 바뀌면 같은 날 두 번째 적립이 일어난다 |
+
+**그래서 넷만 `exp_grant`에 기록한다**(§3.10). TODO 둘은 넣지 않는다 — 되돌릴 수 있는 적립이라 행을 만들면 회수할 때 지워야 하고, 그러면 그 테이블은 이력이 아니라 현재 상태가 된다.
+
+> **원칙 ①과 부딪히지 않는다.** `exp_grant`는 `users.exp`를 재현하기 위한 파생 저장이 아니라 **멱등 판정을 위한 사실 기록**이다. 이 테이블이 없으면 앱을 재실행할 때마다 `+10`이 붙는데, **TODO exp에서 한 번 막았던 무한 적립과 정확히 같은 형태다.**
 
 **빼기로 한 것**
 
@@ -674,6 +696,44 @@ verdictBonus = (가장 최근 검증의 verdict == OVERESTIMATED) ? impact_score
 
 **달성률 컬럼이 없다** (원칙 ①).
 
+### 3.10 `exp_grant` — 하루 1회 보상 지급 이력 (2026-08-14 추가)
+
+| 컬럼 | 타입 | 제약 | 비고 |
+|---|---|---|---|
+| `id` | BIGINT | PK, AUTO_INCREMENT | |
+| `user_id` | BIGINT | NOT NULL | 단순 컬럼. FK 아님 (§5) |
+| `base_date` | DATE | NOT NULL | 클라이언트가 보낸 기준일 |
+| `reason` | VARCHAR(30) | NOT NULL | `ATTENDANCE` · `VERIFICATION_STREAK` · `SLEEP_SCORE_IMPROVED` · `SLEEP_SCORE_HIGH` |
+| `amount` | INT | NOT NULL | 실제 지급량 |
+| `created_at` | DATETIME(6) | NOT NULL | `BaseCreatedEntity` |
+
+**UNIQUE `(user_id, base_date, reason)` 이 이 테이블의 존재 이유다.** 하루 1회를 애플리케이션 코드가 아니라 **DB가 보장**한다 — 앱이 시작할 때마다 호출하는 API가 둘(`POST /users/me/attendance` · `POST /sleep/sessions`)이라 동시 요청이 실제로 발생한다.
+
+**`updated_at`이 없다** — `BaseCreatedEntity`를 쓴다. `consent_history`와 같은 **append-only 이력**이며 지급된 행은 수정도 삭제도 되지 않는다.
+
+#### 4종만 들어온다 — TODO 적립은 여기 오지 않는다
+
+| | 어디서 막나 |
+|---|---|
+| `ATTENDANCE` · `VERIFICATION_STREAK` · `SLEEP_SCORE_IMPROVED` · `SLEEP_SCORE_HIGH` | **이 테이블의 유니크** |
+| `TODO_DONE` · `TODO_ALL_DONE` | `daily_todo.status` — 상태 전이가 대칭이라 무한 적립이 닫힌다 (§3.1) |
+
+**TODO 적립은 되돌릴 수 있다.** 행을 만들면 회수할 때 지워야 하고, 지우는 순간 이 테이블은 이력이 아니라 현재 상태의 사본이 된다 — `status`가 이미 말하고 있는 것을 두 곳에서 말하게 된다(§2 원칙 ①).
+
+**반대로 이 4종은 회수되지 않는다.** 되돌릴 사용자 행동이 없다 — 출석을 취소하거나 잠을 다시 잘 수는 없다.
+
+#### `amount`를 저장하는 이유 — 사유만으로는 복원되지 않는다
+
+`ATTENDANCE`는 언제나 `+10`이라 사유만 알면 되지만, **나머지 셋은 그날의 상태에 따라 값이 달라진다** — 연속 일수 구간(`+5`~`+25`)과 수면 점수 증가폭(`(오늘−어제) × 2`)이다.
+
+**연속 일수는 나중에 다시 계산할 수 있지만 수면 점수 증가폭은 그렇지 않다.** 수면 점수는 저장하지 않고([prd.md](prd.md) §10.8), 그 사이 세션이 갱신되면 값이 달라진다. **백필이 불가능한 것은 지금 넣는다**(§2 원칙 ③).
+
+> **`users.exp`의 검산에도 쓰인다.** `SUM(exp_grant.amount) + (DO 완료 수 × 5) + (전체 완료일 수 × 30)`이 `users.exp`와 맞아야 한다. 어긋나면 적립 로직 어딘가가 비대칭이라는 뜻이다.
+
+#### 레벨·캐릭터 테이블은 만들지 않는다
+
+컷오프는 **경계값 4개**(`100`·`250`·`450`·`700`)이고 캐릭터 이름·이미지는 **서버가 아예 갖지 않는다**([prd.md](prd.md) §10.9). 등급 컷오프를 `ScoringPolicy` 상수로 둔 것과 같은 판단이며(§4 「피부 지표 기준」), 근거도 같다 — **양이 적고, 수정 주체가 개발자이고, 테이블로 빼면 단위 테스트가 DB를 띄워야 한다.**
+
 ---
 
 ## 4. 만들지 않은 테이블
@@ -761,10 +821,13 @@ users
  ├─ skin_forecast
  ├─ skin_measurement
  ├─ personal_weight
- └─ daily_todo
+ ├─ daily_todo
+ └─ exp_grant
 ```
 
 `action_master`는 사용자에 속하지 않는 콘텐츠이므로 삭제 대상이 아니다.
+
+> **`exp_grant`가 2026-08-14에 추가됐다** (§3.10). `UserService.delete`가 지우는 자식이 **7개에서 8개로** 늘었다 — 아래 경고가 실제로 적용된 첫 사례다.
 
 #### ⚠️ `ON DELETE CASCADE`는 실제로 걸려 있지 않다 (2026-08-14 확인)
 
@@ -778,7 +841,9 @@ users
 | `daily_todo` → `action_master` | ✅ `@ManyToOne`이 있다 |
 | **나머지 전부 → `users`** | ❌ **없다** — `userId`는 그냥 컬럼이다 |
 
-**그래서 MY-04는 자식 테이블을 손으로 지운다**(`UserService.delete`). `users` 행만 지우면 6개 테이블에 고아 행이 남는데, **조회에 잡히지 않아 알아채기 어렵고** 같은 `userId`가 재사용되는 순간 남의 수면·검증 이력이 새 사용자에게 붙는다.
+**그래서 MY-04는 자식 테이블을 손으로 지운다**(`UserService.delete`). `users` 행만 지우면 7개 테이블에 고아 행이 남는데, **조회에 잡히지 않아 알아채기 어렵고** 같은 `userId`가 재사용되는 순간 남의 수면·검증 이력이 새 사용자에게 붙는다.
+
+**`exp_grant`를 빠뜨리면 조용히 틀린다.** 고아 행이 남은 채 같은 `userId`로 새 사용자가 생기면, 그 사용자는 **오늘 출석 보상을 받을 수 없다** — 유니크 `(user_id, base_date, reason)`에 남의 행이 이미 앉아 있다. 에러도 로그도 남지 않고 exp만 붙지 않는다.
 
 **순서가 하나 강제된다** — `sleep_stage_segment`가 유일하게 진짜 FK를 갖고 있어 `sleep_session`보다 먼저 지워야 한다.
 

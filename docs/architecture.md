@@ -67,6 +67,7 @@ com.allday.sleep2skin_be
     ├── skin/                   피부 예보 · 셀피 실측 · 검증 · 개인 모델
     ├── todo/                   추천 엔진 · TODO 리스트
     ├── report/                 일간 · 주간 · 월간 · 종합 리포트
+    ├── game/                   레벨 · 경험치 적립 (HOME-04)
     └── health/                 헬스체크 (구현 완료)
 ```
 
@@ -120,6 +121,37 @@ HOME 화면 하나에 세 가지 다른 관심사가 들어 있다 — 수면 �
 | HOME-03/06/07/08/09, REP-05/12 | `skin` |
 | TODO 전체 | `todo` |
 | REPORT 집계 | `report` |
+| HOME-04 (레벨·exp) | `game` |
+
+#### `game`은 화면이 아니라 **적립 창구**라서 따로 뺐다 (2026-08-14)
+
+게이미피케이션은 화면으로 보면 HOME 하나지만, **exp가 붙는 자리는 네 도메인에 흩어져 있다** ([prd.md](prd.md) §10.9).
+
+| 적립 트리거 | 일어나는 곳 |
+|---|---|
+| `ATTENDANCE` | `game` (전용 API) |
+| `SLEEP_SCORE_IMPROVED` · `SLEEP_SCORE_HIGH` | `sleep` |
+| `VERIFICATION_STREAK` | `skin` |
+| `TODO_DONE` · `TODO_ALL_DONE` | `todo` |
+
+**넷 중 어디에 `ExpService`를 두어도 나머지 셋이 그 도메인을 참조하게 된다.** `user`에 두는 것이 그나마 자연스러워 보이지만(`users.exp`가 거기 있으니), 그러면 `user`가 레벨 컷오프·연속 보상 구간·수면 점수 임계값까지 갖게 된다 — **온보딩·동의와 아무 관계 없는 규칙들이다.**
+
+```
+domain/game/
+├── GameController.java          POST /users/me/attendance
+├── ExpService.java              적립·회수의 유일한 창구
+├── LevelPolicy.java             컷오프 · 적립량 · 연속 보상 구간 (상수)
+├── repository/ExpGrantRepository.java
+├── entity/
+│   ├── ExpGrant.java
+│   └── ExpReason.java           enum — 6종
+└── dto/response/ExpResponse.java   네 API가 함께 쓴다 (api.md §1)
+```
+
+- **`ExpService.grant(userId, baseDate, reason, amount)` 하나로 모인다.** 하루 1회 판정(`exp_grant` 유니크)과 `users.exp` 갱신·0 하한이 **한 곳에서만** 일어난다 — 도메인마다 따로 구현하면 어느 하나가 회수를 빼먹어도 컴파일도 테스트도 통과한다
+- **`domain → domain` 참조는 이미 있다** — `todo`가 `skin`의 `SkinMetric`·예보 점수를 본다. 새로 만드는 규칙이 아니다
+- **`global`에 둘 수 없다.** `ExpService`는 Repository를 쓰므로 도메인이며, `global → domain` 참조는 금지다
+- **`GameController`의 경로가 `/users/me/attendance`인 것은 의도적이다.** 패키지 이름이 URL을 정하지 않는다 — 화면상 이것은 사용자 행위이고, 경로는 [api.md](api.md)가 유일한 출처다
 
 ---
 
@@ -274,7 +306,7 @@ GET /api/v1/todo?baseDate=
 
 ## 4. 데이터 설계 원칙
 
-> 테이블 9개의 컬럼 전체와 각 판단의 근거는 [erd.md](erd.md)에 있다. 여기서는 원칙만 다룬다.
+> 테이블 10개의 컬럼 전체와 각 판단의 근거는 [erd.md](erd.md)에 있다. 여기서는 원칙만 다룬다. (**엔티티는 9개까지 만들어져 있다** — `exp_grant`는 HOME-04 착수 시 생긴다.)
 
 ### 기준일(baseDate) 중심
 
