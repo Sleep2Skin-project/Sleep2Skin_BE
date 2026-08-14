@@ -28,10 +28,13 @@ import java.time.LocalDate;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * TODO-01~05.
+ * TODO-02~05. <b>TODO-01의 요약 멘트는 서버가 만들지 않는다</b> — 응답에 있는 것은
+ * {@code baseDate}뿐이고, 테마 문구는 클라이언트가 {@code causeLabel}로 구성한다
+ * (서버에 두면 문구 하나 바꾸는 데 배포가 필요하다).
  *
  * <p><b>목록은 첫 조회 시 생성하고 고정한다</b>(DailyTodo 클래스 주석 참조). 이 클래스는
  * "생성이 필요한가"만 판단하고, 실제 매칭·가중·정렬·절단은 {@link TodoScoringPolicy}
@@ -62,7 +65,7 @@ public class TodoService {
 
         List<DailyTodo> existing = dailyTodoRepository.findByUserIdAndBaseDate(userId, baseDate);
         if (!existing.isEmpty()) {
-            return TodoListResponse.from(baseDate, existing);
+            return TodoListResponse.of(baseDate, existing);
         }
         return generate(userId, baseDate);
     }
@@ -70,20 +73,26 @@ public class TodoService {
     /**
      * 그날 첫 조회 시 추천 엔진을 돌려 최대 8행(AVOID 3 + DO 5)을 만든다. 후보가 부족하면
      * 그보다 적을 수 있다.
+     *
+     * <p><b>예보가 없으면 에러가 아니라 빈 상태다.</b> 조회 API의 빈 상태는 200이라는 규칙
+     * (conventions.md §2)을 따른다 — 수면을 아직 올리지 않은 신규 사용자가 TODO 탭을 열면
+     * 일상적으로 발생하므로, 4xx로 내리면 진짜 문제가 그 안에 묻힌다.
      */
     @Transactional
     public TodoListResponse generate(Long userId, LocalDate baseDate) {
         // 동시 요청 레이스 대비 재확인
         List<DailyTodo> existing = dailyTodoRepository.findByUserIdAndBaseDate(userId, baseDate);
         if (!existing.isEmpty()) {
-            return TodoListResponse.from(baseDate, existing);
+            return TodoListResponse.of(baseDate, existing);
         }
 
-        SkinForecast forecast = skinForecastRepository.findByUserIdAndBaseDate(userId, baseDate)
-                .orElseThrow(() -> new BusinessException(ErrorCode.SKIN_FORECAST_NOT_FOUND,
-                        "예보가 없어 TODO를 만들 수 없다 userId=" + userId + " baseDate=" + baseDate));
+        Optional<SkinForecast> found = skinForecastRepository.findByUserIdAndBaseDate(userId, baseDate);
+        if (found.isEmpty()) {
+            log.info("예보가 없어 TODO를 만들지 않는다 userId={} baseDate={}", userId, baseDate);
+            return TodoListResponse.empty(baseDate);
+        }
 
-        Map<SkinMetric, Integer> forecastScores = scoresOf(forecast);
+        Map<SkinMetric, Integer> forecastScores = scoresOf(found.get());
         Map<SkinMetric, VerificationVerdict> latestVerdicts = latestVerdictsOf(userId, baseDate);
 
         List<ActionMaster> selectedAvoid = TodoScoringPolicy.selectTop(
@@ -105,12 +114,18 @@ public class TodoService {
         log.info("TODO 생성 userId={} baseDate={} avoid={} do={}",
                 userId, baseDate, selectedAvoid.size(), selectedDo.size());
 
-        return TodoListResponse.from(baseDate, saved);
+        return TodoListResponse.of(baseDate, saved);
     }
 
     /**
      * TODO-05. AVOID 항목은 체크 대상이 아니므로 {@code 400 ACTION_NOT_CHECKABLE}로 막는다.
-     * DO 항목이 처음 DONE으로 바뀔 때만 exp를 지급한다(멱등).
+     *
+     * <p><b>exp는 상태가 실제로 바뀔 때만 움직인다.</b> 완료로 바뀌면 지급하고 되돌리면 회수한다 —
+     * 같은 상태로 다시 요청하면 0이다(멱등).
+     *
+     * <p><b>회수가 없으면 무한 적립이 된다.</b> 판정이 "이번에 DONE이 됐는가"뿐이라
+     * {@code DONE → PENDING → DONE}을 반복하는 것만으로 매번 exp가 붙는다. 중복 호출
+     * ({@code DONE → DONE})만 막는 것으로는 닫히지 않는다.
      */
     @Transactional
     public TodoStatusUpdateResponse updateStatus(Long userId, Long todoId, TodoStatus status) {
@@ -123,17 +138,22 @@ public class TodoService {
             throw new BusinessException(ErrorCode.ACTION_NOT_CHECKABLE);
         }
 
-        boolean newlyDone = status == TodoStatus.DONE && todo.getStatus() != TodoStatus.DONE;
-        todo.changeStatus(status);
-
-        int expGained = 0;
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND,
-                        "exp를 지급할 사용자가 없다 userId=" + userId));
+                        "exp를 조정할 사용자가 없다 userId=" + userId));
+
+        boolean newlyDone = status == TodoStatus.DONE && todo.getStatus() != TodoStatus.DONE;
+        boolean undone = status == TodoStatus.PENDING && todo.getStatus() == TodoStatus.DONE;
+        todo.changeStatus(status);
+
+        // 실제 증감을 응답에 싣는다 — 회수가 0에서 막히면 요청한 양보다 적게 줄어든다
+        int before = user.getExp();
         if (newlyDone) {
             user.addExp(EXP_PER_DONE);
-            expGained = EXP_PER_DONE;
+        } else if (undone) {
+            user.subtractExp(EXP_PER_DONE);
         }
+        int expGained = user.getExp() - before;
 
         return new TodoStatusUpdateResponse(todo.getId(), todo.getStatus(), expGained, user.getExp());
     }

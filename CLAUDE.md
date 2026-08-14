@@ -105,7 +105,9 @@ enum SkinMetric { DARK_CIRCLE, COMPLEXION, BARRIER }   // 다크서클 회복 ·
 - **`AVOID`도 `daily_todo`에 저장한다.** 체크 대상이 아닌데도 남기는 이유는 **REP가 "그날 무엇을 피하라고 했는지"를 되짚어야** 하기 때문이다. 그 대가로 `AVOID` 행이 `status = PENDING`을 갖게 되므로(컬럼이 `NOT NULL`), 응답에서 `null`로 가리고 `PATCH`는 `ACTION_NOT_CHECKABLE`로 막는다. **둘 중 하나만 있으면 조용히 뚫려 달성률이 오염된다** — REP-10 집계는 `category = 'DO'`로 먼저 거른다
 - **차단은 `400`이다 — 조용한 `200`이 아니다.** 무시하면 그 요청을 보낸 앱 버그가 드러나지 않는다
 
-**⚠️ exp는 `DONE → PENDING → DONE`을 반복하면 계속 붙는다.** 되돌릴 때 회수하지 않으면서 판정이 "이번에 `DONE`이 됐는가"뿐이라서다. 중복 호출(`DONE → DONE`)만 막혀 있다. **되돌리기 정책이 미정**이므로(prd.md §9.2) exp를 정확한 값으로 취급하는 화면을 만들지 말 것.
+**예보가 없는 날은 `200` + `NO_SLEEP_DATA` + 빈 배열이다 — 404가 아니다.** 수면을 아직 올리지 않은 신규 사용자가 TODO 탭을 열면 일상적으로 발생한다. **후보가 0개인 날(`AVAILABLE` + 빈 배열)과 다른 상태**이므로 둘을 같은 status로 묶지 말 것.
+
+**exp 적립과 회수는 대칭이라야 한다** — `PENDING → DONE`에 `+10`, `DONE → PENDING`에 `−10`. **회수를 빼면 껐다 켜는 것만으로 무한 적립이 된다.** 판정이 "이번에 `DONE`이 됐는가"뿐이라 중복 호출만 막히기 때문이다. `TodoServiceTest.반복_토글로_적립되지_않는다`가 이 자리를 붙들고 있다.
 
 **액션 마스터는 앱이 채우지 않는다.** `src/main/resources/db/seed/action_master.sql` 24행을 **사람이 한 번 실행한다** (workflow.md §8). 비어 있으면 TODO 탭이 빈 배열로 나가는데 **에러가 아니라 로그에도 안 남는다.** 실행할 때 `--default-character-set=utf8mb4`가 없으면 한국어가 `???`로 들어가고 INSERT는 성공한다.
 
@@ -208,7 +210,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 **미도입**: `report`의 Service·Controller, `user`의 조회·삭제 API 3개. **`sleep`·`skin`·`todo`는 api.md에 정의된 엔드포인트를 전부 만들었다** — 핵심 루프(수면 → 예보 → 처방 → 검증 → 학습)가 닫혔다.
 
-**⚠️ `todo` 도메인에는 테스트가 하나도 없다.** 다른 도메인은 Service·Controller·`{도메인}ApiDocsTest`를 갖췄는데 여기만 비어 있다 — **`TodoApiDocsTest`가 없다**(conventions.md §11). `SwaggerConfigTest`는 경로를 짚지 않고 문서 전체를 순회하므로 손댈 필요가 없다. **`TodoScoringPolicy`는 DB 없이 도는 순수 로직이라 단위 테스트를 붙이기 가장 쉬운 자리다.**
+**`todo` 도메인도 테스트 4종을 갖췄다** (2026-08-14) — `TodoScoringPolicyTest`(DB 없이 도는 순수 로직) · `TodoServiceTest` · `TodoControllerTest` · `TodoApiDocsTest`. 모든 도메인이 같은 구성이다.
 
 **연속 검증 횟수는 `VerificationStreakCalculator` 한 곳에서만 계산한다.** HOME-09와 MY-01이 같은 숫자를 써야 하고(prd.md §4.2), 각자 계산하면 두 화면이 어긋난다. **MY-01을 만들 때 이 컴포넌트를 호출한다 — 계산을 다시 적지 말 것.**
 
