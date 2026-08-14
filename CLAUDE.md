@@ -92,6 +92,23 @@ enum SkinMetric { DARK_CIRCLE, COMPLEXION, BARRIER }   // 다크서클 회복 ·
 
 두 임계값은 **`domain/sleep` 정규화 정책 상수다 — `ScoringPolicy`가 아니다.** 스코어링 파라미터가 아니라 수집 정규화 규칙이다. **앱이 보낸 세션 분할을 그대로 믿지 않는다** — 기기·OS별로 기준이 다르다.
 
+### TODO 목록은 그날 첫 조회에 고정된다
+
+`GET /api/v1/todo`가 그날 `daily_todo` 행이 없으면 추천 엔진을 돌려 만들고(`AVOID` 3 + `DO` 5, 최대 8행), 있으면 **다시 계산하지 않고** 그대로 반환한다. **조회 API가 행을 만드는 유일한 자리다.**
+
+**재계산하면 같은 날 안에서 목록이 실제로 바뀐다.** 우선순위의 `verdictBonus`가 *가장 최근 검증*을 보는데, 그 값은 사용자가 그날 셀피를 찍는 순간 달라진다. 아침에 본 목록과 검증 후 본 목록이 다르면 이미 체크한 항목이 사라진 것처럼 보이고, REP-10이 "그날 무엇이 추천됐는가"를 재현할 수 없다.
+
+- **점수 축은 예보 하나로 통일돼 있다.** 후보 추출도 우선순위도 `skin_forecast` 점수만 쓰고, `skin_measurement`에서 가져오는 것은 **판정 결과(`verdict`)뿐 — 실측 점수 자체는 계산에 안 들어간다**
+- **`OVERESTIMATED`에만 보너스를 준다** — 예보 점수를 실제보다 높게 낸 것 = **피부 위험을 과소평가**한 것이다. `UNDERESTIMATED`는 위험 신호가 아니다. **두 축이 반대라 여기서 뒤집기 쉽다**
+- **그날 예보가 `null`인 지표를 겨냥한 액션은 후보에서 뺀다.** 비교할 점수가 없다
+- **"오늘 밤 체크리스트"는 화면 이름이지 카테고리가 아니다.** `DO` 상위 5개를 그렇게 부르는 것이고 `ActionCategory`는 `AVOID`/`DO` 2종 고정이다 — **`NIGHT_CHECK`를 되살리지 말 것**
+- **`AVOID`도 `daily_todo`에 저장한다.** 체크 대상이 아닌데도 남기는 이유는 **REP가 "그날 무엇을 피하라고 했는지"를 되짚어야** 하기 때문이다. 그 대가로 `AVOID` 행이 `status = PENDING`을 갖게 되므로(컬럼이 `NOT NULL`), 응답에서 `null`로 가리고 `PATCH`는 `ACTION_NOT_CHECKABLE`로 막는다. **둘 중 하나만 있으면 조용히 뚫려 달성률이 오염된다** — REP-10 집계는 `category = 'DO'`로 먼저 거른다
+- **차단은 `400`이다 — 조용한 `200`이 아니다.** 무시하면 그 요청을 보낸 앱 버그가 드러나지 않는다
+
+**⚠️ exp는 `DONE → PENDING → DONE`을 반복하면 계속 붙는다.** 되돌릴 때 회수하지 않으면서 판정이 "이번에 `DONE`이 됐는가"뿐이라서다. 중복 호출(`DONE → DONE`)만 막혀 있다. **되돌리기 정책이 미정**이므로(prd.md §9.2) exp를 정확한 값으로 취급하는 화면을 만들지 말 것.
+
+**액션 마스터는 앱이 채우지 않는다.** `src/main/resources/db/seed/action_master.sql` 24행을 **사람이 한 번 실행한다** (workflow.md §8). 비어 있으면 TODO 탭이 빈 배열로 나가는데 **에러가 아니라 로그에도 안 남는다.** 실행할 때 `--default-character-set=utf8mb4`가 없으면 한국어가 `???`로 들어가고 INSERT는 성공한다.
+
 ### 서버가 하지 않는 것
 
 HealthKit 직접 접근 · 배치 스케줄러 · 푸시 발송 · 인증/세션.
@@ -183,12 +200,15 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - **`POST /api/v1/sleep/sessions`** (수면 업로드 + 예보 산출) · **`GET /api/v1/sleep/interpretation`** (HOME-02)
 - **`GET /api/v1/skin/forecast`** (HOME-03) · **`POST /api/v1/skin/selfie`** (HOME-06→07→08)
 - **`GET /api/v1/skin/verification/summary`** (HOME-09) · **`GET /api/v1/skin/model`** (REP-12) — **`skin` 도메인 완료**
+- **`GET /api/v1/todo`** · **`PATCH /api/v1/todo/{id}`** (TODO-02~05) — **`todo` 도메인 완료.** 추천 엔진(`TodoScoringPolicy`) + 액션 마스터 시드 24행
 - **개인 가중치 학습** — `SkinModelService`. 첫 검증에 7행을 `1.0`으로 만들고, 그날 참여한 피처만 보정한다
 - **OpenAI Vision 연동** — `global/infra/openai/`의 `SkinVisionClient`(인터페이스) + `OpenAiSkinVisionClient`(Responses API + Structured Outputs). **점수 방향은 2026-08-10 실호출로 확인됨**
 - `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`OpenAiConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)·`QueryStatus`
 - 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI/CD
 
-**미도입**: `todo`·`report`의 Service·Controller. **`sleep`·`skin`은 api.md에 정의된 엔드포인트를 전부 만들었다** — 핵심 루프(수면 → 예보 → 검증 → 학습)가 닫혔다.
+**미도입**: `report`의 Service·Controller, `user`의 조회·삭제 API 3개. **`sleep`·`skin`·`todo`는 api.md에 정의된 엔드포인트를 전부 만들었다** — 핵심 루프(수면 → 예보 → 처방 → 검증 → 학습)가 닫혔다.
+
+**⚠️ `todo` 도메인에는 테스트가 하나도 없다.** 다른 도메인은 Service·Controller·`{도메인}ApiDocsTest`를 갖췄는데 여기만 비어 있다 — **`TodoApiDocsTest`가 없다**(conventions.md §11). `SwaggerConfigTest`는 경로를 짚지 않고 문서 전체를 순회하므로 손댈 필요가 없다. **`TodoScoringPolicy`는 DB 없이 도는 순수 로직이라 단위 테스트를 붙이기 가장 쉬운 자리다.**
 
 **연속 검증 횟수는 `VerificationStreakCalculator` 한 곳에서만 계산한다.** HOME-09와 MY-01이 같은 숫자를 써야 하고(prd.md §4.2), 각자 계산하면 두 화면이 어긋난다. **MY-01을 만들 때 이 컴포넌트를 호출한다 — 계산을 다시 적지 말 것.**
 
@@ -221,15 +241,17 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 **스키마는 엔티티에서 만든다.** `ddl-auto: update`로 결정됐고 DDL 스크립트를 따로 두지 않는다 (근거는 `application.yml` 주석). `update`는 컬럼 추가만 반영하므로 **엔티티를 파괴적으로 바꿨다면 DB를 지우고 다시 만든다** — `docker compose down -v && docker compose up -d mysql`.
 
-다음 착수 순서 (api.md §4 · prd.md §8) — **1단계 6개가 전부 끝났다.**
+다음 착수 순서 (api.md §4 · prd.md §8) — **1단계 6개와 2단계 추천 엔진까지 끝났다.**
 
 1. ~~엔티티 9개 + Repository~~ · ~~테스트 유저 시딩~~ · ~~동의 저장(ONB-02)~~ · ~~온보딩 완료(ONB-05)~~ — 완료
 2. ~~수면 세션 수신 `POST /api/v1/sleep/sessions`~~ — 완료
 3. ~~피부 예보 산출 (HOME-03)~~ · ~~수면 통역 카드 (HOME-02)~~ — 완료
 4. ~~셀피 분석·검증·학습 `POST /api/v1/skin/selfie` (HOME-06→07→08)~~ — 완료
-5. **2단계** ← 여기부터. 일간 리포트(REP-02·04·05) · TODO 추천 엔진(TODO-02) · 배너/프로필(HOME-09·MY-01)
+5. ~~TODO 추천 엔진·리스트 (TODO-02~05)~~ · ~~배너(HOME-09)·내 모델(REP-12)~~ — 완료
+6. **일간 리포트 (REP-02·04·05)** ← 여기부터. **B6(수면 목표값)이 필요하다** — 유일하게 남은 블로커
+7. 그다음: 주간 리포트(REP-06/07) · 프로필(MY-01) · 데이터 연결 상태(MY-02) · `GET /api/v1/users/me`
 
-**2단계 착수 전에 정해야 할 것이 두 가지 있다.** 일간 리포트는 **B6(수면 목표값)** 이 필요하고, TODO는 **P5(액션 마스터 데이터)** 가 콘텐츠 작업이라 개발보다 오래 걸린다.
+**P5(액션 마스터 데이터)는 해소됐다** — 24행이 시드 SQL로 들어왔다.
 
 **⚠️ HOME-08은 §10.7의 문구 하나를 의도적으로 따르지 않았다.** 명세는 "`s(f)`와 **지표점수**를 검증 시점에 다시 계산한다"고 적었지만, 구현은 **지표점수를 저장된 예보값으로 쓴다.** `e = 실측 − 예보`의 예보와 `s(f) − 지표점수`의 지표점수는 **같은 항**인데 한쪽만 재계산하면 두 값이 갈린다(`67.5` vs `68`). 근거는 `SkinModelService` javadoc에 있다.
 
@@ -276,12 +298,14 @@ w(f)  = clamp(w(f) + Δw(f), 0.5, 2.0)
 
 §10으로 확정되지 않은 값들은 아직 임시다 — **상관 강도 라벨 구간(L7) · 신뢰도 등급 일수(L8) · 트리아지 임계값(L6) · 수면 목표값(B6)** (prd.md §9.2). 같은 규칙으로 `ScoringPolicy`에 모으고 `// 임시값 (PRD §9.2)` 주석을 남긴다.
 
+**TODO 쪽 세 값도 임시다** — **절단 개수(`AVOID` 3 · `DO` 5) · `verdictBonus` 배율(`× 10`) · 완료 exp(`+10`)**. 구현하며 정해진 값이고 §10에 없다. **`domain/skin/ScoringPolicy`가 아니라 `TodoScoringPolicy`·`TodoService` 상수로 둔다** — 예보 스코어링과 추천 정렬은 다른 축이다.
+
 ## 확정이 필요한 것
 
 **개발을 막는 블로커가 없다.** B1·B2·B3·B7이 확정됐고, B4는 고지 문구가 답에 의존하지 않게 만들어 해소, B5는 MVP 전제로 보류됐다.
 
-**남은 것은 B6**(수면 목표값)뿐이고 2단계 일간 리포트 착수 전까지 정하면 된다.
+**남은 것은 B6**(수면 목표값)뿐이고, **이제 바로 다음 작업인 일간 리포트가 이걸 필요로 한다.**
 
 값을 임의로 정하지 말고 사용자에게 확인할 것. 전체 미결정 목록은 prd.md §7 (B=블로커, L=로직, E=빈상태, S=화면, P=정책).
 
-**남은 미결정 대부분은 해당 기능 구현 직전에 정하면 된다.** 다만 두 가지는 지금부터 사람이 움직여야 한다 — **액션 마스터 데이터(P5)** 는 개발보다 콘텐츠 작업량이 크고, **약관 원문(P4)** 은 `consent_history.terms_version` 값의 출처다.
+**남은 미결정 대부분은 해당 기능 구현 직전에 정하면 된다.** 지금부터 사람이 움직여야 하는 것은 **약관 원문(P4)** 하나다 — `consent_history.terms_version` 값의 출처다. (액션 마스터 데이터 P5는 해소됐다.)
