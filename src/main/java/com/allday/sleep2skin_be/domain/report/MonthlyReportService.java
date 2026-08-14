@@ -34,8 +34,8 @@ import java.util.stream.Collectors;
  * "28일 전부 결측이면 null"이라는 조건이 28일 단위로 걸려 있어 28일 단위로 계산한다.
  *
  * <p><b>적중률({@code hitRate}·{@code verifiedDays})은 화면에 없어 범위에서 뺐다</b>
- * (2026-08-15). 검증(예보·실측) 조회는 이제 이 서비스가 하지 않는다 — 필요해지면
- * {@code SkinVerificationSummaryService}가 쓰는 것과 같은 방식으로 다시 붙인다.
+ * (2026-08-15). 다만 실측(셀피 검증) 조회 자체는 "상관 강도" 섹션 때문에 다시 필요해져서
+ * {@link CorrelationCalculator}를 통해 간접적으로 남아 있다.
  */
 @Service
 @Transactional(readOnly = true)
@@ -49,6 +49,7 @@ public class MonthlyReportService {
     private final UserRepository userRepository;
     private final SleepSessionRepository sleepSessionRepository;
     private final DailySleepScoreCalculator dailySleepScoreCalculator;
+    private final CorrelationCalculator correlationCalculator;
 
     public MonthlyReportResponse getMonthlyReport(Long userId, LocalDate baseDate) {
         User user = userRepository.findById(userId)
@@ -70,7 +71,8 @@ public class MonthlyReportService {
         List<WeekScore> weeks = weeklyScores(dailyScores);
         Integer avgSleepScore = average(dailyScores);
 
-        return MonthlyReportResponse.of(periodStart, baseDate, weeks, new Summary(avgSleepScore));
+        return MonthlyReportResponse.of(periodStart, baseDate, weeks, new Summary(avgSleepScore),
+                correlationCalculator.calculate(userId, periodStart, baseDate, sessions));
     }
 
     /**

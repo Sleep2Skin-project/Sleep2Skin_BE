@@ -28,18 +28,22 @@ public record WeeklyReportResponse(
         List<DailyScore> dailyScores,
 
         @Schema(description = "기간 요약. `INSUFFICIENT_DATA`면 `null`", nullable = true)
-        Summary summary
+        Summary summary,
+
+        @Schema(description = "수면 피처-피부 지표 상관 강도 7종. `INSUFFICIENT_DATA`면 빈 배열")
+        List<FeatureCorrelation> correlations
 ) {
 
     public static WeeklyReportResponse insufficientData(LocalDate periodStart, LocalDate periodEnd) {
         return new WeeklyReportResponse(ReportPeriodStatus.INSUFFICIENT_DATA, periodStart, periodEnd,
-                List.of(), null);
+                List.of(), null, List.of());
     }
 
     public static WeeklyReportResponse of(LocalDate periodStart, LocalDate periodEnd,
-                                          List<DailyScore> dailyScores, Summary summary) {
+                                          List<DailyScore> dailyScores, Summary summary,
+                                          List<FeatureCorrelation> correlations) {
         return new WeeklyReportResponse(ReportPeriodStatus.FULL, periodStart, periodEnd,
-                dailyScores, summary);
+                dailyScores, summary, correlations);
     }
 
     /**

@@ -1,8 +1,12 @@
 package com.allday.sleep2skin_be.domain.report;
 
+import com.allday.sleep2skin_be.domain.report.dto.CorrelationStrength;
 import com.allday.sleep2skin_be.domain.report.dto.ReportPeriodStatus;
+import com.allday.sleep2skin_be.domain.report.dto.response.FeatureCorrelation;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.WeekScore;
+import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
+import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
 import com.allday.sleep2skin_be.domain.sleep.entity.SleepSession;
 import com.allday.sleep2skin_be.domain.sleep.repository.SleepSessionRepository;
 import com.allday.sleep2skin_be.domain.user.entity.User;
@@ -42,7 +46,12 @@ import static org.mockito.BDDMockito.given;
  * 전체 평균이 주 평균의 평균과 다르다는 것</b>을 본다.
  *
  * <p>적중률(hitRate·verifiedDays) 관련 테스트는 2026-08-15에 화면에서 빠지면서 함께
- * 제거했다 — {@code SkinMeasurementRepository}를 더 이상 참조하지 않는다.
+ * 제거했다 — {@code SkinMeasurementRepository}를 더 이상 직접 참조하지 않는다(다만
+ * {@code CorrelationCalculator}를 통해 간접적으로는 다시 쓰인다).
+ *
+ * <p>상관 강도 계산 자체는 {@link CorrelationCalculatorTest}가 검증하므로 여기서는
+ * {@code CorrelationCalculator}를 스텁으로 두고 <b>결과를 응답에 그대로 실어 보내는지</b>만
+ * 본다.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -58,10 +67,12 @@ class MonthlyReportServiceTest {
     private SleepSessionRepository sleepSessionRepository;
     @Mock
     private DailySleepScoreCalculator dailySleepScoreCalculator;
+    @Mock
+    private CorrelationCalculator correlationCalculator;
 
     private MonthlyReportService service() {
         return new MonthlyReportService(userRepository, sleepSessionRepository,
-                dailySleepScoreCalculator);
+                dailySleepScoreCalculator, correlationCalculator);
     }
 
     /**
@@ -88,6 +99,7 @@ class MonthlyReportServiceTest {
         assertThat(response.periodEnd()).isEqualTo(BASE_DATE);
         assertThat(response.weeks()).isEmpty();
         assertThat(response.summary()).isNull();
+        assertThat(response.correlations()).isEmpty();
     }
 
     @Test
@@ -187,6 +199,26 @@ class MonthlyReportServiceTest {
         assertThat(response.weeks().get(3).avgSleepScore()).isNull();       // W4
 
         assertThat(response.summary().avgSleepScore()).isEqualTo(13); // 28일 단위, 50이 아니다
+    }
+
+    /**
+     * <b>계산 자체가 아니라 배선(wiring)을 확인한다.</b> 상관계수 계산 로직은
+     * {@code CorrelationCalculatorTest}가 검증하고, 여기서는 서비스가 그 결과를 가공하지
+     * 않고 그대로 응답에 싣는지만 본다.
+     */
+    @Test
+    @DisplayName("CorrelationCalculator의 결과를 그대로 응답에 싣는다")
+    void 상관_강도를_그대로_싣는다() {
+        joinedLongAgo();
+        noSessions();
+        FeatureCorrelation correlation = new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
+                SkinMetric.DARK_CIRCLE, "다크서클", CorrelationStrength.STRONG, 22, false);
+        given(correlationCalculator.calculate(eq(USER_ID), eq(PERIOD_START), eq(BASE_DATE), any()))
+                .willReturn(List.of(correlation));
+
+        MonthlyReportResponse response = service().getMonthlyReport(USER_ID, BASE_DATE);
+
+        assertThat(response.correlations()).containsExactly(correlation);
     }
 
     @Test

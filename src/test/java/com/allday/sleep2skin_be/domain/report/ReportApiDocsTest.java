@@ -178,6 +178,41 @@ class ReportApiDocsTest {
                 .andExpect(jsonPath(WEEKLY_GET + ".description").value(not(containsString("verifiedDays"))));
     }
 
+    /**
+     * <b>예보값과 비교하면 순환 논증이 된다는 것이 이 섹션의 핵심 설계다.</b> 문서에서 사라지면
+     * 프론트든 리뷰어든 "왜 예보가 아니라 실측이랑 비교하나"를 알 방법이 없다.
+     */
+    @Test
+    @DisplayName("상관 강도가 예보가 아니라 실측값과 비교한다는 것이 문서에 있다")
+    void 주간_상관_강도_실측_기준이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("예보값이 아니라 실측값(셀피 검증)과 비교한다")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("순환 논증이 된다")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("0~100 부분점수가 아니다")));
+    }
+
+    /** 표본 하한과 정렬 규칙이 빠지면 5개 미만인데 강도를 매기거나, 정렬 순서를 오해할 수 있다. */
+    @Test
+    @DisplayName("표본 하한·정렬 규칙·임시값 경고가 문서에 있다")
+    void 주간_상관_강도_표본_정렬_규칙이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("표본이 5개 미만")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("항상 7개 전부 반환한다")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("정렬은 상관계수 절댓값 내림차순")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("임시값이다")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("CorrelationPolicy")));
+    }
+
     // ===== 월간 (REP-07) =====
 
     @Test
@@ -216,6 +251,22 @@ class ReportApiDocsTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(MONTHLY_GET + ".description").value(not(containsString("hitRate"))))
                 .andExpect(jsonPath(MONTHLY_GET + ".description").value(not(containsString("verifiedDays"))));
+    }
+
+    /** 월간도 예보가 아니라 실측 기준이라는 것과 대상 기간이 28일이라는 것을 명시해야 한다. */
+    @Test
+    @DisplayName("월간도 상관 강도가 실측 기준이라는 것과 임시값 경고가 문서에 있다")
+    void 월간_상관_강도_규칙이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("예보값이 아니라 실측값(셀피 검증)과 비교")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("대상 기간만 최근 28일")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("항상 7개 전부 반환")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("임시값")));
     }
 
 }

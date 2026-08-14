@@ -199,7 +199,15 @@ public interface ReportControllerSpec {
                   { "date": "2026-08-08", "sleepScore": 62 },
                   { "date": "2026-08-09", "sleepScore": null }
                 ],
-                "summary": { "avgSleepScore": 70 }
+                "summary": { "avgSleepScore": 70 },
+                "correlations": [
+                  { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+                    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클",
+                    "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
+                  { "sleepFeature": "HRV", "featureLabel": "심박변이도",
+                    "skinMetric": "COMPLEXION", "metricLabel": "혈색",
+                    "strength": null, "sampleSize": 2, "insufficientSample": true }
+                ]
               } }
             ```
 
@@ -226,7 +234,7 @@ public interface ReportControllerSpec {
               "data": {
                 "status": "INSUFFICIENT_DATA",
                 "periodStart": "2026-08-08", "periodEnd": "2026-08-14",
-                "dailyScores": [], "summary": null
+                "dailyScores": [], "summary": null, "correlations": []
               } }
             ```
 
@@ -244,6 +252,41 @@ public interface ReportControllerSpec {
 
             `dailyScores` 중 `sleepScore`가 있는 날짜만의 평균, 반올림. 전부 `null`이면
             `avgSleepScore`도 `null`이다.
+
+            ### `correlations` — 수면 피처 7종과 피부 지표의 상관 강도
+
+            **예보값이 아니라 실측값(셀피 검증)과 비교한다.** 예보값은 이 피처들로 계산된
+            값이라 예보와 비교하면 항상 강한 상관이 나오는 순환 논증이 된다. 그래서 <b>기간
+            안에서 수면 세션과 셀피 검증이 둘 다 있는 날짜만</b> 짝으로 삼는다 — 검증하지 않은
+            날은 계산에서 빠진다.
+
+            | `sleepFeature` | 원본값 | → `skinMetric` |
+            |---|---|---|
+            | `AWAKE_COUNT` | 야간 각성 횟수 | `DARK_CIRCLE` |
+            | `TOTAL_SLEEP` | 총 수면 시간(분) | `DARK_CIRCLE` |
+            | `DEEP_SLEEP` | 깊은 수면 비율(%) | `BARRIER` |
+            | `REM_SLEEP` | REM 수면 비율(%) | `BARRIER` |
+            | `BEDTIME_REGULARITY` | 취침 규칙성(표준편차, 분) | `COMPLEXION` |
+            | `HRV` | 심박변이도 | `COMPLEXION` |
+            | `RESTING_HEART_RATE` | 안정시 심박 | `COMPLEXION` |
+
+            **"원본값"이지 예보 산출의 0~100 부분점수가 아니다.** 부분점수는 이미 정규화된
+            값이라 그것끼리 상관을 내면 정규화 곡선의 모양이 상관계수에 섞여 들어간다.
+
+            표본이 5개 미만(`insufficientSample: true`)이면 상관계수를 계산하지 않고
+            `strength`가 `null`이다 — 극단값 하나에도 크게 흔들리는 표본으로 "강한 상관"이라고
+            말하지 않기 위해서다. 그 피처만 결측인 날(워치 미착용의 HRV·안정시 심박, 이력
+            3일 미만의 취침 규칙성, 단계 미상의 비율)은 그 피처의 계산에서만 빠지고 다른
+            피처-지표 쌍에는 영향이 없다.
+
+            **`correlations`는 항상 7개 전부 반환한다** — 표본이 부족해도 배열에서 빠지지
+            않고 `strength: null`로 포함된다. **정렬은 상관계수 절댓값 내림차순이고, 표본
+            부족은 값과 무관하게 배열 맨 뒤로 간다.**
+
+            ⚠️ 강도 구간(`VERY_STRONG` 0.7 / `STRONG` 0.4 / `MODERATE` 0.2)과 표본 하한(5개)은
+            <b>임시값이다</b> — 통계학에서 흔히 쓰는 구간을 참고해 채택했을 뿐 이 서비스의
+            데이터로 검증되지 않았다(`CorrelationPolicy` 참고). 팀이 재확인하기 전까지는
+            바뀔 수 있다.
 
             ### 예외
 
@@ -294,7 +337,12 @@ public interface ReportControllerSpec {
                   { "weekLabel": "W3", "avgSleepScore": 52, "isHighest": false },
                   { "weekLabel": "W4", "avgSleepScore": 70, "isHighest": true }
                 ],
-                "summary": { "avgSleepScore": 61 }
+                "summary": { "avgSleepScore": 61 },
+                "correlations": [
+                  { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+                    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클",
+                    "strength": "STRONG", "sampleSize": 22, "insufficientSample": false }
+                ]
               } }
             ```
 
@@ -325,7 +373,7 @@ public interface ReportControllerSpec {
               "data": {
                 "status": "INSUFFICIENT_DATA",
                 "periodStart": "2026-07-18", "periodEnd": "2026-08-14",
-                "weeks": [], "summary": null
+                "weeks": [], "summary": null, "correlations": []
               } }
             ```
 
@@ -345,6 +393,29 @@ public interface ReportControllerSpec {
             **28일 전체 일별 점수를 한 번에 평균낸 값**이다. 주마다 결측 일수가 다르면 "주
             평균 4개의 평균"과 이 값이 갈릴 수 있다(가중치가 달라진다) — 28일 전부 결측이어야
             `null`이라는 조건이 28일 단위로 걸려 있어 여기서도 28일 단위로 낸다.
+
+            ### `correlations` — 수면 피처 7종과 피부 지표의 상관 강도
+
+            주간 리포트와 완전히 같은 방식이며 대상 기간만 최근 28일이다(`periodStart`~
+            `periodEnd`). **예보값이 아니라 실측값(셀피 검증)과 비교**하고, 세션과 검증이
+            둘 다 있는 날짜만 짝으로 삼는다.
+
+            | `sleepFeature` | 원본값 | → `skinMetric` |
+            |---|---|---|
+            | `AWAKE_COUNT` | 야간 각성 횟수 | `DARK_CIRCLE` |
+            | `TOTAL_SLEEP` | 총 수면 시간(분) | `DARK_CIRCLE` |
+            | `DEEP_SLEEP` | 깊은 수면 비율(%) | `BARRIER` |
+            | `REM_SLEEP` | REM 수면 비율(%) | `BARRIER` |
+            | `BEDTIME_REGULARITY` | 취침 규칙성(표준편차, 분) | `COMPLEXION` |
+            | `HRV` | 심박변이도 | `COMPLEXION` |
+            | `RESTING_HEART_RATE` | 안정시 심박 | `COMPLEXION` |
+
+            표본이 5개 미만이면 `insufficientSample: true`이고 `strength`는 `null`이다.
+            **항상 7개 전부 반환**하며, 정렬은 상관계수 절댓값 내림차순 — 표본 부족은 배열
+            맨 뒤로 간다. 28일 기간이라 주간보다 표본이 커지기 쉬워 계산되는 비율이 더 높다.
+
+            ⚠️ 강도 구간과 표본 하한은 **임시값**이다 — 자세한 근거는 `GET /report/weekly`
+            문서와 `CorrelationPolicy`를 참고한다.
 
             ### 예외
 

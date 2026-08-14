@@ -34,8 +34,8 @@ import java.util.stream.Collectors;
  * {@code null}로 나간다 — <b>데이터 품질 문제와 신규 사용자 문제를 같은 상태로 묶지 않는다.</b>
  *
  * <p><b>적중률({@code hitRate}·{@code verifiedDays})은 화면에 없어 범위에서 뺐다</b>
- * (2026-08-15). 검증(예보·실측) 조회는 이제 이 서비스가 하지 않는다 — 필요해지면
- * {@code SkinVerificationSummaryService}가 쓰는 것과 같은 방식으로 다시 붙인다.
+ * (2026-08-15). 다만 실측(셀피 검증) 조회 자체는 "상관 강도" 섹션 때문에 다시 필요해져서
+ * {@link CorrelationCalculator}를 통해 간접적으로 남아 있다.
  */
 @Service
 @Transactional(readOnly = true)
@@ -47,6 +47,7 @@ public class WeeklyReportService {
     private final UserRepository userRepository;
     private final SleepSessionRepository sleepSessionRepository;
     private final DailySleepScoreCalculator dailySleepScoreCalculator;
+    private final CorrelationCalculator correlationCalculator;
 
     public WeeklyReportResponse getWeeklyReport(Long userId, LocalDate baseDate) {
         User user = userRepository.findById(userId)
@@ -68,7 +69,8 @@ public class WeeklyReportService {
 
         Integer avgSleepScore = average(dailyScores.stream().map(DailyScore::sleepScore).toList());
 
-        return WeeklyReportResponse.of(periodStart, baseDate, dailyScores, new Summary(avgSleepScore));
+        return WeeklyReportResponse.of(periodStart, baseDate, dailyScores, new Summary(avgSleepScore),
+                correlationCalculator.calculate(userId, periodStart, baseDate, sessions));
     }
 
     private Map<LocalDate, SleepSession> sessionsByDate(Long userId, LocalDate from, LocalDate to) {

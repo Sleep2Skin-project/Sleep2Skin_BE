@@ -1,8 +1,10 @@
 package com.allday.sleep2skin_be.domain.report;
 
+import com.allday.sleep2skin_be.domain.report.dto.CorrelationStrength;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse.SegmentResponse;
+import com.allday.sleep2skin_be.domain.report.dto.response.FeatureCorrelation;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.WeekScore;
 import com.allday.sleep2skin_be.domain.report.dto.response.SkinForecastSection;
@@ -11,6 +13,8 @@ import com.allday.sleep2skin_be.domain.report.dto.response.SleepSummarySection;
 import com.allday.sleep2skin_be.domain.report.dto.response.SleepSummarySection.SleepSummary;
 import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse.DailyScore;
+import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
+import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
 import com.allday.sleep2skin_be.domain.sleep.entity.SleepStage;
 import com.allday.sleep2skin_be.global.exception.BusinessException;
 import com.allday.sleep2skin_be.global.exception.ErrorCode;
@@ -217,13 +221,18 @@ class ReportControllerTest {
         private static final String PATH = "/api/v1/report/weekly";
 
         @Test
-        @DisplayName("FULL이면 일별 점수와 요약을 반환한다")
+        @DisplayName("FULL이면 일별 점수·요약·상관 강도를 반환한다")
         void 일별_점수와_요약을_반환한다() throws Exception {
             given(weeklyReportService.getWeeklyReport(USER_ID, BASE_DATE)).willReturn(
                     WeeklyReportResponse.of(BASE_DATE.minusDays(6), BASE_DATE,
                             List.of(new DailyScore(BASE_DATE.minusDays(6), 62),
                                     new DailyScore(BASE_DATE.minusDays(5), null)),
-                            new WeeklyReportResponse.Summary(70)));
+                            new WeeklyReportResponse.Summary(70),
+                            List.of(new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
+                                            SkinMetric.DARK_CIRCLE, "다크서클",
+                                            CorrelationStrength.VERY_STRONG, 6, false),
+                                    new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
+                                            SkinMetric.COMPLEXION, "혈색", null, 2, true))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -236,7 +245,12 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.dailyScores[1].sleepScore").doesNotExist())
                     .andExpect(jsonPath("$.data.summary.avgSleepScore").value(70))
                     .andExpect(jsonPath("$.data.summary.hitRate").doesNotExist())
-                    .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist());
+                    .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
+                    .andExpect(jsonPath("$.data.correlations[0].sleepFeature").value("AWAKE_COUNT"))
+                    .andExpect(jsonPath("$.data.correlations[0].strength").value("VERY_STRONG"))
+                    .andExpect(jsonPath("$.data.correlations[0].insufficientSample").value(false))
+                    .andExpect(jsonPath("$.data.correlations[1].strength").doesNotExist())
+                    .andExpect(jsonPath("$.data.correlations[1].insufficientSample").value(true));
         }
 
         @Test
@@ -250,6 +264,7 @@ class ReportControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("INSUFFICIENT_DATA"))
                     .andExpect(jsonPath("$.data.dailyScores").isEmpty())
+                    .andExpect(jsonPath("$.data.correlations").isEmpty())
                     .andExpect(content().string(containsString("\"summary\":null")));
         }
 
@@ -283,13 +298,16 @@ class ReportControllerTest {
         private static final String PATH = "/api/v1/report/monthly";
 
         @Test
-        @DisplayName("FULL이면 주별 평균과 최고 주를 반환한다")
+        @DisplayName("FULL이면 주별 평균·최고 주·상관 강도를 반환한다")
         void 주별_평균과_최고_주를_반환한다() throws Exception {
             given(monthlyReportService.getMonthlyReport(USER_ID, BASE_DATE)).willReturn(
                     MonthlyReportResponse.of(BASE_DATE.minusDays(27), BASE_DATE,
                             List.of(new WeekScore("W1", 65, false), new WeekScore("W2", 58, false),
                                     new WeekScore("W3", 52, false), new WeekScore("W4", 70, true)),
-                            new MonthlyReportResponse.Summary(61)));
+                            new MonthlyReportResponse.Summary(61),
+                            List.of(new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
+                                    SkinMetric.DARK_CIRCLE, "다크서클",
+                                    CorrelationStrength.STRONG, 22, false))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -303,7 +321,9 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.weeks[0].isHighest").value(false))
                     .andExpect(jsonPath("$.data.summary.avgSleepScore").value(61))
                     .andExpect(jsonPath("$.data.summary.hitRate").doesNotExist())
-                    .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist());
+                    .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
+                    .andExpect(jsonPath("$.data.correlations[0].skinMetric").value("DARK_CIRCLE"))
+                    .andExpect(jsonPath("$.data.correlations[0].sampleSize").value(22));
         }
 
         @Test
@@ -317,6 +337,7 @@ class ReportControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("INSUFFICIENT_DATA"))
                     .andExpect(jsonPath("$.data.weeks").isEmpty())
+                    .andExpect(jsonPath("$.data.correlations").isEmpty())
                     .andExpect(content().string(containsString("\"summary\":null")));
         }
 
