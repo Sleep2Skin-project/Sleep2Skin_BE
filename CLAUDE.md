@@ -111,6 +111,16 @@ enum SkinMetric { DARK_CIRCLE, COMPLEXION, BARRIER }   // 다크서클 회복 ·
 
 **액션 마스터는 앱이 채우지 않는다.** `src/main/resources/db/seed/action_master.sql` 24행을 **사람이 한 번 실행한다** (workflow.md §8). 비어 있으면 TODO 탭이 빈 배열로 나가는데 **에러가 아니라 로그에도 안 남는다.** 실행할 때 `--default-character-set=utf8mb4`가 없으면 한국어가 `???`로 들어가고 INSERT는 성공한다.
 
+### ⚠️ DB에 `users` 외래키가 없다 — CASCADE가 걸리지 않는다
+
+자식 테이블이 `userId`를 **연관관계가 아니라 단순 `Long` 컬럼**으로 들고 있어(architecture.md §4) Hibernate가 FK 제약을 만들지 않았다. **erd.md가 오래 "모든 FK에 ON DELETE CASCADE를 건다"고 적고 있었지만 사실이 아니다** (2026-08-14 확인, erd.md §5에 정정).
+
+진짜 FK는 둘뿐이다 — `sleep_stage_segment → sleep_session`, `daily_todo → action_master`. **`users`를 가리키는 것은 하나도 없다.**
+
+- **MY-04 전체 삭제는 `UserService.delete`가 자식 7개를 손으로 지운다.** `users` 행만 지우면 고아 행이 남고, **조회에 잡히지 않아 알아채기 어렵다** — 같은 `userId`가 재사용되면 남의 이력이 새 사용자에게 붙는다
+- **`sleep_stage_segment`를 `sleep_session`보다 먼저 지운다.** 유일하게 진짜 FK가 있어 순서를 바꾸면 제약 위반이다
+- **`userId` 컬럼을 가진 테이블을 새로 만들면 그 삭제 목록에 한 줄을 추가한다.** 빠뜨려도 컴파일도 테스트도 통과한다
+
 ### 서버가 하지 않는 것
 
 HealthKit 직접 접근 · 배치 스케줄러 · 푸시 발송 · 인증/세션.
@@ -203,16 +213,17 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - **`GET /api/v1/skin/forecast`** (HOME-03) · **`POST /api/v1/skin/selfie`** (HOME-06→07→08)
 - **`GET /api/v1/skin/verification/summary`** (HOME-09) · **`GET /api/v1/skin/model`** (REP-12) — **`skin` 도메인 완료**
 - **`GET /api/v1/todo`** · **`PATCH /api/v1/todo/{id}`** (TODO-02~05) — **`todo` 도메인 완료.** 추천 엔진(`TodoScoringPolicy`) + 액션 마스터 시드 24행
+- **`GET /api/v1/users/me`**(ONB-01+MY-01) · **`GET /api/v1/users/me/data-status`**(MY-02) · **`DELETE /api/v1/users/me`**(MY-04) — **`user` 도메인 완료**
 - **개인 가중치 학습** — `SkinModelService`. 첫 검증에 7행을 `1.0`으로 만들고, 그날 참여한 피처만 보정한다
 - **OpenAI Vision 연동** — `global/infra/openai/`의 `SkinVisionClient`(인터페이스) + `OpenAiSkinVisionClient`(Responses API + Structured Outputs). **점수 방향은 2026-08-10 실호출로 확인됨**
 - `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`OpenAiConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)·`QueryStatus`
 - 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI/CD
 
-**미도입**: `report`의 Service·Controller, `user`의 조회·삭제 API 3개. **`sleep`·`skin`·`todo`는 api.md에 정의된 엔드포인트를 전부 만들었다** — 핵심 루프(수면 → 예보 → 처방 → 검증 → 학습)가 닫혔다.
+**미도입**: `report`의 Service·Controller **하나뿐이다.** `user`·`sleep`·`skin`·`todo`는 api.md에 정의된 엔드포인트를 전부 만들었다 — 핵심 루프(수면 → 예보 → 처방 → 검증 → 학습)가 닫혔고 엔드포인트는 12/19다.
 
 **`todo` 도메인도 테스트 4종을 갖췄다** (2026-08-14) — `TodoScoringPolicyTest`(DB 없이 도는 순수 로직) · `TodoServiceTest` · `TodoControllerTest` · `TodoApiDocsTest`. 모든 도메인이 같은 구성이다.
 
-**연속 검증 횟수는 `VerificationStreakCalculator` 한 곳에서만 계산한다.** HOME-09와 MY-01이 같은 숫자를 써야 하고(prd.md §4.2), 각자 계산하면 두 화면이 어긋난다. **MY-01을 만들 때 이 컴포넌트를 호출한다 — 계산을 다시 적지 말 것.**
+**연속 검증 횟수는 `VerificationStreakCalculator` 한 곳에서만 계산한다.** HOME-09와 MY-01이 같은 숫자를 써야 하고(prd.md §4.2), 각자 계산하면 두 화면이 어긋난다. **두 API가 실제로 이 컴포넌트를 호출하고 있다 — 세 번째가 생겨도 계산을 다시 적지 말 것.**
 
 **`OPENAI_API_KEY`가 없어도 앱은 뜬다.** 셀피 분석만 502로 실패하고 기동 시 WARN이 남는다 — 키 없는 팀원도 수면·예보 쪽을 개발할 수 있게 한 것이다. 운영에서 키가 빠지는 것은 CD 선검사가 경고한다.
 
@@ -220,7 +231,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 ### 굳어진 패턴 — 이후 API가 그대로 복제한다
 
-`user` 도메인의 두 API가 기준이다. 새 도메인을 시작하기 전에 그 코드를 먼저 본다.
+`user` 도메인이 기준이다(엔드포인트 5개 전부). 새 도메인을 시작하기 전에 그 코드를 먼저 본다.
 
 | 패턴 | 기준 구현 |
 |---|---|
@@ -251,7 +262,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 4. ~~셀피 분석·검증·학습 `POST /api/v1/skin/selfie` (HOME-06→07→08)~~ — 완료
 5. ~~TODO 추천 엔진·리스트 (TODO-02~05)~~ · ~~배너(HOME-09)·내 모델(REP-12)~~ — 완료
 6. **일간 리포트 (REP-02·04·05)** ← 여기부터. **블로커가 없다** — B6(수면 목표값)이 MVP에서 빠지면서 목표 달성 판정도 함께 빠졌다
-7. 그다음: 주간 리포트(REP-06/07) · 프로필(MY-01) · 데이터 연결 상태(MY-02) · `GET /api/v1/users/me`
+7. 그다음: 타임라인(REP-03) · 주간 리포트(REP-06/07) · 월간(REP-08) · 종합(REP-09~11)
 
 **P5(액션 마스터 데이터)는 해소됐다** — 24행이 시드 SQL로 들어왔다.
 
