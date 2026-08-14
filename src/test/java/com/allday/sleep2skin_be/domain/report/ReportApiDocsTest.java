@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -27,6 +28,8 @@ class ReportApiDocsTest {
 
     private static final String DAILY_GET = "$.paths.['/api/v1/report/daily'].get";
     private static final String TIMELINE_GET = "$.paths.['/api/v1/report/daily/timeline'].get";
+    private static final String WEEKLY_GET = "$.paths.['/api/v1/report/weekly'].get";
+    private static final String MONTHLY_GET = "$.paths.['/api/v1/report/monthly'].get";
 
     @Autowired
     private MockMvc mockMvc;
@@ -39,7 +42,7 @@ class ReportApiDocsTest {
                 .andExpect(jsonPath(DAILY_GET + ".summary").value(containsString("일간 리포트 조회")))
                 .andExpect(jsonPath(DAILY_GET + ".summary").value(containsString("REP-02")))
                 .andExpect(jsonPath("$.tags[?(@.name == 'Report')].description")
-                        .value(hasItem(containsString("일간 리포트"))));
+                        .value(hasItem(containsString("리포트 API"))));
     }
 
     /**
@@ -133,6 +136,137 @@ class ReportApiDocsTest {
                 .andExpect(jsonPath(TIMELINE_GET + ".description").value(containsString("NO_SLEEP_DATA")))
                 .andExpect(jsonPath(TIMELINE_GET + ".responses.['200'].description")
                         .value(containsString("수면 데이터가 없는 경우도")));
+    }
+
+    // ===== 주간 (REP-06) =====
+
+    @Test
+    @DisplayName("주간 리포트 문서가 반영되고 최상위 단일 status라는 것이 남아 있다")
+    void 주간_문서가_반영된다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".summary").value(containsString("주간 리포트")))
+                .andExpect(jsonPath(WEEKLY_GET + ".summary").value(containsString("REP-06")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("최상위 단일 `status`")))
+                .andExpect(jsonPath(WEEKLY_GET + ".responses.['200'].content.['application/json'].schema.['$ref']")
+                        .value("#/components/schemas/ApiResponseWeeklyReportResponse"));
+    }
+
+    /**
+     * {@code INSUFFICIENT_DATA}가 가입일 기준이지 "그 주에 기록이 있었는가"가 아니라는 구분이
+     * 빠지면, 프론트가 오래된 사용자의 안 잔 주를 신규 사용자 화면으로 잘못 보여줄 수 있다.
+     */
+    @Test
+    @DisplayName("INSUFFICIENT_DATA가 가입일 기준이라는 것이 문서에 있다")
+    void 주간_빈_상태_기준이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("가입일부터 baseDate까지의 일수 + 1")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("여전히 `FULL`이다")));
+    }
+
+    /** 화면에 없어 뺀 필드가 문서에도 남아 있지 않아야 한다 — 문서가 실제 응답보다 앞서가면 안 된다. */
+    @Test
+    @DisplayName("hitRate·verifiedDays는 주간 리포트 문서에서 사라졌다")
+    void 주간_문서에_적중률이_없다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".description").value(not(containsString("hitRate"))))
+                .andExpect(jsonPath(WEEKLY_GET + ".description").value(not(containsString("verifiedDays"))));
+    }
+
+    /**
+     * <b>예보값과 비교하면 순환 논증이 된다는 것이 이 섹션의 핵심 설계다.</b> 문서에서 사라지면
+     * 프론트든 리뷰어든 "왜 예보가 아니라 실측이랑 비교하나"를 알 방법이 없다.
+     */
+    @Test
+    @DisplayName("상관 강도가 예보가 아니라 실측값과 비교한다는 것이 문서에 있다")
+    void 주간_상관_강도_실측_기준이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("예보값이 아니라 실측값(셀피 검증)과 비교한다")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("순환 논증이 된다")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("0~100 부분점수가 아니다")));
+    }
+
+    /** 표본 하한과 정렬 규칙이 빠지면 5개 미만인데 강도를 매기거나, 정렬 순서를 오해할 수 있다. */
+    @Test
+    @DisplayName("표본 하한·정렬 규칙·임시값 경고가 문서에 있다")
+    void 주간_상관_강도_표본_정렬_규칙이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("표본이 5개 미만")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("항상 7개 전부 반환한다")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("정렬은 상관계수 절댓값 내림차순")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("임시값이다")))
+                .andExpect(jsonPath(WEEKLY_GET + ".description")
+                        .value(containsString("CorrelationPolicy")));
+    }
+
+    // ===== 월간 (REP-07) =====
+
+    @Test
+    @DisplayName("월간 리포트 문서가 반영되고 baseDate 기준 역산이라는 것이 남아 있다")
+    void 월간_문서가_반영된다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MONTHLY_GET + ".summary").value(containsString("월간 리포트")))
+                .andExpect(jsonPath(MONTHLY_GET + ".summary").value(containsString("REP-07")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("가입일 앵커가 아니다")))
+                .andExpect(jsonPath(MONTHLY_GET + ".responses.['200'].content.['application/json'].schema.['$ref']")
+                        .value("#/components/schemas/ApiResponseMonthlyReportResponse"));
+    }
+
+    /**
+     * "주 평균의 평균이 아니다"가 문서에서 사라지면, 프론트가 4주 숫자를 단순 평균해 서버 값과
+     * 다른 결과를 계산해 보여줄 수 있다.
+     */
+    @Test
+    @DisplayName("summary.avgSleepScore가 주 평균의 평균이 아니라는 것과 isHighest 동점 규칙이 문서에 있다")
+    void 월간_평균_계산_방식이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("주 평균의 평균이 아니다")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("동점이면 해당하는 주 전부 `true`")));
+    }
+
+    /** 화면에 없어 뺀 필드가 문서에도 남아 있지 않아야 한다 — 문서가 실제 응답보다 앞서가면 안 된다. */
+    @Test
+    @DisplayName("hitRate·verifiedDays는 월간 리포트 문서에서 사라졌다")
+    void 월간_문서에_적중률이_없다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MONTHLY_GET + ".description").value(not(containsString("hitRate"))))
+                .andExpect(jsonPath(MONTHLY_GET + ".description").value(not(containsString("verifiedDays"))));
+    }
+
+    /** 월간도 예보가 아니라 실측 기준이라는 것과 대상 기간이 28일이라는 것을 명시해야 한다. */
+    @Test
+    @DisplayName("월간도 상관 강도가 실측 기준이라는 것과 임시값 경고가 문서에 있다")
+    void 월간_상관_강도_규칙이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("예보값이 아니라 실측값(셀피 검증)과 비교")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("대상 기간만 최근 28일")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("항상 7개 전부 반환")))
+                .andExpect(jsonPath(MONTHLY_GET + ".description")
+                        .value(containsString("임시값")));
     }
 
 }

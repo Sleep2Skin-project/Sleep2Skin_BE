@@ -25,6 +25,13 @@ public interface SleepSessionRepository extends JpaRepository<SleepSession, Long
     Optional<SleepSession> findByUserIdAndSleepDate(Long userId, LocalDate sleepDate);
 
     /**
+     * 기간 안의 세션 전부 (주간·월간 리포트). <b>날짜 하나에 세션은 최대 하나뿐이다</b>
+     * ({@code uk_sleep_session_user_sleep_date}) — 그래서 기간만큼(7·28일) 단건 조회를 반복하는
+     * 대신 한 번에 가져와 호출부가 {@code sleepDate}로 매핑해 쓸 수 있다.
+     */
+    List<SleepSession> findByUserIdAndSleepDateBetween(Long userId, LocalDate from, LocalDate to);
+
+    /**
      * 기간 안의 잠든 시각들. 취침 규칙성({@code BEDTIME_REGULARITY} → {@code COMPLEXION})의 입력이다.
      *
      * <p>엔티티가 아니라 시각만 뽑는다 — 규칙성 계산에 다른 컬럼이 필요 없고, 세션 하나가

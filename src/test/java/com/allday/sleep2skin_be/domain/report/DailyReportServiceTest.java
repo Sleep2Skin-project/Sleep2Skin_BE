@@ -1,10 +1,8 @@
 package com.allday.sleep2skin_be.domain.report;
 
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyReportResponse;
-import com.allday.sleep2skin_be.domain.skin.SkinScoringEngine;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinForecast;
 import com.allday.sleep2skin_be.domain.skin.repository.SkinForecastRepository;
-import com.allday.sleep2skin_be.domain.sleep.BedtimeRegularityCalculator;
 import com.allday.sleep2skin_be.domain.sleep.entity.SleepSession;
 import com.allday.sleep2skin_be.domain.sleep.repository.SleepSessionRepository;
 import com.allday.sleep2skin_be.domain.user.repository.UserRepository;
@@ -28,7 +26,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,9 +33,10 @@ import static org.mockito.Mockito.verify;
 /**
  * 일간 리포트 (REP-02·04·05).
  *
- * <p><b>스코어링 엔진은 진짜를 쓴다.</b> {@code sleepScore}가 {@code SkinScoringEngine.featureScores}를
- * 그대로 재사용한다는 것이 이 서비스의 핵심 계약이라, 부분점수를 스텁으로 두면 그 계약을
- * 테스트가 직접 정하게 된다({@code SkinModelServiceTest}와 같은 이유).
+ * <p>{@code sleepScore} 계산 자체({@code s(f)} 평균)는 {@link DailySleepScoreCalculatorTest}가
+ * 진짜 {@code SkinScoringEngine}으로 검증한다. 여기서는 <b>오케스트레이션</b>만 본다 —
+ * {@code DailySleepScoreCalculator}를 스텁으로 두고 두 섹션의 독립적인 빈 상태 판정·전일 대비
+ * 계산·사용자 검증에 집중한다.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -46,6 +44,7 @@ class DailyReportServiceTest {
 
     private static final Long USER_ID = 1L;
     private static final LocalDate BASE_DATE = LocalDate.of(2026, 8, 14);
+    private static final Integer STUBBED_SLEEP_SCORE = 70;
 
     @Mock
     private UserRepository userRepository;
@@ -54,21 +53,22 @@ class DailyReportServiceTest {
     @Mock
     private SkinForecastRepository skinForecastRepository;
     @Mock
-    private BedtimeRegularityCalculator bedtimeRegularityCalculator;
+    private DailySleepScoreCalculator dailySleepScoreCalculator;
 
     private DailyReportService service() {
         return new DailyReportService(userRepository, sleepSessionRepository,
-                skinForecastRepository, bedtimeRegularityCalculator, new SkinScoringEngine());
+                skinForecastRepository, dailySleepScoreCalculator);
     }
 
     @Test
     @DisplayName("세션과 예보가 모두 있으면 두 섹션 다 AVAILABLE이고 전일 대비를 계산한다")
     void 둘_다_있으면_AVAILABLE이다() {
         userExists();
+        SleepSession session = session(new BigDecimal("42.00"), 55);
         given(sleepSessionRepository.findByUserIdAndSleepDate(USER_ID, BASE_DATE))
-                .willReturn(Optional.of(session(new BigDecimal("42.00"), 55)));
-        given(bedtimeRegularityCalculator.calculate(eq(USER_ID), eq(BASE_DATE), any()))
-                .willReturn(null); // 이력 3일 미만이어도 나머지 피처는 참여한다
+                .willReturn(Optional.of(session));
+        given(dailySleepScoreCalculator.calculate(USER_ID, BASE_DATE, session))
+                .willReturn(STUBBED_SLEEP_SCORE);
         given(skinForecastRepository.findByUserIdAndBaseDate(USER_ID, BASE_DATE))
                 .willReturn(Optional.of(forecast(BASE_DATE, 44, 63, 79)));
         given(skinForecastRepository.findByUserIdAndBaseDate(USER_ID, BASE_DATE.minusDays(1)))
@@ -84,7 +84,7 @@ class DailyReportServiceTest {
         assertThat(response.sleepSummary().summary().lightSleepMinutes()).isEqualTo(270); // coreSleepMinutes
         assertThat(response.sleepSummary().summary().awakeCount()).isEqualTo(2);
         assertThat(response.sleepSummary().summary().awakeMinutes()).isEqualTo(7);
-        assertThat(response.sleepSummary().summary().sleepScore()).isNotNull();
+        assertThat(response.sleepSummary().summary().sleepScore()).isEqualTo(STUBBED_SLEEP_SCORE);
 
         assertThat(response.skinForecast().status()).isEqualTo(QueryStatus.AVAILABLE);
         assertThat(response.skinForecast().darkCircle().today()).isEqualTo(44);
@@ -118,17 +118,18 @@ class DailyReportServiceTest {
         // 전날 예보 자체가 없어 diff는 null이다
         assertThat(response.skinForecast().darkCircle().diffFromYesterday()).isNull();
 
-        verify(bedtimeRegularityCalculator, never()).calculate(anyLong(), any(), any());
+        verify(dailySleepScoreCalculator, never()).calculate(anyLong(), any(), any());
     }
 
     @Test
     @DisplayName("예보가 없으면 skinForecast만 빈 상태다 — sleepSummary는 별도로 산다")
     void 예보가_없으면_예보_섹션만_빈_상태다() {
         userExists();
+        SleepSession session = session(new BigDecimal("42.00"), 55);
         given(sleepSessionRepository.findByUserIdAndSleepDate(USER_ID, BASE_DATE))
-                .willReturn(Optional.of(session(new BigDecimal("42.00"), 55)));
-        given(bedtimeRegularityCalculator.calculate(eq(USER_ID), eq(BASE_DATE), any()))
-                .willReturn(null);
+                .willReturn(Optional.of(session));
+        given(dailySleepScoreCalculator.calculate(USER_ID, BASE_DATE, session))
+                .willReturn(STUBBED_SLEEP_SCORE);
         given(skinForecastRepository.findByUserIdAndBaseDate(USER_ID, BASE_DATE))
                 .willReturn(Optional.empty());
 
