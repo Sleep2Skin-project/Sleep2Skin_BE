@@ -1,5 +1,9 @@
 package com.allday.sleep2skin_be.domain.todo;
 
+import com.allday.sleep2skin_be.domain.game.ExpService;
+import com.allday.sleep2skin_be.domain.game.LevelPolicy;
+import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
+import com.allday.sleep2skin_be.domain.game.repository.ExpGrantRepository;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinForecast;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
 import com.allday.sleep2skin_be.domain.skin.repository.SkinForecastRepository;
@@ -46,7 +50,10 @@ class TodoServiceTest {
 
     private static final Long USER_ID = 1L;
     private static final LocalDate BASE_DATE = LocalDate.of(2026, 8, 13);
-    private static final int EXP_PER_DONE = 10;
+
+    /** 확정값 (PRD §10.9). 리터럴로 적으면 정책이 바뀌어도 테스트가 옛 값을 지킨다. */
+    private static final int DONE_EXP = LevelPolicy.TODO_DONE_EXP;
+    private static final int ALL_DONE_EXP = LevelPolicy.TODO_ALL_DONE_EXP;
 
     @Mock
     private UserRepository userRepository;
@@ -58,13 +65,19 @@ class TodoServiceTest {
     private SkinForecastRepository skinForecastRepository;
     @Mock
     private SkinMeasurementRepository skinMeasurementRepository;
+    @Mock
+    private ExpGrantRepository expGrantRepository;
 
     private TodoService service;
 
     @BeforeEach
     void setUp() {
+        // ExpService는 실물을 쓴다 — 0 하한과 "0은 건너뛴다"가 여기 있어서, 모킹하면
+        // 이 테스트가 지키려는 무한 적립 차단이 실제로 검증되지 않는다.
+        // adjust()는 이력 행을 만들지 않으므로 expGrantRepository는 호출되지 않는다.
+        ExpService expService = new ExpService(userRepository, expGrantRepository);
         service = new TodoService(userRepository, dailyTodoRepository, actionMasterRepository,
-                skinForecastRepository, skinMeasurementRepository);
+                skinForecastRepository, skinMeasurementRepository, expService);
         given(userRepository.existsById(USER_ID)).willReturn(true);
         given(skinMeasurementRepository.findVerifiedDays(any(), any())).willReturn(List.of());
         given(dailyTodoRepository.saveAll(anyList())).willAnswer(call -> call.getArgument(0));
@@ -182,17 +195,19 @@ class TodoServiceTest {
     class 상태_변경 {
 
         @Test
-        @DisplayName("완료로 바뀌면 exp 10을 지급한다")
+        @DisplayName("완료로 바뀌면 확정값 +5를 지급한다")
         void 완료하면_적립된다() {
             User user = user(100);
             DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.PENDING);
+            dayAlsoHas(todo, todo(22L, ActionCategory.DO, TodoStatus.PENDING));   // 아직 남은 항목
 
             TodoStatusUpdateResponse response = service.updateStatus(USER_ID, 21L, TodoStatus.DONE);
 
             assertThat(response.status()).isEqualTo(TodoStatus.DONE);
-            assertThat(response.expGained()).isEqualTo(10);
-            assertThat(response.totalExp()).isEqualTo(110);
-            assertThat(user.getExp()).isEqualTo(110);
+            assertThat(response.exp().gained()).isEqualTo(DONE_EXP);
+            assertThat(response.exp().totalExp()).isEqualTo(105);
+            assertThat(response.allCompleted()).isFalse();
+            assertThat(user.getExp()).isEqualTo(105);
             assertThat(todo.getStatus()).isEqualTo(TodoStatus.DONE);
         }
 
@@ -204,22 +219,23 @@ class TodoServiceTest {
         @DisplayName("되돌리면 exp를 회수한다")
         void 되돌리면_회수한다() {
             User user = user(100);
-            savedTodo(21L, ActionCategory.DO, TodoStatus.DONE);
+            DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.DONE);
+            dayAlsoHas(todo, todo(22L, ActionCategory.DO, TodoStatus.PENDING));
 
             TodoStatusUpdateResponse response = service.updateStatus(USER_ID, 21L, TodoStatus.PENDING);
 
             assertThat(response.status()).isEqualTo(TodoStatus.PENDING);
-            assertThat(response.expGained()).isEqualTo(-10);
-            assertThat(response.totalExp()).isEqualTo(90);
-            assertThat(user.getExp()).isEqualTo(90);
+            assertThat(response.exp().gained()).isEqualTo(-DONE_EXP);
+            assertThat(user.getExp()).isEqualTo(95);
         }
 
         /** 이 테스트가 원래 버그를 붙들어 둔다 — 회수 전에는 반복할수록 계속 올라갔다. */
         @Test
-        @DisplayName("껐다 켜기를 반복해도 순증은 10을 넘지 않는다")
+        @DisplayName("껐다 켜기를 반복해도 순증은 +5를 넘지 않는다")
         void 반복_토글로_적립되지_않는다() {
             User user = user(100);
-            savedTodo(21L, ActionCategory.DO, TodoStatus.PENDING);
+            DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.PENDING);
+            dayAlsoHas(todo, todo(22L, ActionCategory.DO, TodoStatus.PENDING));
 
             for (int i = 0; i < 5; i++) {
                 service.updateStatus(USER_ID, 21L, TodoStatus.DONE);
@@ -227,18 +243,20 @@ class TodoServiceTest {
             }
             service.updateStatus(USER_ID, 21L, TodoStatus.DONE);
 
-            assertThat(user.getExp()).isEqualTo(110);
+            assertThat(user.getExp()).isEqualTo(100 + DONE_EXP);
         }
 
         @Test
         @DisplayName("같은 상태로 다시 요청하면 exp가 움직이지 않는다")
         void 같은_상태_재요청은_멱등이다() {
             User user = user(100);
-            savedTodo(21L, ActionCategory.DO, TodoStatus.DONE);
+            DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.DONE);
+            dayAlsoHas(todo, todo(22L, ActionCategory.DO, TodoStatus.PENDING));
 
             TodoStatusUpdateResponse response = service.updateStatus(USER_ID, 21L, TodoStatus.DONE);
 
-            assertThat(response.expGained()).isZero();
+            assertThat(response.exp().gained()).isZero();
+            assertThat(response.exp().reasons()).isEmpty();
             assertThat(user.getExp()).isEqualTo(100);
         }
 
@@ -247,13 +265,14 @@ class TodoServiceTest {
         @DisplayName("exp가 0일 때 되돌려도 음수가 되지 않는다")
         void 회수는_0에서_멈춘다() {
             User user = user(0);
-            savedTodo(21L, ActionCategory.DO, TodoStatus.DONE);
+            DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.DONE);
+            dayAlsoHas(todo, todo(22L, ActionCategory.DO, TodoStatus.PENDING));
 
             TodoStatusUpdateResponse response = service.updateStatus(USER_ID, 21L, TodoStatus.PENDING);
 
             assertThat(user.getExp()).isZero();
-            assertThat(response.totalExp()).isZero();
-            assertThat(response.expGained()).isZero();
+            assertThat(response.exp().totalExp()).isZero();
+            assertThat(response.exp().gained()).isZero();
         }
 
         /**
@@ -288,7 +307,115 @@ class TodoServiceTest {
         }
     }
 
+    /**
+     * 그날 {@code DO}를 전부 채웠을 때의 {@code +30} (prd.md §10.9).
+     *
+     * <p><b>회수({@code −30})가 빠지면 무한 적립이 된다</b> — 개별 완료와 정확히 같은 형태이며,
+     * 마지막 항목 하나를 껐다 켜는 것만으로 계속 붙는다.
+     */
+    @Nested
+    @DisplayName("전체 완료 보너스")
+    class 전체_완료_보너스 {
+
+        @Test
+        @DisplayName("마지막 DO를 완료하면 +5와 +30이 함께 붙는다")
+        void 마지막을_채우면_보너스가_붙는다() {
+            User user = user(100);
+            DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.PENDING);
+            dayAlsoHas(todo, todo(22L, ActionCategory.DO, TodoStatus.DONE));
+
+            TodoStatusUpdateResponse response = service.updateStatus(USER_ID, 21L, TodoStatus.DONE);
+
+            assertThat(response.allCompleted()).isTrue();
+            assertThat(response.exp().gained()).isEqualTo(DONE_EXP + ALL_DONE_EXP);
+            assertThat(response.exp().reasons())
+                    .extracting("reason")
+                    .containsExactly(ExpReason.TODO_DONE, ExpReason.TODO_ALL_DONE);
+            assertThat(user.getExp()).isEqualTo(135);
+        }
+
+        @Test
+        @DisplayName("전부 완료 상태에서 하나를 풀면 −5와 −30이 함께 회수된다")
+        void 하나를_풀면_보너스도_회수된다() {
+            User user = user(135);
+            DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.DONE);
+            dayAlsoHas(todo, todo(22L, ActionCategory.DO, TodoStatus.DONE));
+
+            TodoStatusUpdateResponse response = service.updateStatus(USER_ID, 21L, TodoStatus.PENDING);
+
+            assertThat(response.allCompleted()).isFalse();
+            assertThat(response.exp().gained()).isEqualTo(-(DONE_EXP + ALL_DONE_EXP));
+            assertThat(user.getExp()).isEqualTo(100);
+        }
+
+        /** 개별 완료와 같은 자리의 버그다 — 회수를 빼면 여기서 무한 적립이 되살아난다. */
+        @Test
+        @DisplayName("마지막 항목을 껐다 켜기를 반복해도 순증은 +35를 넘지 않는다")
+        void 보너스도_반복_토글로_적립되지_않는다() {
+            User user = user(100);
+            DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.PENDING);
+            dayAlsoHas(todo, todo(22L, ActionCategory.DO, TodoStatus.DONE));
+
+            for (int i = 0; i < 5; i++) {
+                service.updateStatus(USER_ID, 21L, TodoStatus.DONE);
+                service.updateStatus(USER_ID, 21L, TodoStatus.PENDING);
+            }
+            service.updateStatus(USER_ID, 21L, TodoStatus.DONE);
+
+            assertThat(user.getExp()).isEqualTo(100 + DONE_EXP + ALL_DONE_EXP);
+        }
+
+        /**
+         * <b>AVOID는 체크 대상이 아니라 판정에서 빠진다</b>(prd.md §10.9). 분모에 넣으면
+         * 사용자가 체크할 수 없는 항목 때문에 보너스를 영영 못 받는다.
+         */
+        @Test
+        @DisplayName("AVOID가 PENDING이어도 DO만 다 채우면 보너스가 붙는다")
+        void AVOID는_판정에서_빠진다() {
+            user(100);
+            DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.PENDING);
+            dayAlsoHas(todo, todo(22L, ActionCategory.AVOID, TodoStatus.PENDING));
+
+            TodoStatusUpdateResponse response = service.updateStatus(USER_ID, 21L, TodoStatus.DONE);
+
+            assertThat(response.allCompleted()).isTrue();
+            assertThat(response.exp().gained()).isEqualTo(DONE_EXP + ALL_DONE_EXP);
+        }
+
+        /**
+         * <b>전이가 아니라 현재 상태다.</b> 같은 요청을 다시 보내면 exp는 0이지만
+         * {@code allCompleted}는 참으로 남는다 — 전이는 {@code exp.reasons}가 말한다.
+         */
+        @Test
+        @DisplayName("전부 완료 상태로 재요청하면 gained는 0이고 allCompleted는 참이다")
+        void allCompleted는_상태다() {
+            user(135);
+            DailyTodo todo = savedTodo(21L, ActionCategory.DO, TodoStatus.DONE);
+            dayAlsoHas(todo, todo(22L, ActionCategory.DO, TodoStatus.DONE));
+
+            TodoStatusUpdateResponse response = service.updateStatus(USER_ID, 21L, TodoStatus.DONE);
+
+            assertThat(response.allCompleted()).isTrue();
+            assertThat(response.exp().gained()).isZero();
+            assertThat(response.exp().reasons()).isEmpty();
+        }
+    }
+
     // ===== 픽스처 =====
+
+    /** 그날 목록에 다른 항목이 함께 있는 상태로 만든다 (전체 완료 판정용). */
+    private void dayAlsoHas(DailyTodo target, DailyTodo... others) {
+        List<DailyTodo> all = new java.util.ArrayList<>();
+        all.add(target);
+        all.addAll(List.of(others));
+        given(dailyTodoRepository.findByUserIdAndBaseDate(USER_ID, BASE_DATE)).willReturn(all);
+    }
+
+    private static DailyTodo todo(Long id, ActionCategory category, TodoStatus status) {
+        DailyTodo todo = todo(id, action(id, category, SkinMetric.BARRIER, 50, 5));
+        todo.changeStatus(status);
+        return todo;
+    }
 
     private void todosOf(DailyTodo... todos) {
         given(dailyTodoRepository.findByUserIdAndBaseDate(USER_ID, BASE_DATE))

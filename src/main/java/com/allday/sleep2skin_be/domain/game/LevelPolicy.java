@@ -62,9 +62,10 @@ public final class LevelPolicy {
     /**
      * {@code DO} 항목 하나 완료 (되돌리면 {@code −5}).
      *
-     * <p>⚠️ <b>{@code TodoService.EXP_PER_DONE}이 아직 {@code 10}이다.</b> HOME-04 확정으로
-     * {@code +5}가 됐고(2026-08-14) 정의는 여기로 옮겨졌지만, {@code todo} 쪽 교체는 별도 작업이다.
-     * <b>둘이 어긋난 동안 실제로 지급되는 값은 {@code TodoService} 쪽이다.</b>
+     * <p>{@code TodoService}가 이 상수를 쓴다 — 한때 거기 {@code EXP_PER_DONE = 10}이 따로
+     * 있었고(HOME-04 확정 전의 값), <b>둘이 어긋난 동안 실제 지급은 {@code 10}이었다.</b>
+     * 값 범위가 정상이라 아무 제약에도 걸리지 않았고 erd.md §3.10의 검산식으로만 드러났다.
+     * <b>도메인 쪽에 적립량 상수를 다시 만들지 말 것.</b>
      */
     public static final int TODO_DONE_EXP = 5;
 
@@ -73,6 +74,9 @@ public final class LevelPolicy {
      *
      * <p><b>{@code DO}가 0개인 날은 달성이 아니다</b> — 아무것도 하지 않고 받는 경로가 생긴다.
      * {@code AVOID}는 체크 대상이 아니라 판정에서 제외된다.
+     *
+     * <p>⚠️ <b>회수({@code −30})가 빠지면 무한 적립이 된다.</b> 개별 완료와 정확히 같은 형태이며,
+     * 마지막 항목 하나를 껐다 켜는 것만으로 계속 붙는다.
      */
     public static final int TODO_ALL_DONE_EXP = 30;
 

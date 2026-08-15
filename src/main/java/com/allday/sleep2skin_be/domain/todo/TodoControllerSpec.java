@@ -101,20 +101,54 @@ public interface TodoControllerSpec {
                     "오늘은 피하세요" 카드는 완료 개념이 없다. 해당 id로 요청하면
                     **`400 ACTION_NOT_CHECKABLE`** 을 반환한다.
 
+                    ### 응답
+
+                    ```jsonc
+                    { "success": true,
+                      "data": {
+                        "id": 44,
+                        "status": "DONE",
+                        "allCompleted": true,
+                        "exp": {
+                          "gained": 35,
+                          "reasons": [
+                            { "reason": "TODO_DONE", "amount": 5 },
+                            { "reason": "TODO_ALL_DONE", "amount": 30 }
+                          ],
+                          "totalExp": 355, "level": 3, "levelUp": false, "nextLevelExp": 450
+                        }
+                      } }
+                    ```
+
+                    `exp`는 **적립이 일어나는 네 API가 공유하는 객체**다(출석·수면 업로드·셀피
+                    검증과 같은 모양). 앱이 파싱 코드와 레벨 업 연출을 한 번만 만들면 된다.
+
                     ### exp는 상태가 실제로 바뀔 때만 움직인다
 
-                    | 요청 | `expGained` |
-                    |---|---|
-                    | `PENDING` → `DONE` | `+10` |
-                    | `DONE` → `PENDING` (되돌리기) | `-10` |
-                    | 같은 상태로 재요청 | `0` |
+                    | 요청 | `exp.reasons` | `exp.gained` |
+                    |---|---|---|
+                    | `PENDING` → `DONE` | `TODO_DONE` | `+5` |
+                    | `PENDING` → `DONE` (마지막 하나) | `TODO_DONE` + `TODO_ALL_DONE` | `+35` |
+                    | `DONE` → `PENDING` (되돌리기) | `TODO_DONE` | `-5` |
+                    | `DONE` → `PENDING` (전부 완료였다면) | `TODO_DONE` + `TODO_ALL_DONE` | `-35` |
+                    | 같은 상태로 재요청 | `[]` | `0` |
 
                     **되돌리면 회수한다.** 회수하지 않으면 체크를 껐다 켜는 것만으로 exp가 계속
-                    붙는다 — 중복 호출만 막는 것으로는 닫히지 않는다.
+                    붙는다 — 중복 호출만 막는 것으로는 닫히지 않는다. **전체 완료 보너스도
+                    마찬가지다** — `+30`만 넣고 `−30`을 빼면 마지막 항목 하나를 껐다 켜는 것으로
+                    무한 적립이 된다.
 
-                    `expGained`는 요청한 양이 아니라 **실제 증감**이다. 누적 exp는 0 밑으로
-                    내려가지 않으므로, 0에서 되돌리면 `-10`보다 작은 값이 담긴다.
-                    `totalExp`는 조정 이후 사용자의 누적 exp다.
+                    `exp.gained`는 요청한 양이 아니라 **실제 증감**이다. 누적 exp는 0 밑으로
+                    내려가지 않으므로, 0 근처에서 되돌리면 요청한 양보다 작은 값이 담긴다.
+
+                    ### `allCompleted`는 전이가 아니라 현재 상태다
+
+                    "지금 그날 `DO`가 전부 `DONE`인가"이며, **"이번 요청으로 그렇게 됐는가"가
+                    아니다.** 전이는 `exp.reasons`에 `TODO_ALL_DONE`이 실렸는지로 이미 알 수 있어,
+                    여기까지 전이를 담으면 같은 사실을 두 곳이 말하게 된다. 상태로 두면 같은
+                    요청을 다시 보내도(`gained: 0`) 값이 참으로 남는다.
+
+                    **`AVOID`는 판정에서 빠진다** — 체크 대상이 아니다.
                     """
     )
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "변경 성공")

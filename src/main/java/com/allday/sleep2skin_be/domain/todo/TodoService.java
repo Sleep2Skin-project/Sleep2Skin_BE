@@ -1,5 +1,10 @@
 package com.allday.sleep2skin_be.domain.todo;
 
+import com.allday.sleep2skin_be.domain.game.ExpService;
+import com.allday.sleep2skin_be.domain.game.LevelPolicy;
+import com.allday.sleep2skin_be.domain.game.dto.ExpGrantCommand;
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
+import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
 import com.allday.sleep2skin_be.domain.skin.ScoringPolicy;
 import com.allday.sleep2skin_be.domain.skin.dto.VerifiedDay;
 import com.allday.sleep2skin_be.domain.skin.dto.VerificationVerdict;
@@ -15,7 +20,6 @@ import com.allday.sleep2skin_be.domain.todo.entity.DailyTodo;
 import com.allday.sleep2skin_be.domain.todo.entity.TodoStatus;
 import com.allday.sleep2skin_be.domain.todo.repository.ActionMasterRepository;
 import com.allday.sleep2skin_be.domain.todo.repository.DailyTodoRepository;
-import com.allday.sleep2skin_be.domain.user.entity.User;
 import com.allday.sleep2skin_be.domain.user.repository.UserRepository;
 import com.allday.sleep2skin_be.global.exception.BusinessException;
 import com.allday.sleep2skin_be.global.exception.ErrorCode;
@@ -48,13 +52,13 @@ public class TodoService {
 
     private static final int AVOID_LIMIT = 3;
     private static final int DO_LIMIT = 5;
-    private static final int EXP_PER_DONE = 10;
 
     private final UserRepository userRepository;
     private final DailyTodoRepository dailyTodoRepository;
     private final ActionMasterRepository actionMasterRepository;
     private final SkinForecastRepository skinForecastRepository;
     private final SkinMeasurementRepository skinMeasurementRepository;
+    private final ExpService expService;
 
     @Transactional
     public TodoListResponse getTodos(Long userId, LocalDate baseDate) {
@@ -121,11 +125,15 @@ public class TodoService {
      * TODO-05. AVOID 항목은 체크 대상이 아니므로 {@code 400 ACTION_NOT_CHECKABLE}로 막는다.
      *
      * <p><b>exp는 상태가 실제로 바뀔 때만 움직인다.</b> 완료로 바뀌면 지급하고 되돌리면 회수한다 —
-     * 같은 상태로 다시 요청하면 0이다(멱등).
+     * 같은 상태로 다시 요청하면 0이다(멱등). 적립량은 {@link LevelPolicy}에서 온다(prd.md §10.9).
      *
      * <p><b>회수가 없으면 무한 적립이 된다.</b> 판정이 "이번에 DONE이 됐는가"뿐이라
      * {@code DONE → PENDING → DONE}을 반복하는 것만으로 매번 exp가 붙는다. 중복 호출
-     * ({@code DONE → DONE})만 막는 것으로는 닫히지 않는다.
+     * ({@code DONE → DONE})만 막는 것으로는 닫히지 않는다. <b>전체 완료 보너스도 마찬가지다</b> —
+     * {@code +30}만 넣고 {@code −30}을 빼면 마지막 항목 하나를 껐다 켜는 것으로 무한 적립이 된다.
+     *
+     * <p><b>이력 행을 만들지 않는다.</b> {@link ExpService#adjust}를 쓰는 이유이며, 되돌릴 수 있는
+     * 적립이라 {@code daily_todo.status}가 이미 지급 여부를 말하고 있다(erd.md §3.10).
      */
     @Transactional
     public TodoStatusUpdateResponse updateStatus(Long userId, Long todoId, TodoStatus status) {
@@ -138,24 +146,40 @@ public class TodoService {
             throw new BusinessException(ErrorCode.ACTION_NOT_CHECKABLE);
         }
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND,
-                        "exp를 조정할 사용자가 없다 userId=" + userId));
-
-        boolean newlyDone = status == TodoStatus.DONE && todo.getStatus() != TodoStatus.DONE;
-        boolean undone = status == TodoStatus.PENDING && todo.getStatus() == TodoStatus.DONE;
+        boolean doneBefore = todo.getStatus() == TodoStatus.DONE;
+        boolean doneAfter = status == TodoStatus.DONE;
         todo.changeStatus(status);
 
-        // 실제 증감을 응답에 싣는다 — 회수가 0에서 막히면 요청한 양보다 적게 줄어든다
-        int before = user.getExp();
-        if (newlyDone) {
-            user.addExp(EXP_PER_DONE);
-        } else if (undone) {
-            user.subtractExp(EXP_PER_DONE);
-        }
-        int expGained = user.getExp() - before;
+        // 바뀐 것은 이 항목 하나뿐이라, 나머지 DO의 상태만 알면 변경 전후를 함께 판정할 수 있다.
+        // 이 항목은 AVOID가 아님이 위에서 확인됐으므로 그날 DO 목록은 비어 있을 수 없다 —
+        // "DO가 0개인 날은 달성이 아니다"(prd.md §10.9)에 걸릴 일이 없다.
+        boolean othersAllDone = dailyTodoRepository
+                .findByUserIdAndBaseDate(userId, todo.getBaseDate()).stream()
+                .filter(t -> t.getActionMaster().getCategory() == ActionCategory.DO)
+                .filter(t -> !t.getId().equals(todoId))
+                .allMatch(t -> t.getStatus() == TodoStatus.DONE);
 
-        return new TodoStatusUpdateResponse(todo.getId(), todo.getStatus(), expGained, user.getExp());
+        boolean allDoneBefore = othersAllDone && doneBefore;
+        boolean allDoneAfter = othersAllDone && doneAfter;
+
+        ExpResponse exp = expService.adjust(userId, List.of(
+                new ExpGrantCommand(ExpReason.TODO_DONE,
+                        delta(doneBefore, doneAfter, LevelPolicy.TODO_DONE_EXP)),
+                new ExpGrantCommand(ExpReason.TODO_ALL_DONE,
+                        delta(allDoneBefore, allDoneAfter, LevelPolicy.TODO_ALL_DONE_EXP))));
+
+        return TodoStatusUpdateResponse.of(todo, allDoneAfter, exp);
+    }
+
+    /**
+     * 상태 전이에 따른 증감. <b>바뀌지 않았으면 0</b>이라 같은 요청을 반복해도 exp가 움직이지
+     * 않는다({@code ExpService.adjust}가 0을 건너뛴다).
+     */
+    private int delta(boolean before, boolean after, int amount) {
+        if (before == after) {
+            return 0;
+        }
+        return after ? amount : -amount;
     }
 
     private Map<SkinMetric, Integer> scoresOf(SkinForecast forecast) {

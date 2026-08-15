@@ -33,7 +33,7 @@ public record FeatureCorrelation(
         @Schema(description = "매핑되는 피부 지표", example = "DARK_CIRCLE")
         SkinMetric skinMetric,
 
-        @Schema(description = "피부 지표 표시명", example = "다크서클")
+        @Schema(description = "피부 지표 표시명", example = "다크서클 회복")
         String metricLabel,
 
         @Schema(description = "상관 강도. 표본 부족이면 `null`", nullable = true, example = "VERY_STRONG")

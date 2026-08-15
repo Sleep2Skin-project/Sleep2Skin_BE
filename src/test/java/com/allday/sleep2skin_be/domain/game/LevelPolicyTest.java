@@ -142,8 +142,9 @@ class LevelPolicyTest {
      * <b>TODO 상수도 여기 있다.</b> 적립 트리거가 네 도메인에 흩어져 있어 어느 한 도메인의 정책
      * 클래스에 두면 나머지 셋이 그것을 참조하게 된다(§10.9).
      *
-     * <p>⚠️ <b>{@code TodoService.EXP_PER_DONE}은 아직 {@code 10}이다.</b> 문서가 먼저 갔고
-     * 구현이 따라가야 하는 자리이며, 그 교체는 별도 작업이다.
+     * <p>{@code TodoService}가 이 상수를 직접 쓴다(2026-08-15). 한때 거기 {@code 10}이 따로
+     * 있었고 <b>어긋난 동안 실제 지급은 {@code 10}이었다</b> — 이 단언만으로는 잡히지 않았다.
+     * 지급값을 지키는 것은 {@code TodoServiceTest} 쪽이다.
      */
     @Test
     @DisplayName("적립량 확정값이 §10.9와 같다")

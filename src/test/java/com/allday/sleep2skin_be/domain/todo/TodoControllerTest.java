@@ -1,5 +1,8 @@
 package com.allday.sleep2skin_be.domain.todo;
 
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse.ExpReasonResponse;
+import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
 import com.allday.sleep2skin_be.domain.todo.dto.response.TodoItemResponse;
 import com.allday.sleep2skin_be.domain.todo.dto.response.TodoListResponse;
 import com.allday.sleep2skin_be.domain.todo.dto.response.TodoStatusUpdateResponse;
@@ -109,34 +112,51 @@ class TodoControllerTest {
         verify(todoService, never()).getTodos(anyLong(), any());
     }
 
+    /**
+     * <b>exp는 적립이 일어나는 네 API가 공유하는 객체다</b>(api.md §1). 이 엔드포인트만 다른
+     * 모양이면 앱이 파싱 코드를 두 벌 갖게 된다.
+     */
     @Test
-    @DisplayName("완료 처리하면 지급된 exp가 함께 나온다")
+    @DisplayName("완료 처리하면 exp 객체가 함께 나온다")
     void 완료하면_exp가_나온다() throws Exception {
         given(todoService.updateStatus(USER_ID, 44L, TodoStatus.DONE))
-                .willReturn(new TodoStatusUpdateResponse(44L, TodoStatus.DONE, 10, 110));
+                .willReturn(new TodoStatusUpdateResponse(44L, TodoStatus.DONE, true,
+                        ExpResponse.of(320, 355, List.of(
+                                new ExpReasonResponse(ExpReason.TODO_DONE, 5),
+                                new ExpReasonResponse(ExpReason.TODO_ALL_DONE, 30)))));
 
         mockMvc.perform(patch(PATH + "/44").header(USER_ID_HEADER, USER_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"DONE\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("DONE"))
-                .andExpect(jsonPath("$.data.expGained").value(10))
-                .andExpect(jsonPath("$.data.totalExp").value(110));
+                .andExpect(jsonPath("$.data.allCompleted").value(true))
+                .andExpect(jsonPath("$.data.exp.gained").value(35))
+                .andExpect(jsonPath("$.data.exp.totalExp").value(355))
+                .andExpect(jsonPath("$.data.exp.reasons[0].reason").value("TODO_DONE"))
+                .andExpect(jsonPath("$.data.exp.reasons[1].reason").value("TODO_ALL_DONE"))
+                // 옛 필드가 남아 있으면 앱이 둘 다 읽는 코드를 유지하게 된다
+                .andExpect(jsonPath("$.data.expGained").doesNotExist())
+                .andExpect(jsonPath("$.data.totalExp").doesNotExist());
     }
 
     /** 되돌리기는 회수라 음수가 실린다 — 앱이 부호를 그대로 더하면 된다. */
     @Test
-    @DisplayName("되돌리면 expGained가 음수로 나간다")
+    @DisplayName("되돌리면 exp.gained가 음수로 나간다")
     void 되돌리면_음수가_나온다() throws Exception {
         given(todoService.updateStatus(USER_ID, 44L, TodoStatus.PENDING))
-                .willReturn(new TodoStatusUpdateResponse(44L, TodoStatus.PENDING, -10, 100));
+                .willReturn(new TodoStatusUpdateResponse(44L, TodoStatus.PENDING, false,
+                        ExpResponse.of(355, 320, List.of(
+                                new ExpReasonResponse(ExpReason.TODO_DONE, -5),
+                                new ExpReasonResponse(ExpReason.TODO_ALL_DONE, -30)))));
 
         mockMvc.perform(patch(PATH + "/44").header(USER_ID_HEADER, USER_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"PENDING\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.expGained").value(-10))
-                .andExpect(jsonPath("$.data.totalExp").value(100));
+                .andExpect(jsonPath("$.data.allCompleted").value(false))
+                .andExpect(jsonPath("$.data.exp.gained").value(-35))
+                .andExpect(jsonPath("$.data.exp.totalExp").value(320));
     }
 
     @Test

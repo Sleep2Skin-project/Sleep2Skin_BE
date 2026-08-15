@@ -123,18 +123,38 @@ class TodoApiDocsTest {
     /**
      * <b>되돌리기에서 음수가 나온다는 것을 앱이 모르면</b> 부호를 무시하고 더해 exp가 계속
      * 올라가는 화면이 된다. 서버가 고친 버그가 클라이언트에서 되살아난다.
+     *
+     * <p>전체 완료 보너스도 같은 자리다 — {@code +30}만 알고 {@code −30}을 모르면 마찬가지다.
      */
     @Test
-    @DisplayName("exp 회수와 음수 expGained가 문서에 있다")
+    @DisplayName("exp 회수와 음수 gained가 문서에 있다")
     void exp_회수가_문서에_있다() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(TODO_PATCH + ".description").value(containsString("되돌리면 회수한다")))
-                .andExpect(jsonPath(TODO_PATCH + ".description").value(containsString("`-10`")))
+                .andExpect(jsonPath(TODO_PATCH + ".description").value(containsString("`-5`")))
+                .andExpect(jsonPath(TODO_PATCH + ".description").value(containsString("`-35`")))
                 .andExpect(jsonPath(TODO_PATCH + ".description").value(containsString("실제 증감")))
                 // 회수 전의 설명이 남아 있으면 안 된다
                 .andExpect(jsonPath(TODO_PATCH + ".description")
-                        .value(not(containsString("되돌리는 요청은 `expGained`가 0"))));
+                        .value(not(containsString("되돌리는 요청은 `expGained`가 0"))))
+                // 확정값이 +5인데 문서에 옛 +10이 남아 있으면 앱이 그것을 믿는다
+                .andExpect(jsonPath(TODO_PATCH + ".description")
+                        .value(not(containsString("`+10`"))));
+    }
+
+    /**
+     * <b>{@code exp}는 네 API가 공유하는 객체다</b>(api.md §1). 이 엔드포인트만 옛
+     * {@code expGained}·{@code totalExp}로 남으면 앱이 파싱 코드를 두 벌 갖게 된다.
+     */
+    @Test
+    @DisplayName("exp 객체와 전체 완료 보너스가 문서에 있다")
+    void exp_객체와_보너스가_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(TODO_PATCH + ".description").value(containsString("TODO_ALL_DONE")))
+                .andExpect(jsonPath(TODO_PATCH + ".description").value(containsString("allCompleted")))
+                .andExpect(jsonPath(TODO_PATCH + ".description").value(containsString("현재 상태")));
     }
 
     @Test
