@@ -68,9 +68,25 @@ public class WeeklyReportService {
                 .toList();
 
         Integer avgSleepScore = average(dailyScores.stream().map(DailyScore::sleepScore).toList());
+        Integer avgDeepSleepMinutes = average(deepSleepMinutesOf(periodStart, baseDate, sessions));
 
-        return WeeklyReportResponse.of(periodStart, baseDate, dailyScores, new Summary(avgSleepScore),
+        return WeeklyReportResponse.of(periodStart, baseDate, dailyScores,
+                new Summary(avgSleepScore, avgDeepSleepMinutes),
                 correlationCalculator.calculate(userId, periodStart, baseDate, sessions));
+    }
+
+    /**
+     * 세션이 없는 날은 {@code null}이다 — {@code avgSleepScore}와 <b>같은 결측 처리</b>를 쓰기
+     * 위해 {@link #average}에 그대로 넘길 수 있는 모양으로 만든다.
+     */
+    private List<Integer> deepSleepMinutesOf(LocalDate periodStart, LocalDate baseDate,
+                                             Map<LocalDate, SleepSession> sessions) {
+        return periodStart.datesUntil(baseDate.plusDays(1))
+                .map(date -> {
+                    SleepSession session = sessions.get(date);
+                    return session == null ? null : session.getDeepSleepMinutes();
+                })
+                .toList();
     }
 
     private Map<LocalDate, SleepSession> sessionsByDate(Long userId, LocalDate from, LocalDate to) {

@@ -227,7 +227,7 @@ class ReportControllerTest {
                     WeeklyReportResponse.of(BASE_DATE.minusDays(6), BASE_DATE,
                             List.of(new DailyScore(BASE_DATE.minusDays(6), 62),
                                     new DailyScore(BASE_DATE.minusDays(5), null)),
-                            new WeeklyReportResponse.Summary(70),
+                            new WeeklyReportResponse.Summary(70, 126),
                             List.of(new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
                                             SkinMetric.DARK_CIRCLE, "다크서클",
                                             CorrelationStrength.VERY_STRONG, 6, false),
@@ -244,6 +244,7 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.dailyScores[0].sleepScore").value(62))
                     .andExpect(jsonPath("$.data.dailyScores[1].sleepScore").doesNotExist())
                     .andExpect(jsonPath("$.data.summary.avgSleepScore").value(70))
+                    .andExpect(jsonPath("$.data.summary.avgDeepSleepMinutes").value(126))
                     .andExpect(jsonPath("$.data.summary.hitRate").doesNotExist())
                     .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
                     .andExpect(jsonPath("$.data.correlations[0].sleepFeature").value("AWAKE_COUNT"))
@@ -302,9 +303,9 @@ class ReportControllerTest {
         void 주별_평균과_최고_주를_반환한다() throws Exception {
             given(monthlyReportService.getMonthlyReport(USER_ID, BASE_DATE)).willReturn(
                     MonthlyReportResponse.of(BASE_DATE.minusDays(27), BASE_DATE,
-                            List.of(new WeekScore("W1", 65, false), new WeekScore("W2", 58, false),
-                                    new WeekScore("W3", 52, false), new WeekScore("W4", 70, true)),
-                            new MonthlyReportResponse.Summary(61),
+                            List.of(new WeekScore("W1", 65, 110, false), new WeekScore("W2", 58, 105, false),
+                                    new WeekScore("W3", 52, 98, false), new WeekScore("W4", 70, 132, true)),
+                            new MonthlyReportResponse.Summary(61, 118),
                             List.of(new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
                                     SkinMetric.DARK_CIRCLE, "다크서클",
                                     CorrelationStrength.STRONG, 22, false))));
@@ -317,9 +318,11 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.weeks[0].weekLabel").value("W1"))
                     .andExpect(jsonPath("$.data.weeks[3].weekLabel").value("W4"))
                     .andExpect(jsonPath("$.data.weeks[3].avgSleepScore").value(70))
+                    .andExpect(jsonPath("$.data.weeks[3].avgDeepSleepMinutes").value(132))
                     .andExpect(jsonPath("$.data.weeks[3].isHighest").value(true))
                     .andExpect(jsonPath("$.data.weeks[0].isHighest").value(false))
                     .andExpect(jsonPath("$.data.summary.avgSleepScore").value(61))
+                    .andExpect(jsonPath("$.data.summary.avgDeepSleepMinutes").value(118))
                     .andExpect(jsonPath("$.data.summary.hitRate").doesNotExist())
                     .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
                     .andExpect(jsonPath("$.data.correlations[0].skinMetric").value("DARK_CIRCLE"))
