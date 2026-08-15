@@ -277,7 +277,7 @@ class CorrelationCalculatorTest {
 
         FeatureCorrelation awakeCount = byFeature(results, SleepFeature.AWAKE_COUNT);
         assertThat(awakeCount.featureLabel()).isEqualTo("야간 각성");
-        assertThat(awakeCount.metricLabel()).isEqualTo("다크서클");
+        assertThat(awakeCount.metricLabel()).isEqualTo("다크서클 회복");
         assertThat(awakeCount.skinMetric()).isEqualTo(SkinMetric.DARK_CIRCLE);
     }
 

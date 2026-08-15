@@ -155,10 +155,17 @@ public class CorrelationCalculator {
         };
     }
 
-    /** 예보·검증 API의 지표명과 같은 한국어 표기다({@code SkinControllerSpec} 응답 예시 참고). */
+    /**
+     * 예보·검증 API의 지표명과 같은 한국어 표기다({@code SkinControllerSpec} 응답 예시 참고).
+     *
+     * <p><b>{@code DARK_CIRCLE}은 "다크서클"이 아니라 "다크서클 회복"이다</b>(prd.md §1).
+     * 점수가 "심한 정도"가 아니라 <b>"회복된 정도"</b>라 높을수록 좋은데, "다크서클"이라고만
+     * 쓰면 높은 점수가 "다크서클이 심하다"로 읽힌다 — 값 범위는 정상이라 아무 제약에도 걸리지
+     * 않고 화면에서 뜻만 뒤집힌다.
+     */
     private String metricLabel(SkinMetric metric) {
         return switch (metric) {
-            case DARK_CIRCLE -> "다크서클";
+            case DARK_CIRCLE -> "다크서클 회복";
             case COMPLEXION -> "혈색";
             case BARRIER -> "장벽";
         };

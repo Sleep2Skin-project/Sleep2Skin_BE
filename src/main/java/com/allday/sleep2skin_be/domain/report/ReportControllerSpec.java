@@ -202,7 +202,7 @@ public interface ReportControllerSpec {
                 "summary": { "avgSleepScore": 70, "avgDeepSleepMinutes": 126 },
                 "correlations": [
                   { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-                    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클",
+                    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
                     "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
                   { "sleepFeature": "HRV", "featureLabel": "심박변이도",
                     "skinMetric": "COMPLEXION", "metricLabel": "혈색",
@@ -344,7 +344,7 @@ public interface ReportControllerSpec {
                 "summary": { "avgSleepScore": 61, "avgDeepSleepMinutes": 118 },
                 "correlations": [
                   { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-                    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클",
+                    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
                     "strength": "STRONG", "sampleSize": 22, "insufficientSample": false }
                 ]
               } }

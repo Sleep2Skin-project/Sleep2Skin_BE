@@ -110,7 +110,7 @@ enum SkinMetric { DARK_CIRCLE, COMPLEXION, BARRIER }   // 다크서클 회복 ·
 
 **exp 적립과 회수는 대칭이라야 한다** — `PENDING → DONE`에 `+5`, `DONE → PENDING`에 `−5`. 그날 `DO`를 전부 채우면 `+30`이 더 붙고 **하나라도 풀리면 `−30`으로 되돌아간다.** **회수를 빼면 껐다 켜는 것만으로 무한 적립이 된다.** 판정이 "이번에 `DONE`이 됐는가"뿐이라 중복 호출만 막히기 때문이다. `TodoServiceTest.반복_토글로_적립되지_않는다`가 이 자리를 붙들고 있다.
 
-⚠️ **값이 `+10`에서 `+5`로 바뀌었다** (2026-08-14, HOME-04 확정 — prd.md §10.9). **코드는 아직 `+10`이고 `+30` 보너스는 아예 없다** — 게이미피케이션이 들어왔는데도 `todo` 쪽만 따라가지 않았다. 「현재 상태」의 어긋난 곳 표 참조.
+**값은 `LevelPolicy.TODO_DONE_EXP`(`5`)·`TODO_ALL_DONE_EXP`(`30`)에서 온다** (prd.md §10.9). `todo` 쪽에 상수를 복사해 두지 말 것 — 한때 `TodoService.EXP_PER_DONE = 10`이 따로 있었고 **어긋난 동안 실제 지급은 `10`이었다.**
 
 **TODO 적립만 `exp_grant`에 기록하지 않는다.** 되돌릴 수 있는 적립이라 `daily_todo.status`가 이미 지급 여부를 말한다. 나머지 4종(출석·연속 검증·수면 점수 2종)은 상태로 환원되지 않아 이력 행의 유니크로 하루 1회를 막는다 (erd.md §3.10).
 
@@ -250,19 +250,23 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 **미도입**: **종합 리포트(`GET /report/overall`, REP-09~11) 하나뿐이다.** 핵심 루프(수면 → 예보 → 처방 → 검증 → 학습)는 닫혔고 리포트·게이미피케이션까지 얹혔다.
 
-### ⚠️ 코드가 확정 명세와 어긋난 곳 — 셋 다 조용히 틀린다
+### 코드와 확정 명세가 어긋났던 곳 — 2026-08-15에 정리됐다
 
-**기능이 끝났다고 여기까지 끝난 것이 아니다.** 값 범위가 정상이라 아무 제약에도 안 걸린다.
+**한동안 넷이 어긋나 있었고 전부 조용히 틀렸다.** 값 범위가 정상이라 아무 제약에도 안 걸렸다. **되살아나지 않게 지키는 자리를 함께 적어 둔다.**
 
-| 무엇 | 지금 | 확정값 |
-|---|---|---|
-| `TodoService.EXP_PER_DONE` | `10` | **`5`** (`LevelPolicy.TODO_DONE_EXP` · prd.md §10.9) |
-| 그날 `DO` 전부 완료 보너스 | **없다** | **`+30`/`−30`** (`LevelPolicy.TODO_ALL_DONE_EXP`가 정의만 되고 호출부가 없다) |
-| `PATCH /todo/{id}` 응답 | `expGained`·`totalExp` 두 필드 | **`exp` 객체** — 나머지 셋(`attendance`·`sleep/sessions`·`skin/selfie`)과 같은 모양 |
+| 무엇 | 어긋났던 값 | 지금 | 지키는 테스트 |
+|---|---|---|---|
+| `DO` 완료 exp | `10` | `LevelPolicy.TODO_DONE_EXP`(`5`)를 직접 쓴다 | `TodoServiceTest.완료하면_적립된다` |
+| 전부 완료 보너스 | 없었다 | `+30`/`−30` | `TodoServiceTest.전체_완료_보너스` |
+| `PATCH /todo/{id}` 응답 | `expGained`·`totalExp` | `exp` 객체 + `allCompleted` | `TodoControllerTest`(옛 필드 부재까지 단언) |
+| 상관 강도 지표명 | `"다크서클"` | `"다크서클 회복"` | `CorrelationCalculatorTest` |
 
-**앞의 둘은 erd.md §3.10의 검산식으로만 드러난다** — `SUM(exp_grant.amount) + (DO 완료 수 × 5) + (전체 완료일 수 × 30)`이 `users.exp`와 맞아야 하는데 지금은 맞지 않는다. **`TodoServiceTest`가 `10`을 못박고 있어 테스트도 함께 고쳐야 한다.**
+- **`TodoService`에 적립량 상수를 다시 만들지 말 것.** `LevelPolicy`가 유일한 출처다 — 도메인 쪽에 사본을 두면 정확히 같은 방식으로 다시 갈린다
+- **exp 회수 대칭은 보너스에도 그대로 적용된다.** `+30`을 넣으면 `−30`도 같이 넣는다 — 빼면 **마지막 항목 하나를 껐다 켜는 것만으로** 무한 적립이 된다
+- **`allCompleted`는 전이가 아니라 현재 상태다.** 전이는 `exp.reasons`의 `TODO_ALL_DONE`이 말한다 — 두 곳이 같은 사실을 말하면 어긋날 자리가 생긴다
+- **`"다크서클"`이라고만 쓰면 방향이 뒤집혀 읽힌다.** 점수는 "심한 정도"가 아니라 "회복된 정도"다
 
-**exp 회수 대칭은 보너스에도 그대로 적용된다** — `+30`을 넣으면 `−30`도 같이 넣는다. 빼면 껐다 켜는 것만으로 무한 적립이 된다.
+**검산식이 이제 성립한다** (erd.md §3.10) — `SUM(exp_grant.amount) + (DO 완료 수 × 5) + (전체 완료일 수 × 30) = users.exp`. **적립 지점을 새로 만들면 이 식이 여전히 맞는지 확인한다.**
 
 **모든 도메인이 같은 테스트 구성을 갖췄다** — 정책 클래스(DB 없이 도는 순수 로직) · Service · Controller(`@WebMvcTest`) · `*ApiDocsTest`. `todo`가 기준이고(`TodoScoringPolicyTest`·`TodoServiceTest`·`TodoControllerTest`·`TodoApiDocsTest`), `report`(`CorrelationPolicyTest`·`CorrelationCalculatorTest`·`DailySleepScoreCalculatorTest`·서비스 3종·`ReportControllerTest`·`ReportApiDocsTest`)와 `game`(`LevelPolicyTest`·`ExpServiceTest`·`AttendanceServiceTest`·`GameControllerTest`·`GameApiDocsTest`)도 같다. **새 도메인은 이 네 자리를 채운다.**
 
@@ -305,10 +309,10 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 4. ~~셀피 분석·검증·학습 `POST /api/v1/skin/selfie` (HOME-06→07→08)~~ — 완료
 5. ~~TODO 추천 엔진·리스트 (TODO-02~05)~~ · ~~배너(HOME-09)·내 모델(REP-12)~~ — 완료
 6. ~~일간 리포트·타임라인 (REP-02~05)~~ — 완료
-7. ~~게이미피케이션 (HOME-04)~~ — 완료. **단 `todo` 쪽 적립값 교체가 남았다** (위 표)
+7. ~~게이미피케이션 (HOME-04)~~ — 완료. `todo` 쪽 적립값 교체까지 끝났다 (2026-08-15)
 8. ~~주간(REP-06/07) · 월간(REP-08)~~ — 완료. **종합(REP-09~11)은 보류** — 정책 미정(prd.md §7 L6·L9)
 
-**남은 작업은 신규 기능이 아니라 정리다** — ① TODO 적립값 3건 ② 종합 리포트 정책 결정 ③ 임시값 확정(상관 강도) ④ 약관 원문(P4) ⑤ dev → main 배포.
+**코드로 할 일은 남지 않았다.** 남은 셋은 전부 사람이 정하거나 실행하는 것이다 — ① 종합 리포트 정책 결정(prd.md §7 L6·L9) ② 임시값 확정(상관 강도, §9.2 L7) ③ 약관 원문(P4). 그 밖에 **dev → main 배포**가 밀려 있다.
 
 **P5(액션 마스터 데이터)는 해소됐다** — 24행이 시드 SQL로 들어왔다.
 

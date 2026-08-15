@@ -51,7 +51,7 @@ X-User-Id: 1                       ← 모든 API 필수
 
 게이미피케이션(HOME-04) 확정으로 **exp가 붙는 자리가 4곳**이 됐다([prd.md](prd.md) §10.9). 넷이 같은 객체를 쓴다 — **앱이 파싱 코드와 레벨 업 연출을 한 번만 만들면 된다.**
 
-> ⚠️ **아직 셋만 이 모양이다** (2026-08-15). `POST /users/me/attendance` · `POST /sleep/sessions` · `POST /skin/selfie`가 `exp` 객체를 내보내고, **`PATCH /todo/{id}`만 옛 `expGained`·`totalExp` 두 필드 그대로다** (§2.4 · §4). 교체 전까지 앱은 그 하나를 따로 다뤄야 한다.
+> **넷이 전부 이 모양이 됐다** (2026-08-15). `PATCH /todo/{id}`가 마지막까지 옛 `expGained`·`totalExp` 두 필드를 쓰고 있었고, 그 둘은 각각 `exp.gained`·`exp.totalExp`로 들어갔다. **`TodoControllerTest`가 옛 필드가 없다는 것까지 단언한다** — 되살아나면 앱이 두 벌을 읽는 코드를 유지하게 된다.
 
 ```jsonc
 "exp": {
@@ -603,7 +603,15 @@ X-User-Id: 1
 
 **exp는 상태가 실제로 바뀔 때만 움직인다.** 값은 2026-08-14에 바뀌었다 — HOME-04이 확정되며 `+10`에서 `+5`가 됐고 **전체 완료 보너스가 생겼다**([prd.md](prd.md) §10.9).
 
-> ⚠️ **위 응답은 확정 규격이고 현재 구현은 아직 다르다** (2026-08-15). 지금 서버가 내보내는 것은 `{ id, status, expGained, totalExp }`이며 **`allCompleted`도 `exp` 객체도 없다.** 적립값도 `+5`가 아니라 `+10`이고 전체 완료 보너스는 지급되지 않는다. **앱은 교체 전까지 이 엔드포인트만 다르게 파싱해야 한다** — 진행 상황은 §4 「남은 정리 작업」.
+**`allCompleted`는 전이가 아니라 현재 상태다** — "지금 그날 `DO`가 전부 `DONE`인가"이고 "이번 요청으로 그렇게 됐는가"가 아니다. 전이는 `exp.reasons`에 `TODO_ALL_DONE`이 실렸는지로 알 수 있어, **여기까지 전이를 담으면 같은 사실을 두 곳이 말하게 된다.** 상태로 두면 같은 요청을 다시 보내도(`gained: 0`) 값이 참으로 남는다. **`AVOID`는 판정에서 빠진다.**
+
+| 요청 | `exp.reasons` | `exp.gained` |
+|---|---|---|
+| `PENDING` → `DONE` | `TODO_DONE` | `+5` |
+| `PENDING` → `DONE` (마지막 하나) | `TODO_DONE` + `TODO_ALL_DONE` | `+35` |
+| `DONE` → `PENDING` | `TODO_DONE` | `−5` |
+| `DONE` → `PENDING` (전부 완료였다면) | `TODO_DONE` + `TODO_ALL_DONE` | `−35` |
+| 같은 상태로 재요청 | `[]` | `0` |
 
 | 요청 | `reasons` | `exp.gained` |
 |---|---|---|
@@ -996,23 +1004,23 @@ Content-Type: application/json
 
 **남은 것은 종합 리포트(`GET /report/overall`) 하나다** — 도메인 API 20개 중 19개가 끝났고, 그 하나는 기능이 아니라 **정책이 미정이라 보류**다(§2.5 5번 · [prd.md](prd.md) §7 L6).
 
-> ⚠️ **exp 적립은 네 API에 흩어져 붙어 있다** — `POST /users/me/attendance` · `POST /sleep/sessions` · `POST /skin/selfie` · `PATCH /todo/{id}`. **앞의 셋은 `exp` 객체를 응답에 실었지만 `PATCH /todo/{id}`만 아직 옛 `expGained`·`totalExp` 두 필드 그대로다** — 대체가 남아 있다(§2.4).
+> **exp 적립은 네 API에 흩어져 붙어 있다** — `POST /users/me/attendance` · `POST /sleep/sessions` · `POST /skin/selfie` · `PATCH /todo/{id}`. **넷이 같은 `exp` 객체를 쓴다**(§1). 다섯 번째 적립 지점을 만든다면 그 모양을 따르고, **적립량은 `LevelPolicy`에서 가져온다** — 도메인 쪽에 상수를 복사하면 조용히 갈린다.
 
-### 남은 정리 작업 (2026-08-15 기준)
+### 명세와 코드가 어긋났던 곳 — 2026-08-15에 정리됐다
 
-기능은 끝났고 **명세와 코드가 어긋난 자리**가 남았다.
+기능이 끝난 뒤에도 **넷이 어긋난 채로 남아 있었다.** 전부 값 범위가 정상이라 제약에도 테스트에도 걸리지 않았다.
 
-| # | 무엇 | 어디 |
+| # | 어긋났던 것 | 지금 |
 |---|---|---|
-| 1 | **TODO 완료 exp가 `+10`이다 — 확정값은 `+5`** | `TodoService.EXP_PER_DONE` (확정값은 `LevelPolicy.TODO_DONE_EXP`) |
-| 2 | **그날 `DO` 전부 완료 `+30`/`−30` 보너스가 없다** | `LevelPolicy.TODO_ALL_DONE_EXP`가 정의만 되고 호출부가 없다 |
-| 3 | **`PATCH /todo/{id}` 응답만 `exp` 객체가 아니다** | §2.4 — 나머지 셋과 모양이 다르다 |
-| 4 | **`correlations[].metricLabel`이 `"다크서클"`이다** — 확정 표시명은 **`"다크서클 회복"`** | `CorrelationCalculator.metricLabel` |
-| 5 | **종합 리포트 정책 확정** | [prd.md](prd.md) §7 L6 |
+| 1 | TODO 완료 exp가 `+10` (확정값은 `+5`) | `LevelPolicy.TODO_DONE_EXP`를 직접 쓴다 |
+| 2 | 그날 `DO` 전부 완료 보너스가 없었다 | `+30`/`−30` 지급·회수 |
+| 3 | `PATCH /todo/{id}`만 `exp` 객체가 아니었다 | `exp` + `allCompleted` (§2.4) |
+| 4 | `correlations[].metricLabel`이 `"다크서클"` | `"다크서클 회복"` (§2.5) |
 
-1·2는 [prd.md](prd.md) §10.9 확정값과 코드가 어긋난 것이고, **[erd.md](erd.md) §3.10의 검산식(`SUM(exp_grant.amount) + DO 완료 수 × 5 + 전체 완료일 수 × 30`)이 지금 성립하지 않는다.**
+- **1·2는 [erd.md](erd.md) §3.10의 검산식으로만 드러났다** — `SUM(exp_grant.amount) + (DO 완료 수 × 5) + (전체 완료일 수 × 30) = users.exp`. **이제 성립한다**
+- **4는 방향이 뒤집혀 읽히는 문제였다.** `DARK_CIRCLE`은 "심한 정도"가 아니라 **"회복된 정도"**(높을수록 좋음)라서([prd.md](prd.md) §1), "다크서클"이라고만 쓰면 높은 점수가 "다크서클이 심하다"로 읽힌다
 
-4는 사소해 보이지만 **방향이 뒤집혀 읽힌다.** `DARK_CIRCLE`은 "심한 정도"가 아니라 **"회복된 정도"**(높을수록 좋음)라서([prd.md](prd.md) §1), 그냥 "다크서클"이라고 쓰면 높은 점수가 "다크서클이 심하다"로 읽힌다. 나머지 코드는 전부 "다크서클 회복"으로 통일돼 있다.
+**남은 것은 종합 리포트 정책 결정 하나다**(§2.5 5번 · [prd.md](prd.md) §7 L6·L9). 코드로 할 일은 없다.
 
 ---
 

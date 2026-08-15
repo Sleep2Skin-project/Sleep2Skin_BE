@@ -256,7 +256,7 @@ class MonthlyReportServiceTest {
         joinedLongAgo();
         noSessions();
         FeatureCorrelation correlation = new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
-                SkinMetric.DARK_CIRCLE, "다크서클", CorrelationStrength.STRONG, 22, false);
+                SkinMetric.DARK_CIRCLE, "다크서클 회복", CorrelationStrength.STRONG, 22, false);
         given(correlationCalculator.calculate(eq(USER_ID), eq(PERIOD_START), eq(BASE_DATE), any()))
                 .willReturn(List.of(correlation));
 

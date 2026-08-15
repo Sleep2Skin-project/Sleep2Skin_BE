@@ -229,7 +229,7 @@ class ReportControllerTest {
                                     new DailyScore(BASE_DATE.minusDays(5), null)),
                             new WeeklyReportResponse.Summary(70, 126),
                             List.of(new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
-                                            SkinMetric.DARK_CIRCLE, "다크서클",
+                                            SkinMetric.DARK_CIRCLE, "다크서클 회복",
                                             CorrelationStrength.VERY_STRONG, 6, false),
                                     new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
                                             SkinMetric.COMPLEXION, "혈색", null, 2, true))));
@@ -307,7 +307,7 @@ class ReportControllerTest {
                                     new WeekScore("W3", 52, 98, false), new WeekScore("W4", 70, 132, true)),
                             new MonthlyReportResponse.Summary(61, 118),
                             List.of(new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
-                                    SkinMetric.DARK_CIRCLE, "다크서클",
+                                    SkinMetric.DARK_CIRCLE, "다크서클 회복",
                                     CorrelationStrength.STRONG, 22, false))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
