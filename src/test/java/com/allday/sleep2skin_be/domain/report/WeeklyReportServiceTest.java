@@ -157,6 +157,36 @@ class WeeklyReportServiceTest {
     }
 
     /**
+     * <b>avgSleepScore와 별개로 계산되지만 같은 결측 처리를 쓴다.</b> 세션이 있는 날짜의
+     * {@code deepSleepMinutes}만 평균낸다 — 세션이 없는 5일은 분모에서 빠진다.
+     */
+    @Test
+    @DisplayName("avgDeepSleepMinutes는 세션이 있는 날짜만의 평균이다")
+    void 깊은수면_평균은_세션이_있는_날짜만_쓴다() {
+        joinedLongAgo();
+        LocalDate day1 = PERIOD_START;
+        LocalDate day2 = PERIOD_START.plusDays(1);
+        given(sleepSessionRepository.findByUserIdAndSleepDateBetween(USER_ID, PERIOD_START, BASE_DATE))
+                .willReturn(List.of(session(day1, 100), session(day2, 150)));
+
+        WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
+
+        // (100+150)/2 = 125 — 나머지 5일은 세션이 없어 분모에서 빠진다
+        assertThat(response.summary().avgDeepSleepMinutes()).isEqualTo(125);
+    }
+
+    @Test
+    @DisplayName("전부 결측이면 avgDeepSleepMinutes도 null이다")
+    void 깊은수면_전부_결측이면_평균도_null이다() {
+        joinedLongAgo();
+        noSessions();
+
+        WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
+
+        assertThat(response.summary().avgDeepSleepMinutes()).isNull();
+    }
+
+    /**
      * <b>계산 자체가 아니라 배선(wiring)을 확인한다.</b> 상관계수 계산 로직은
      * {@code CorrelationCalculatorTest}가 검증하고, 여기서는 서비스가 그 결과를 가공하지
      * 않고 그대로 응답에 싣는지만 본다 — 기간(periodStart~baseDate)과 세션 맵을 계산기에
@@ -206,11 +236,15 @@ class WeeklyReportServiceTest {
     }
 
     private static SleepSession session(LocalDate sleepDate) {
+        return session(sleepDate, 126);
+    }
+
+    private static SleepSession session(LocalDate sleepDate, int deepSleepMinutes) {
         return SleepSession.builder()
                 .userId(USER_ID).sleepDate(sleepDate)
                 .sleepOnsetTime(sleepDate.atTime(23, 40).atOffset(ZoneOffset.UTC))
                 .wakeTime(sleepDate.plusDays(1).atTime(7, 10).atOffset(ZoneOffset.UTC))
-                .totalSleepMinutes(432).deepSleepMinutes(126)
+                .totalSleepMinutes(432).deepSleepMinutes(deepSleepMinutes)
                 .remSleepMinutes(36).coreSleepMinutes(270)
                 .awakeCount(2).awakeMinutes(7)
                 .hrv(new BigDecimal("42.00")).restingHeartRate(55)

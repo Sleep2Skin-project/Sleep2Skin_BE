@@ -62,15 +62,23 @@ public record WeeklyReportResponse(
     }
 
     /**
-     * @param avgSleepScore 기간 내 {@code sleepScore}가 있는 날짜만의 평균, 반올림. 전부
-     *                      결측이면 {@code null}
+     * @param avgSleepScore       기간 내 {@code sleepScore}가 있는 날짜만의 평균, 반올림. 전부
+     *                            결측이면 {@code null}
+     * @param avgDeepSleepMinutes 기간 내 세션이 있는 날짜만의 {@code deepSleepMinutes} 평균,
+     *                            반올림 — {@code avgSleepScore}와 <b>같은 결측 처리</b>다.
+     *                            세션이 없는 날은 분모에서 빠지고, 기간 전체에 세션이 없으면
+     *                            {@code null}
      */
     @Schema(description = "기간 요약")
     public record Summary(
 
             @Schema(description = "기간 평균 수면 점수. 전부 결측이면 `null`", nullable = true,
                     example = "70")
-            Integer avgSleepScore
+            Integer avgSleepScore,
+
+            @Schema(description = "기간 평균 깊은 수면(분). 세션이 없는 날은 제외하고 평균낸다. "
+                    + "전부 결측이면 `null`", nullable = true, example = "126")
+            Integer avgDeepSleepMinutes
     ) {
     }
 

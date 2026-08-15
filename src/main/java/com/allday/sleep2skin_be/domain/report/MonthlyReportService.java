@@ -67,23 +67,46 @@ public class MonthlyReportService {
         List<Integer> dailyScores = periodStart.datesUntil(baseDate.plusDays(1))
                 .map(date -> dailySleepScoreCalculator.calculate(userId, date, sessions.get(date)))
                 .toList();
+        List<Integer> dailyDeepSleepMinutes = deepSleepMinutesOf(periodStart, baseDate, sessions);
 
-        List<WeekScore> weeks = weeklyScores(dailyScores);
+        List<WeekScore> weeks = weeklyScores(dailyScores, dailyDeepSleepMinutes);
         Integer avgSleepScore = average(dailyScores);
+        Integer avgDeepSleepMinutes = average(dailyDeepSleepMinutes);
 
-        return MonthlyReportResponse.of(periodStart, baseDate, weeks, new Summary(avgSleepScore),
+        return MonthlyReportResponse.of(periodStart, baseDate, weeks,
+                new Summary(avgSleepScore, avgDeepSleepMinutes),
                 correlationCalculator.calculate(userId, periodStart, baseDate, sessions));
+    }
+
+    /**
+     * 세션이 없는 날은 {@code null}이다 — {@code avgSleepScore}와 <b>같은 결측 처리</b>를 쓰기
+     * 위해 {@link #average}에 그대로 넘길 수 있는 모양으로 만든다.
+     */
+    private List<Integer> deepSleepMinutesOf(LocalDate periodStart, LocalDate baseDate,
+                                             Map<LocalDate, SleepSession> sessions) {
+        return periodStart.datesUntil(baseDate.plusDays(1))
+                .map(date -> {
+                    SleepSession session = sessions.get(date);
+                    return session == null ? null : session.getDeepSleepMinutes();
+                })
+                .toList();
     }
 
     /**
      * W1(가장 과거)~W4({@code baseDate}를 포함한 최근 7일) 순으로 28일을 4등분한다.
      * {@code isHighest}는 4주를 한 번에 보고 정한다 — 최고 평균이 여러 주에서 동점이면 전부
      * {@code true}이고, 모든 주가 {@code null}이면 비교할 값 자체가 없어 전부 {@code false}다.
+     *
+     * <p>{@code isHighest}는 <b>{@code avgSleepScore} 기준으로만</b> 정한다 —
+     * {@code avgDeepSleepMinutes}는 나란히 보여주는 값일 뿐 최고 주 판정에 관여하지 않는다.
      */
-    private List<WeekScore> weeklyScores(List<Integer> dailyScores) {
+    private List<WeekScore> weeklyScores(List<Integer> dailyScores, List<Integer> dailyDeepSleepMinutes) {
         List<Integer> weekAverages = new ArrayList<>();
+        List<Integer> weekDeepSleepAverages = new ArrayList<>();
         for (int week = 0; week < WEEK_COUNT; week++) {
             weekAverages.add(average(dailyScores.subList(week * WEEK_DAYS, (week + 1) * WEEK_DAYS)));
+            weekDeepSleepAverages.add(average(
+                    dailyDeepSleepMinutes.subList(week * WEEK_DAYS, (week + 1) * WEEK_DAYS)));
         }
 
         Integer highest = weekAverages.stream().filter(Objects::nonNull).max(Integer::compareTo)
@@ -93,7 +116,7 @@ public class MonthlyReportService {
         for (int week = 0; week < WEEK_COUNT; week++) {
             Integer avg = weekAverages.get(week);
             boolean isHighest = highest != null && highest.equals(avg);
-            weeks.add(new WeekScore("W" + (week + 1), avg, isHighest));
+            weeks.add(new WeekScore("W" + (week + 1), avg, weekDeepSleepAverages.get(week), isHighest));
         }
         return weeks;
     }

@@ -199,7 +199,7 @@ public interface ReportControllerSpec {
                   { "date": "2026-08-08", "sleepScore": 62 },
                   { "date": "2026-08-09", "sleepScore": null }
                 ],
-                "summary": { "avgSleepScore": 70 },
+                "summary": { "avgSleepScore": 70, "avgDeepSleepMinutes": 126 },
                 "correlations": [
                   { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
                     "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클",
@@ -248,10 +248,14 @@ public interface ReportControllerSpec {
             **같은 계산**이다(§10.8 — 그날 참여한 수면 피처 부분점수의 단순 평균, 예보 점수와
             다른 계산).
 
-            ### `summary.avgSleepScore`
+            ### `summary.avgSleepScore` · `summary.avgDeepSleepMinutes`
 
             `dailyScores` 중 `sleepScore`가 있는 날짜만의 평균, 반올림. 전부 `null`이면
             `avgSleepScore`도 `null`이다.
+
+            `avgDeepSleepMinutes`는 <b>같은 결측 처리를 쓰는 별도 평균</b>이다 — 세션이 있는
+            날짜의 `deepSleepMinutes`만 평균내고, 세션이 없는 날은 분모에서 빠진다. 기간 전체에
+            세션이 하나도 없으면 `null`이다.
 
             ### `correlations` — 수면 피처 7종과 피부 지표의 상관 강도
 
@@ -332,12 +336,12 @@ public interface ReportControllerSpec {
                 "periodStart": "2026-07-18",
                 "periodEnd": "2026-08-14",
                 "weeks": [
-                  { "weekLabel": "W1", "avgSleepScore": 65, "isHighest": false },
-                  { "weekLabel": "W2", "avgSleepScore": 58, "isHighest": false },
-                  { "weekLabel": "W3", "avgSleepScore": 52, "isHighest": false },
-                  { "weekLabel": "W4", "avgSleepScore": 70, "isHighest": true }
+                  { "weekLabel": "W1", "avgSleepScore": 65, "avgDeepSleepMinutes": 110, "isHighest": false },
+                  { "weekLabel": "W2", "avgSleepScore": 58, "avgDeepSleepMinutes": 105, "isHighest": false },
+                  { "weekLabel": "W3", "avgSleepScore": 52, "avgDeepSleepMinutes": 98, "isHighest": false },
+                  { "weekLabel": "W4", "avgSleepScore": 70, "avgDeepSleepMinutes": 132, "isHighest": true }
                 ],
-                "summary": { "avgSleepScore": 61 },
+                "summary": { "avgSleepScore": 61, "avgDeepSleepMinutes": 118 },
                 "correlations": [
                   { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
                     "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클",
@@ -377,22 +381,26 @@ public interface ReportControllerSpec {
               } }
             ```
 
-            ### 각 주의 `avgSleepScore`
+            ### 각 주의 `avgSleepScore` · `avgDeepSleepMinutes`
 
             그 주 7일 중 수면 점수가 있는 날짜만의 평균, 반올림. 7일 모두 결측이면 `null`이다.
             `sleepScore`는 일간 리포트와 같은 계산이다(§10.8).
+
+            `avgDeepSleepMinutes`도 같은 방식(그 주 7일 중 세션이 있는 날짜만의
+            `deepSleepMinutes` 평균)이며, `avgSleepScore`와 별개로 계산되고 별개로 결측 처리된다.
 
             ### `isHighest`
 
             4주 중 `avgSleepScore`가 가장 높은 주(들)만 `true`다. **`null`인 주는 비교 대상에서
             빠지고, 최고값이 동점이면 해당하는 주 전부 `true`이며, 4주 모두 `null`이면 비교할 값
-            자체가 없어 전부 `false`다.**
+            자체가 없어 전부 `false`다.** <b>`avgDeepSleepMinutes`는 이 판정에 관여하지 않는다</b>
+            — 최고 주는 어디까지나 수면 점수 기준이다.
 
-            ### `summary.avgSleepScore` — 주 평균의 평균이 아니다
+            ### `summary.avgSleepScore` · `summary.avgDeepSleepMinutes` — 주 평균의 평균이 아니다
 
-            **28일 전체 일별 점수를 한 번에 평균낸 값**이다. 주마다 결측 일수가 다르면 "주
-            평균 4개의 평균"과 이 값이 갈릴 수 있다(가중치가 달라진다) — 28일 전부 결측이어야
-            `null`이라는 조건이 28일 단위로 걸려 있어 여기서도 28일 단위로 낸다.
+            **28일 전체 일별 값을 한 번에 평균낸 것**이다(둘 다 마찬가지다). 주마다 결측 일수가
+            다르면 "주 평균 4개의 평균"과 이 값이 갈릴 수 있다(가중치가 달라진다) — 28일 전부
+            결측이어야 `null`이라는 조건이 28일 단위로 걸려 있어 여기서도 28일 단위로 낸다.
 
             ### `correlations` — 수면 피처 7종과 피부 지표의 상관 강도
 

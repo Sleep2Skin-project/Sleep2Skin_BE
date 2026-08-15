@@ -125,11 +125,12 @@ class MonthlyReportServiceTest {
 
         MonthlyReportResponse response = service().getMonthlyReport(USER_ID, BASE_DATE);
 
+        // stubUniformWeeks가 쓰는 session() 픽스처는 deepSleepMinutes를 항상 126으로 고정한다
         assertThat(response.weeks()).containsExactly(
-                new WeekScore("W1", 65, false),
-                new WeekScore("W2", 58, false),
-                new WeekScore("W3", 52, false),
-                new WeekScore("W4", 70, true));
+                new WeekScore("W1", 65, 126, false),
+                new WeekScore("W2", 58, 126, false),
+                new WeekScore("W3", 52, 126, false),
+                new WeekScore("W4", 70, 126, true));
     }
 
     @Test
@@ -202,6 +203,49 @@ class MonthlyReportServiceTest {
     }
 
     /**
+     * {@code avgSleepScore}와 별개로 계산되지만 같은 방식(그 주 7일 평균, 결측 제외)을 쓴다.
+     * 주마다 다른 값을 줘서 주별로 올바르게 갈리는지 확인한다.
+     */
+    @Test
+    @DisplayName("각 주의 avgDeepSleepMinutes는 그 주 7일의 평균이다")
+    void 주별_깊은수면_평균을_계산한다() {
+        joinedLongAgo();
+        List<SleepSession> sessions = new ArrayList<>();
+        int[] deepSleepPerWeek = {110, 105, 98, 132};
+        for (int week = 0; week < 4; week++) {
+            LocalDate weekStart = PERIOD_START.plusDays((long) week * 7);
+            for (int i = 0; i < 7; i++) {
+                LocalDate day = weekStart.plusDays(i);
+                sessions.add(session(day, deepSleepPerWeek[week]));
+                given(dailySleepScoreCalculator.calculate(eq(USER_ID), eq(day), any())).willReturn(60);
+            }
+        }
+        given(sleepSessionRepository.findByUserIdAndSleepDateBetween(USER_ID, PERIOD_START, BASE_DATE))
+                .willReturn(sessions);
+
+        MonthlyReportResponse response = service().getMonthlyReport(USER_ID, BASE_DATE);
+
+        assertThat(response.weeks()).extracting(WeekScore::avgDeepSleepMinutes)
+                .containsExactly(110, 105, 98, 132);
+        // (110+105+98+132)/4 = 111.25 → 반올림 111 — 28일 단위 평균이며 4주 다 같은 표본 수라
+        // 주 평균의 평균과 같은 값이 나온다(달라지는 경우는 sleepScore 테스트가 이미 검증함)
+        assertThat(response.summary().avgDeepSleepMinutes()).isEqualTo(111);
+    }
+
+    @Test
+    @DisplayName("월간도 전부 결측이면 avgDeepSleepMinutes가 null이다")
+    void 월간_깊은수면_전부_결측이면_평균도_null이다() {
+        joinedLongAgo();
+        noSessions();
+
+        MonthlyReportResponse response = service().getMonthlyReport(USER_ID, BASE_DATE);
+
+        assertThat(response.summary().avgDeepSleepMinutes()).isNull();
+        assertThat(response.weeks()).extracting(WeekScore::avgDeepSleepMinutes)
+                .containsExactly(null, null, null, null);
+    }
+
+    /**
      * <b>계산 자체가 아니라 배선(wiring)을 확인한다.</b> 상관계수 계산 로직은
      * {@code CorrelationCalculatorTest}가 검증하고, 여기서는 서비스가 그 결과를 가공하지
      * 않고 그대로 응답에 싣는지만 본다.
@@ -267,11 +311,15 @@ class MonthlyReportServiceTest {
     }
 
     private static SleepSession session(LocalDate sleepDate) {
+        return session(sleepDate, 126);
+    }
+
+    private static SleepSession session(LocalDate sleepDate, int deepSleepMinutes) {
         return SleepSession.builder()
                 .userId(USER_ID).sleepDate(sleepDate)
                 .sleepOnsetTime(sleepDate.atTime(23, 40).atOffset(ZoneOffset.UTC))
                 .wakeTime(sleepDate.plusDays(1).atTime(7, 10).atOffset(ZoneOffset.UTC))
-                .totalSleepMinutes(432).deepSleepMinutes(126)
+                .totalSleepMinutes(432).deepSleepMinutes(deepSleepMinutes)
                 .remSleepMinutes(36).coreSleepMinutes(270)
                 .awakeCount(2).awakeMinutes(7)
                 .hrv(new BigDecimal("42.00")).restingHeartRate(55)
