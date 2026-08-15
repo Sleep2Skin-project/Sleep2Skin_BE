@@ -4,7 +4,7 @@
 
 코드 작성 규칙은 [conventions.md](conventions.md), 플로우는 [architecture.md](architecture.md) §3, 기능 정의는 [prd.md](prd.md) §4를 본다.
 
-> **작성 기준일** 2026-08-07 · **도메인 API 20개 + 헬스체크 1개** — **19개 구현 완료**, 종합 리포트 1개 보류 (§2.5)
+> **작성 기준일** 2026-08-07 · **도메인 API 19개 + 헬스체크 1개** — **18개 구현 완료**, 종합 리포트 1개 보류 (§2.5)
 >
 > **최종 갱신** 2026-08-15 — `report` 구현 반영: 일간·타임라인·주간·월간 4개 규격 확정 (§2.5) · **월간 파라미터가 `yearMonth`가 아니라 `baseDate`다** · 종합 리포트 보류 사유 · 남은 정리 작업 (§4)
 
@@ -1044,7 +1044,7 @@ Content-Type: application/json
 
 **1단계 6개는 전부 끝났다.** 이어서 `GET /skin/verification/summary`(HOME-09) · `GET /skin/model`(REP-12) · **`todo` 2개**(§2.4) · **`user` 3·4·5번**(§2.1) · **출석 체크인**(§2.1 6번) · **`report` 1~4번**(§2.5)까지 끝났다.
 
-**남은 것은 종합 리포트(`GET /report/overall`) 하나다** — 도메인 API 20개 중 19개가 끝났고, 그 하나는 기능이 아니라 **정책이 미정이라 보류**다(§2.5 5번 · [prd.md](prd.md) §7 L6).
+**남은 것은 종합 리포트(`GET /report/overall`) 하나다** — 도메인 API 19개 중 18개가 끝났고, 그 하나는 기능이 아니라 **정책이 미정이라 보류**다(§2.5 5번 · [prd.md](prd.md) §7 L6).
 
 > **exp 적립은 네 API에 흩어져 붙어 있다** — `POST /users/me/attendance` · `POST /sleep/sessions` · `POST /skin/selfie` · `PATCH /todo/{id}`. **넷이 같은 `exp` 객체를 쓴다**(§1). 다섯 번째 적립 지점을 만든다면 그 모양을 따르고, **적립량은 `LevelPolicy`에서 가져온다** — 도메인 쪽에 상수를 복사하면 조용히 갈린다.
 

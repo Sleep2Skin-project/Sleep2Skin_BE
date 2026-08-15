@@ -416,7 +416,7 @@ public class SkinForecastService {
 
 **경로·요청·응답의 유일한 출처는 [api.md](api.md)다.** 이 문서에는 옮겨 적지 않는다 — 두 곳에 두면 어긋난다.
 
-api.md에 있는 것: 도메인별 엔드포인트 20개 · 각 API 설명 · `POST /sleep/sessions` 상세 규격 · 구현 순서와 **남은 정리 작업** · **MVP에서 만들지 않는 것**
+api.md에 있는 것: 도메인별 엔드포인트 19개 · 각 API 설명 · `POST /sleep/sessions` 상세 규격 · 구현 순서와 **남은 정리 작업** · **MVP에서 만들지 않는 것**
 
 ### Swagger 문서화
 
