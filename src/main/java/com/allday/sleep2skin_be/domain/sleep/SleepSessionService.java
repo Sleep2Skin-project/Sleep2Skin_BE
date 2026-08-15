@@ -1,5 +1,10 @@
 package com.allday.sleep2skin_be.domain.sleep;
 
+import com.allday.sleep2skin_be.domain.game.ExpService;
+import com.allday.sleep2skin_be.domain.game.LevelPolicy;
+import com.allday.sleep2skin_be.domain.game.dto.ExpGrantCommand;
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
+import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
 import com.allday.sleep2skin_be.domain.skin.ScoringPolicy;
 import com.allday.sleep2skin_be.domain.skin.SkinScoringEngine;
 import com.allday.sleep2skin_be.domain.skin.dto.SkinForecastScore;
@@ -61,6 +66,28 @@ import java.util.stream.Collectors;
  * <p><b>검증을 마친 날의 예보는 절대 바뀌지 않는다.</b> 바뀌면 이미 끝난 셀피 검증의 대조 기준이
  * 사후에 달라져 적중률이 훼손되고 개인 가중치가 중복 학습된다. 성능이 아니라 정확성 문제이며,
  * 이 규칙 덕분에 예보 이력 테이블이 필요 없다.
+ *
+ * <h2>수면 점수 보상 두 종이 여기서 지급된다 (HOME-04 — prd.md §10.9)</h2>
+ *
+ * <table border="1">
+ *   <caption>적립 조건</caption>
+ *   <tr><th>사유</th><th>조건</th><th>양</th></tr>
+ *   <tr><td>{@code SLEEP_SCORE_IMPROVED}</td><td>전날 수면 점수보다 올랐음</td>
+ *       <td>{@code (오늘 − 어제) × 2}</td></tr>
+ *   <tr><td>{@code SLEEP_SCORE_HIGH}</td><td>오늘 수면 점수 90 이상</td><td>{@code +10}</td></tr>
+ * </table>
+ *
+ * <p><b>둘은 겹칠 수 있다</b> — 90점을 넘기며 오른 날은 {@code reasons}에 둘 다 실린다.
+ * 90점 보상은 증가 여부와 무관한데, 95점을 유지하는 사용자가 보상을 못 받는 일이 없어야 하기
+ * 때문이다.
+ *
+ * <p>⚠️ <b>{@code processed: false}면 적립하지 않는다.</b> 재처리를 하지 않은 요청이라 새로
+ * 산출된 점수가 없다 — 앱이 시작할 때마다 호출하므로 <b>여기서 매번 적립하면 앱을 다섯 번 켤 때
+ * 다섯 번 붙는다.</b>
+ *
+ * <p>⚠️ <b>{@code processed: true}인데 이미 지급된 경우가 있다.</b> 해시가 다르고 검증 전이면
+ * 같은 날 두 번째 재산출이 일어나고, 그때 수면 점수가 바뀌면 조건이 다시 성립한다.
+ * {@code exp_grant}의 유니크가 두 번째 지급을 막으며 그 경우 {@code gained}는 {@code 0}이다.
  */
 @Slf4j
 @Service
@@ -77,6 +104,8 @@ public class SleepSessionService {
     private final SleepSessionNormalizer normalizer;
     private final SkinScoringEngine scoringEngine;
     private final BedtimeRegularityCalculator bedtimeRegularityCalculator;
+    private final SleepScoreCalculator sleepScoreCalculator;
+    private final ExpService expService;
 
     @Transactional
     public SleepSessionUploadResult upload(Long userId, SleepNormalizationCommand command) {
@@ -118,9 +147,12 @@ public class SleepSessionService {
                 .barrier(score.scoreOf(SkinMetric.BARRIER))
                 .build());
 
+        Integer sleepScore = sleepScoreCalculator.calculate(score.featureScores());
+
         return new SleepSessionUploadResult(true,
-                SleepSessionUploadResponse.of(true, session,
-                        SkinForecastResponse.of(forecast, normalized.isWatchDataMissing())));
+                SleepSessionUploadResponse.of(true, session, sleepScore,
+                        SkinForecastResponse.of(forecast, normalized.isWatchDataMissing()),
+                        grantSleepScoreExp(userId, normalized.sleepDate(), sleepScore)));
     }
 
     /** 내용이 다른 데이터가 검증 전에 다시 왔다 — 갱신하고 재산출한다. */
@@ -138,9 +170,12 @@ public class SleepSessionService {
         forecast.updateScores(requireDarkCircle(score),
                 score.scoreOf(SkinMetric.COMPLEXION), score.scoreOf(SkinMetric.BARRIER));
 
+        Integer sleepScore = sleepScoreCalculator.calculate(score.featureScores());
+
         return new SleepSessionUploadResult(false,
-                SleepSessionUploadResponse.of(true, session,
-                        SkinForecastResponse.of(forecast, normalized.isWatchDataMissing())));
+                SleepSessionUploadResponse.of(true, session, sleepScore,
+                        SkinForecastResponse.of(forecast, normalized.isWatchDataMissing()),
+                        grantSleepScoreExp(userId, normalized.sleepDate(), sleepScore)));
     }
 
     /**
@@ -151,6 +186,13 @@ public class SleepSessionService {
      *
      * <p>빈 지표의 사유는 저장된 {@code null}에서 되짚는다 — 예보에는 사유 컬럼이 없고, 있어도
      * 파생값이라 두지 않는다.
+     *
+     * <p><b>exp도 적립하지 않는다.</b> 새로 산출된 점수가 없으므로 줄 근거가 없고, 앱이 시작할
+     * 때마다 호출하므로 여기서 적립하면 <b>앱을 다섯 번 켤 때 다섯 번 붙는다.</b> 그래도
+     * {@code exp} 객체는 현재 상태를 담아 나간다 — 앱이 응답마다 존재 여부를 분기하지 않게.
+     *
+     * <p>수면 점수는 저장된 세션에서 다시 계산해 실어 보낸다. 저장하지 않는 파생값이라 조회
+     * 경로에서도 매번 계산하는 것이 원칙이다(prd.md §10.8).
      */
     private SleepSessionUploadResult unchanged(Long userId, SleepSession session,
                                                SleepNormalizationResult normalized, String reason) {
@@ -164,7 +206,39 @@ public class SleepSessionService {
 
         return new SleepSessionUploadResult(false,
                 SleepSessionUploadResponse.of(false, session,
-                        SkinForecastResponse.of(forecast, normalized.isWatchDataMissing())));
+                        sleepScoreCalculator.calculateFor(userId, session.getSleepDate()),
+                        SkinForecastResponse.of(forecast, normalized.isWatchDataMissing()),
+                        expService.current(userId)));
+    }
+
+    /**
+     * 수면 점수 보상 두 종을 적립한다 (§10.9).
+     *
+     * <p><b>재처리한 요청에서만 호출된다</b> — {@code unchanged} 경로는 여기로 오지 않는다.
+     *
+     * <p><b>전날 점수가 없으면 증가 보상은 지급되지 않는다.</b> 비교 대상이 없는 것이지 0점에서
+     * 오른 것이 아니다 — 0에서 올랐다고 치면 신규 사용자의 첫날이 {@code +180}을 받는다.
+     * 판정은 {@link LevelPolicy#sleepScoreImprovedExp}가 하고 여기서는 값만 모은다.
+     *
+     * <p>오늘 점수가 {@code null}인 날(참여 피처 0개)은 두 보상 모두 조건이 성립하지 않는다.
+     */
+    private ExpResponse grantSleepScoreExp(Long userId, LocalDate sleepDate, Integer sleepScore) {
+        if (sleepScore == null) {
+            return expService.current(userId);
+        }
+
+        Integer yesterday = sleepScoreCalculator.calculateFor(userId, sleepDate.minusDays(1));
+
+        List<ExpGrantCommand> commands = new ArrayList<>();
+        // 0 이하는 ExpService가 건너뛴다 — 조건이 성립하지 않은 날에 이력 행이 생기면 안 된다
+        commands.add(new ExpGrantCommand(ExpReason.SLEEP_SCORE_IMPROVED,
+                LevelPolicy.sleepScoreImprovedExp(sleepScore, yesterday)));
+        if (sleepScore >= LevelPolicy.SLEEP_SCORE_HIGH_THRESHOLD) {   // 확정값 (PRD §10.9)
+            commands.add(new ExpGrantCommand(ExpReason.SLEEP_SCORE_HIGH,
+                    LevelPolicy.SLEEP_SCORE_HIGH_EXP));
+        }
+
+        return expService.grantDaily(userId, sleepDate, commands);
     }
 
     private SkinForecastScore calculateScore(Long userId, SleepNormalizationResult normalized) {

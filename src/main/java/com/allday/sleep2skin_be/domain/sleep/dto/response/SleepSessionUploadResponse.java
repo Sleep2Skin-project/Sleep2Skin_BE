@@ -1,5 +1,6 @@
 package com.allday.sleep2skin_be.domain.sleep.dto.response;
 
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse;
 import com.allday.sleep2skin_be.domain.sleep.entity.SleepSession;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -14,8 +15,10 @@ import java.time.ZoneOffset;
  *
  * @param processed 이번 요청으로 <b>서버 상태가 바뀌었는가.</b> 같은 데이터를 다시 받았거나
  *                  검증을 마친 날이면 {@code false}이고, 그때도 예보는 정상적으로 실려 나간다
+ * @param exp       수면 점수 보상 적립 결과 (HOME-04). <b>{@code processed: false}면 언제나
+ *                  {@code gained: 0}이다</b> — 재처리하지 않은 요청이라 새로 산출된 점수가 없다
  */
-@Schema(description = "수면 세션 업로드 응답 (수면 집계 + 오늘의 예보)")
+@Schema(description = "수면 세션 업로드 응답 (수면 집계 + 오늘의 예보 + exp 적립)")
 public record SleepSessionUploadResponse(
 
         @Schema(description = "이번 요청으로 저장·재산출이 일어났는가", example = "true")
@@ -29,13 +32,20 @@ public record SleepSessionUploadResponse(
         SleepSummary sleep,
 
         @Schema(description = "이 수면으로 산출한 피부 예보")
-        SkinForecastResponse forecast
+        SkinForecastResponse forecast,
+
+        @Schema(description = "수면 점수 보상 적립 결과 (HOME-04)")
+        ExpResponse exp
 ) {
 
+    /**
+     * @param sleepScore 수면 점수 (§10.8). <b>참여 피처가 0개면 {@code null}</b>
+     */
     public static SleepSessionUploadResponse of(boolean processed, SleepSession session,
-                                                SkinForecastResponse forecast) {
+                                                Integer sleepScore,
+                                                SkinForecastResponse forecast, ExpResponse exp) {
         return new SleepSessionUploadResponse(processed, session.getSleepDate(),
-                SleepSummary.from(session), forecast);
+                SleepSummary.from(session, sleepScore), forecast, exp);
     }
 
     /**
@@ -72,14 +82,25 @@ public record SleepSessionUploadResponse(
             int awakeCount,
 
             @Schema(description = "각성 총 시간 (분) — 위와 **같은 구간들만** 합산", example = "21")
-            int awakeMinutes
+            int awakeMinutes,
+
+            @Schema(description = """
+                    수면 점수 (0~100, 높을수록 좋음). 그날 스코어링에 **참여한 피처의 부분점수
+                    평균**이며 저장하지 않고 매번 계산한다.
+
+                    **참여 피처가 0개면 `null`이다** — 점수 자체가 없는 날이고 0점이 아니다.
+
+                    ⚠️ **피부 예보 점수와 다른 값이다.** 예보는 "이 수면이 피부에 어떻게 나타날까"이고
+                    이쪽은 "수면 자체가 어땠나"다. 두 숫자가 화면에 나란히 보이므로 라벨을 섞지 않는다.
+                    """, nullable = true, example = "78")
+            Integer sleepScore
     ) {
-        static SleepSummary from(SleepSession session) {
+        static SleepSummary from(SleepSession session, Integer sleepScore) {
             return new SleepSummary(
                     utc(session.getSleepOnsetTime()), utc(session.getWakeTime()),
                     session.getTotalSleepMinutes(), session.getDeepSleepMinutes(),
                     session.getRemSleepMinutes(), session.getCoreSleepMinutes(),
-                    session.getAwakeCount(), session.getAwakeMinutes());
+                    session.getAwakeCount(), session.getAwakeMinutes(), sleepScore);
         }
 
         private static OffsetDateTime utc(OffsetDateTime time) {

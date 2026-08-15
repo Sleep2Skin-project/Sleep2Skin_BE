@@ -208,9 +208,33 @@ public interface SkinControllerSpec {
                     { "feature": "TOTAL_SLEEP", "metric": "DARK_CIRCLE", "label": "총 수면 시간",
                       "before": 1.0000, "after": 0.9890 }
                   ]
+                },
+                "streakCount": 3,
+                "exp": {
+                  "gained": 10,
+                  "reasons": [ { "reason": "VERIFICATION_STREAK", "amount": 10 } ],
+                  "totalExp": 320, "level": 3, "levelUp": false, "nextLevelExp": 450
                 }
               } }
             ```
+
+            ### 연속 검증 보상 (HOME-04)
+
+            **`streakCount`는 이번 검증을 포함한 값이다.** 팝업 문구("3일 연속!")와 지급액이 같은
+            숫자에서 나와야 한다 — 검증 전 값을 쓰면 화면과 보상이 하루씩 어긋난다. 계산은
+            HOME-09 배너·MY-01 프로필·출석 체크인과 같은 곳에서 나온다.
+
+            | `streakCount` | `exp.gained` |
+            |---|---|
+            | `1` (첫 검증 또는 연속이 끊긴 뒤 첫 검증) | `0` — **보상 구간이 2일부터다** |
+            | `2` / `3` / `4` | `+5` / `+10` / `+15` |
+            | `5` 이상 | `+25` (상한 구간, 매일) |
+
+            연속이 끊기면 다시 1일차(보상 없음)부터다. **오늘 미검증이 연속을 끊지 않는다** —
+            오늘 또는 어제부터 이어져 있으면 유효하다.
+
+            > **분석이 실패하면 행도 exp도 생기지 않는다.** 적립은 저장·검증이 끝난 뒤이며,
+            > 검증은 하루 1회(`409`)라 재시도가 이중 지급으로 이어지지 않는다.
 
             **`difference`는 `예보 − 실측`이다.**
 

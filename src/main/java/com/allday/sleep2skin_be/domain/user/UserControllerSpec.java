@@ -2,13 +2,19 @@ package com.allday.sleep2skin_be.domain.user;
 
 import com.allday.sleep2skin_be.domain.user.dto.response.ConsentAgreeResponse;
 import com.allday.sleep2skin_be.domain.user.dto.response.OnboardingCompleteResponse;
+import com.allday.sleep2skin_be.domain.user.dto.response.SleepDataStatusResponse;
+import com.allday.sleep2skin_be.domain.user.dto.response.UserDeleteResponse;
+import com.allday.sleep2skin_be.domain.user.dto.response.UserProfileResponse;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+
+import java.time.LocalDate;
 
 /**
  * {@link UserController}의 API 문서.
@@ -169,5 +175,165 @@ public interface UserControllerSpec {
                     name = "USER_NOT_FOUND",
                     ref = "#/components/examples/USER_NOT_FOUND")))
     ApiResponse<OnboardingCompleteResponse> completeOnboarding(@CurrentUserId Long userId);
+
+    @Operation(summary = "온보딩·동의 상태 + 프로필 조회 (ONB-01 · MY-01)", description = """
+            **앱이 시작될 때 가장 먼저 호출한다.** 온보딩 화면을 띄울지, 동의 화면을 띄울지,
+            바로 홈으로 갈지를 이 한 번의 응답으로 결정한다.
+
+            ### 앱은 두 불리언만 보면 된다
+
+            | `consentAgreed` | `onboardingCompleted` | 띄울 화면 |
+            |---|---|---|
+            | `false` | — | 동의 화면(ONB-02)부터 |
+            | `true` | `false` | 온보딩 이어서(ONB-03~05) |
+            | `true` | `true` | 온보딩 전체를 건너뛰고 홈으로 |
+
+            ### `consentAgreed`는 "동의한 적이 있는가"가 아니다
+
+            **"현재 약관 버전에 동의했는가"다.** 약관이 개정돼 서버 상수가 올라가면 기존 사용자도
+            `false`가 되어 자연스럽게 재동의 화면으로 간다. **로컬 플래그로는 이걸 알 방법이 없다** —
+            앱은 "동의 완료"만 기억하고 있어서 버전이 올라간 것을 영원히 모른다.
+
+            `agreedTermsVersion`이 `null`이면 첫 사용자이고, 값이 있는데 `currentTermsVersion`과
+            다르면 재동의 상황이다. **분기 자체는 `consentAgreed` 하나로 충분하다.**
+
+            ### 프로필 숫자 (MY-01)
+
+            `verificationCount`(누적 검증 횟수)와 `streakCount`(연속 검증 횟수)가 함께 나온다.
+            **`streakCount`는 HOME-09 배너와 같은 계산에서 나오므로 두 화면이 같은 값을 보여준다.**
+
+            **등급이 아니라 숫자를 준다.** 신뢰도 해석("믿을 만함" 등)은 클라이언트가 한다 —
+            컷오프를 서버에 두면 바꿀 때마다 배포해야 한다.
+
+            **`baseDate`가 필수인 이유가 이 두 숫자다.** 연속 횟수는 "오늘"을 알아야 계산되는데
+            서버는 모른다. 없이 계산하면 연속이 하루 밀린다. **오늘 미검증은 연속을 끊지 않는다** —
+            오늘 또는 어제부터 이어져 있으면 유효하다.
+
+            ### 레벨 3필드 (HOME-04)
+
+            `level`(1~5) · `totalExp` · `nextLevelExp`가 함께 나온다. **마이페이지 로드맵용이다** —
+            이 API가 이미 마이페이지의 프로필 출처라 조회 엔드포인트를 새로 만들지 않았다.
+
+            `level`은 `totalExp`에서 계산되며 **저장된 컬럼이 아니다.** `nextLevelExp`는 다음 레벨
+            **컷오프 절대값**이고 만렙(5)이면 `null`이다 — "남은 exp"는 앱이
+            `nextLevelExp − totalExp`로 계산한다.
+
+            | 레벨 | 누적 exp |
+            |---|---|
+            | 1 | `0` ~ `99` |
+            | 2 | `100` ~ `249` |
+            | 3 | `250` ~ `449` |
+            | 4 | `450` ~ `699` |
+            | 5 | `700` ~ (만렙) |
+
+            **만렙 이후에도 `totalExp`는 계속 오른다.** 화면만 만렙으로 표시하면 된다.
+
+            **캐릭터 이름·이미지는 응답에 없다.** 서버는 레벨 숫자만 알고, 로드맵 5단계의 캐릭터와
+            문구는 클라이언트 리소스다 — 문구를 고치는 데 배포가 필요 없다.
+
+            ### 빈 상태가 없다
+
+            다른 조회 API와 달리 **`status`·`message`를 쓰지 않는다.** 사용자가 존재하면 이 응답은
+            언제나 완전하다 — 신규 사용자도 `onboardingCompleted: false`, `streakCount: 0`,
+            `level: 1`이라는 **정상적인 값**을 받는다. 사용자가 없으면 그건 진짜 오류이므로 `404`다.
+            """)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "조회 성공. 신규 사용자도 여기에 해당한다 (값이 `false`·`0`일 뿐이다)")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "`INVALID_INPUT` — `baseDate` 누락 또는 형식 오류 · `USER_ID_HEADER_INVALID` — 헤더 누락",
+            content = @Content(mediaType = "application/json", examples = {
+                    @ExampleObject(name = "INVALID_INPUT",
+                            ref = "#/components/examples/INVALID_INPUT"),
+                    @ExampleObject(name = "USER_ID_HEADER_INVALID",
+                            ref = "#/components/examples/USER_ID_HEADER_INVALID")}))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
+    ApiResponse<UserProfileResponse> getProfile(
+            @CurrentUserId Long userId,
+
+            @Parameter(description = "기준일 (`YYYY-MM-DD`). **앱의 로컬 날짜를 보낸다** — "
+                    + "연속 검증 횟수에 \"오늘\"이 필요한데 서버는 모른다. 서버 시각(UTC)으로 "
+                    + "계산하면 한국 시간 오전 9시 이전에 연속이 하루 밀린다",
+                    example = "2026-08-14")
+            LocalDate baseDate);
+
+    @Operation(summary = "수면 데이터 연결 상태 (MY-02)", description = """
+            **마지막으로 수면 데이터가 서버에 도착한 시각**만 반환한다.
+
+            ### 서버가 알 수 없는 것
+
+            - **HealthKit 권한이 살아 있는지** — 클라이언트 권한 상태라 서버가 볼 방법이 없다
+            - **다음 동기화가 언제인지** — 서버 배치가 없다. 앱이 시작될 때 올리는 것이 전부이므로
+              동기화 주기 표기는 앱의 업로드 정책을 그대로 노출하면 된다
+
+            ### "마지막으로 잔 날"이 아니라 "마지막으로 받은 시각"이다
+
+            며칠 전 데이터를 방금 올린 경우, 잔 날짜를 쓰면 **"동기화가 며칠째 안 됐다"고 잘못
+            말하게 된다.** 화면이 말하려는 것은 연결 상태이므로 수신 시각이 맞다.
+
+            ### 빈 상태
+
+            수신 이력이 없으면 `status: NO_SLEEP_DATA` + `lastReceivedAt: null`이다.
+            **에러가 아니다** — 아직 한 번도 앱을 켜지 않은 신규 사용자에게 일상적으로 발생한다.
+            앱은 `message`가 아니라 **`status`로 분기**한다.
+
+            **`baseDate`를 받지 않는다.** 이 응답에는 날짜에 따라 달라지는 값이 없다.
+            """)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "조회 성공. 수신 이력이 없는 경우도 여기로 나간다 (`status: NO_SLEEP_DATA`)")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "`USER_ID_HEADER_INVALID` — `X-User-Id` 헤더 누락 또는 형식 오류",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_ID_HEADER_INVALID",
+                    ref = "#/components/examples/USER_ID_HEADER_INVALID")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
+    ApiResponse<SleepDataStatusResponse> getSleepDataStatus(@CurrentUserId Long userId);
+
+    @Operation(summary = "모든 기록 삭제 (MY-04)", description = """
+            ⚠️ **복구 불가 영구 삭제다.** soft delete가 아니라 행을 지운다.
+
+            ### 무엇이 지워지나
+
+            사용자와 함께 **수면 세션·단계 구간·예보·실측·개인 가중치·TODO·exp 적립 이력·동의 이력**이
+            전부 사라진다. 되살릴 방법이 없다 — 특히 **개인 가중치는 셀피를 다시 찍어 검증을
+            반복해야만** 같은 상태로 돌아온다.
+
+            액션 마스터(`action_master`)는 사용자에 속하지 않는 콘텐츠라 지워지지 않는다.
+
+            ### 서버가 하지 않는 것
+
+            **2단계 확인 다이얼로그는 클라이언트 몫이다.** 서버는 요청을 받으면 즉시 지운다 —
+            되돌리는 경로가 없으므로 앱이 반드시 사용자 확인을 받고 호출해야 한다.
+
+            **삭제 후 어느 화면으로 갈지도 서버가 정하지 않는다.** 온보딩으로 돌아갈지는 앱이
+            결정한다.
+
+            ### 응답
+
+            본문 없는 `204`가 아니라 **`200` + 공통 래퍼**다. 모든 응답이 같은 모양이어야 앱이
+            여기서만 다르게 파싱하지 않는다.
+
+            **멱등하지 않다.** 이미 지워진 사용자로 다시 호출하면 `404 USER_NOT_FOUND`다.
+            """)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "삭제 완료. **되돌릴 수 없다**")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "`USER_ID_HEADER_INVALID` — `X-User-Id` 헤더 누락 또는 형식 오류",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_ID_HEADER_INVALID",
+                    ref = "#/components/examples/USER_ID_HEADER_INVALID")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자 (이미 삭제된 경우 포함)",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
+    ApiResponse<UserDeleteResponse> delete(@CurrentUserId Long userId);
 
 }

@@ -40,7 +40,17 @@ public class User extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean onboardingCompleted;
 
-    /** 캐릭터 경험치 누적 총합. TODO(DO) 완료 시 +10. */
+    /**
+     * 캐릭터 경험치 누적 총합. <b>레벨의 유일 출처다</b> — {@code level} 컬럼은 없고
+     * {@code LevelPolicy.levelOf(exp)}로 계산한다(erd.md §3.1).
+     *
+     * <p>적립 트리거는 6종이며 네 도메인에 흩어져 있다(prd.md §10.9). 조정은 전부
+     * {@code ExpService} 한 곳을 거친다 — 도메인마다 따로 건드리면 <b>어느 하나가 회수를
+     * 빼먹어도 컴파일도 테스트도 통과한다.</b>
+     *
+     * <p><b>만렙(700)에 도달해도 계속 오른다.</b> 멈추면 나중에 6레벨을 늘렸을 때 그 기간의
+     * 활동이 사라진다.
+     */
     @Column(nullable = false)
     private int exp;
 
@@ -56,7 +66,11 @@ public class User extends BaseTimeEntity {
         this.onboardingCompleted = true;
     }
 
-    /** exp 적립 (TODO DO 완료 시). 음수 방어만 하고 상한은 두지 않는다. */
+    /**
+     * exp 적립. 음수 방어만 하고 <b>상한은 두지 않는다</b> — 만렙 이후에도 계속 오른다.
+     *
+     * <p>호출부는 {@code ExpService} 하나여야 한다.
+     */
     public void addExp(int amount) {
         if (amount < 0) {
             throw new IllegalArgumentException("exp는 음수가 될 수 없습니다: " + amount);

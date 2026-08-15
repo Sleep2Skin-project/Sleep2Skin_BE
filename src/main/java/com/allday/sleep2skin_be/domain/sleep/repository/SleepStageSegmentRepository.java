@@ -6,12 +6,18 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
+
 /**
- * 수면 단계 구간 저장·삭제.
- *
- * <p>타임라인(REP-03) 조회 메서드는 그 기능 구현 시 추가한다.
+ * 수면 단계 구간 저장·삭제·조회.
  */
 public interface SleepStageSegmentRepository extends JpaRepository<SleepStageSegment, Long> {
+
+    /**
+     * 타임라인(REP-03) 조회. <b>정렬은 파생 쿼리의 {@code OrderByStartTimeAsc}가 SQL {@code ORDER BY}로
+     * 보장한다</b> — 호출부(서비스·DTO)가 다시 정렬할 필요가 없다.
+     */
+    List<SleepStageSegment> findBySleepSessionIdOrderByStartTimeAsc(Long sleepSessionId);
 
     /**
      * 세션의 구간 전량 삭제. <b>세션이 갱신되면 구간은 부분 수정이 아니라 전량 교체된다</b>(erd.md §3.4).
@@ -25,5 +31,18 @@ public interface SleepStageSegmentRepository extends JpaRepository<SleepStageSeg
     @Modifying
     @Query("delete from SleepStageSegment s where s.sleepSession.id = :sleepSessionId")
     void deleteBySleepSessionId(@Param("sleepSessionId") Long sleepSessionId);
+
+    /**
+     * 사용자의 모든 구간 삭제 (MY-04 전체 삭제).
+     *
+     * <p><b>{@code sleep_session}보다 먼저 지워야 한다.</b> 이 테이블만 진짜 FK를 갖고 있어
+     * (엔티티에 {@code @ManyToOne}이 있다) 순서를 바꾸면 제약 위반으로 실패한다.
+     *
+     * <p>{@code userId} 컬럼이 없으므로 세션을 거쳐 찾는다.
+     */
+    @Modifying
+    @Query("delete from SleepStageSegment s where s.sleepSession.id in"
+            + " (select ss.id from SleepSession ss where ss.userId = :userId)")
+    void deleteByUserId(@Param("userId") Long userId);
 
 }

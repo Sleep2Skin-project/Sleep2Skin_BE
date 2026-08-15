@@ -1,5 +1,8 @@
 package com.allday.sleep2skin_be.domain.skin;
 
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
+import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse.ExpReasonResponse;
+import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
 import com.allday.sleep2skin_be.domain.skin.dto.SkinGrade;
 import com.allday.sleep2skin_be.domain.skin.dto.UnavailableReason;
 import com.allday.sleep2skin_be.domain.skin.dto.response.MetricVerificationResponse;
@@ -334,7 +337,11 @@ class SkinControllerTest {
                             "야간 각성을(를) 조금 더 중요하게 보도록 학습했어요.",
                             List.of(new WeightChangeResponse(SleepFeature.AWAKE_COUNT,
                                     SkinMetric.DARK_CIRCLE, "야간 각성",
-                                    new BigDecimal("1.0000"), new BigDecimal("1.0110")))));
+                                    new BigDecimal("1.0000"), new BigDecimal("1.0110")))),
+                    3,
+                    // 3일 연속이면 +10 (§10.9)
+                    ExpResponse.of(310, 320,
+                            List.of(new ExpReasonResponse(ExpReason.VERIFICATION_STREAK, 10))));
         }
     }
 
