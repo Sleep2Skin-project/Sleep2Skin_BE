@@ -740,7 +740,10 @@ GET /api/v1/report/weekly?baseDate=2026-08-14
       { "date": "2026-08-08", "sleepScore": 62 },
       { "date": "2026-08-09", "sleepScore": null }    // 그날 세션 없음
     ],
-    "summary": { "avgSleepScore": 70 },
+    "summary": {
+      "avgSleepScore": 70,
+      "avgDeepSleepMinutes": 126
+    },
     "correlations": [ /* 아래 */ ]
   } }
 ```
@@ -754,10 +757,13 @@ GET /api/v1/report/monthly?baseDate=2026-08-14
     "periodStart": "2026-07-18",
     "periodEnd": "2026-08-14",
     "weeks": [
-      { "weekLabel": "W1", "avgSleepScore": 58, "isHighest": false },
-      { "weekLabel": "W4", "avgSleepScore": 70, "isHighest": true }
+      { "weekLabel": "W1", "avgSleepScore": 58, "avgDeepSleepMinutes": 104, "isHighest": false },
+      { "weekLabel": "W4", "avgSleepScore": 70, "avgDeepSleepMinutes": 110, "isHighest": true }
     ],
-    "summary": { "avgSleepScore": 61 },
+    "summary": {
+      "avgSleepScore": 61,
+      "avgDeepSleepMinutes": 118
+    },
     "correlations": [ /* 아래 */ ]
   } }
 ```
@@ -771,8 +777,9 @@ GET /api/v1/report/monthly?baseDate=2026-08-14
 - **`dailyScores`는 `FULL`이면 항상 7개다** — 세션이 없는 날도 날짜는 남기고 점수만 `null`이다. **빼버리면 그래프 x축이 주마다 5칸·7칸으로 들쭉날쭉해진다**
 - **`sleepScore`는 일간 리포트의 그것과 같은 계산이다**(§10.8). 일간에 있던 계산을 `DailySleepScoreCalculator`로 뽑아 주간·월간이 하루마다 호출한다
 - **평균은 `null`을 분모에서 뺀다.** 기록 없는 날을 0점으로 채우면 "안 잔 날"이 "최악으로 잔 날"이 된다. 전부 결측이면 평균도 `null`이다
-- **월간 `summary.avgSleepScore`는 주 평균 4개의 평균이 아니라 28일을 한 번에 평균낸 값이다** — 주마다 결측 일수가 다르면 두 계산이 갈린다(주별 가중치가 달라진다)
-- **`isHighest`는 동점이면 여럿이 `true`가 될 수 있다.** `null`인 주는 비교에서 빠지고, 4주 모두 `null`이면 전부 `false`다
+- **월간 `summary`의 두 평균은 주 평균 4개의 평균이 아니라 28일을 한 번에 평균낸 값이다** — 주마다 결측 일수가 다르면 두 계산이 갈린다(주별 가중치가 달라진다)
+- **`isHighest`는 동점이면 여럿이 `true`가 될 수 있다.** `null`인 주는 비교에서 빠지고, 4주 모두 `null`이면 전부 `false`다. **판정 기준은 `avgSleepScore`이지 `avgDeepSleepMinutes`가 아니다**
+- **`avgDeepSleepMinutes`는 점수가 아니라 분(minutes)이다** — `SleepSession.deepSleepMinutes`를 그대로 평균낸 관측값이고 0~100 척도가 아니다. **결측 처리는 `avgSleepScore`와 같다**(세션 없는 날은 분모에서 빠지고, 기간 전체가 결측이면 `null`). 목표 대비 달성 여부는 붙지 않는다 — 수면 목표값은 MVP에서 빠졌다([prd.md](prd.md) §7 B6)
 
 **⚠️ 적중률(`hitRate`)·검증일수(`verifiedDays`)는 넣지 않는다** (2026-08-15). 화면에 없어 범위에서 뺐다. 셀피 실측 조회 자체는 아래 `correlations` 때문에 남아 있지만 **적중률로 다시 노출하지 말 것.**
 
