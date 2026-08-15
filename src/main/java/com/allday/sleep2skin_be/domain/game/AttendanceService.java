@@ -2,8 +2,10 @@ package com.allday.sleep2skin_be.domain.game;
 
 import com.allday.sleep2skin_be.domain.game.dto.ExpGrantCommand;
 import com.allday.sleep2skin_be.domain.game.dto.response.AttendanceResponse;
+import com.allday.sleep2skin_be.domain.game.dto.response.AttendanceResponse.AttendanceDayResponse;
 import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
 import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
+import com.allday.sleep2skin_be.domain.game.repository.ExpGrantRepository;
 import com.allday.sleep2skin_be.domain.skin.VerificationStreakCalculator;
 import com.allday.sleep2skin_be.domain.skin.repository.SkinMeasurementRepository;
 import com.allday.sleep2skin_be.domain.user.repository.UserRepository;
@@ -21,7 +23,10 @@ import java.util.List;
  *
  * <p><b>{@link ExpService}와 나눈 이유는 성격이 다르기 때문이다.</b> {@code ExpService}는 네
  * 도메인이 함께 쓰는 적립 창구이고, 여기는 <b>홈 화면 하나를 위한 흐름</b>이다 — 출석 적립에
- * 연속 검증 횟수를 곁들여 팝업 하나를 그린다. 이걸 적립 창구에 넣으면 {@code skin} 의존이
+ * 연속 검증 횟수와 <b>월~일 출석 도장판</b>을 곁들여 화면 하나를 그린다.
+ *
+ * <p><b>도장판에 전용 조회 엔드포인트를 두지 않는 이유도 같다</b>(api.md §5). 도장판을 그리는
+ * 화면이 이미 이 API를 부르고 있어, 따로 만들면 같은 사실을 말하는 자리가 둘이 된다. 이걸 적립 창구에 넣으면 {@code skin} 의존이
  * 창구 쪽에 붙어, 다른 세 도메인이 적립하려고 그것까지 끌고 오게 된다.
  *
  * <h2>하루 1회는 {@code exp_grant} 유니크가 보장한다</h2>
@@ -39,6 +44,8 @@ public class AttendanceService {
     private final ExpService expService;
     private final SkinMeasurementRepository skinMeasurementRepository;
     private final VerificationStreakCalculator streakCalculator;
+    private final ExpGrantRepository expGrantRepository;
+    private final AttendanceWeekCalculator weekCalculator;
 
     /**
      * 출석을 기록하고 {@code ATTENDANCE} 보상을 지급한다.
@@ -67,7 +74,27 @@ public class AttendanceService {
         int streakCount = streakCalculator.calculate(baseDate,
                 skinMeasurementRepository.findVerifiedBaseDates(userId, baseDate));
 
-        return AttendanceResponse.of(baseDate, streakCount, exp);
+        return AttendanceResponse.of(baseDate, streakCount, exp, weekOf(userId, baseDate));
+    }
+
+    /**
+     * 기준일이 속한 주(월~일)의 출석 도장판.
+     *
+     * <p><b>{@code checkedIn}을 오늘 칸의 근거로 쓰지 않는다.</b> 오늘 칸은 <b>이력 행이 있는가</b>로
+     * 정해진다 — 재호출({@code checkedIn: false})이어도 행은 이미 있으므로 {@code ATTENDED}다.
+     * 여기서 {@code checkedIn}을 보면 <b>하루에 두 번째로 앱을 켠 사용자에게 오늘 도장이
+     * 사라진다.</b>
+     *
+     * <p>적립 <b>뒤</b>에 조회하는 것도 같은 이유다. 같은 트랜잭션이라 방금 저장한 오늘 행이 보인다.
+     */
+    private List<AttendanceDayResponse> weekOf(Long userId, LocalDate baseDate) {
+        LocalDate weekStart = weekCalculator.weekStartOf(baseDate);
+
+        // 조회 상한은 주의 일요일이 아니라 기준일이다 — 미래 날짜에 출석 행이 있을 수 없다
+        List<LocalDate> attended = expGrantRepository.findBaseDates(
+                userId, ExpReason.ATTENDANCE, weekStart, baseDate);
+
+        return weekCalculator.calculate(baseDate, attended);
     }
 
 }
