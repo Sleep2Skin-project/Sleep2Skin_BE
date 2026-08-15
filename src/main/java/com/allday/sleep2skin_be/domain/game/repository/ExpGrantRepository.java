@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 하루 1회 보상 지급 이력 조회.
@@ -26,6 +27,26 @@ public interface ExpGrantRepository extends JpaRepository<ExpGrant, Long> {
      * {@code gained: 0}으로 정상 응답한다.
      */
     boolean existsByUserIdAndBaseDateAndReason(Long userId, LocalDate baseDate, ExpReason reason);
+
+    /**
+     * 기간 안에서 이 사유로 적립한 날짜들. <b>출석 도장판(HOME-04)이 쓴다.</b>
+     *
+     * <p>출석 여부를 담은 컬럼이 따로 없다 — {@code reason = ATTENDANCE} <b>행의 존재 자체가</b>
+     * 그날 앱을 켰다는 기록이고, 유니크 {@code (user_id, base_date, reason)}가 하루 1행을
+     * 보장한다. 그래서 날짜만 뽑으면 중복이 없다.
+     *
+     * <p><b>적립과 같은 트랜잭션에서 호출된다.</b> 방금 저장한 오늘 행이 보여야 도장판에 오늘
+     * 도장이 찍힌다 — 다른 트랜잭션으로 빼면 <b>출석한 당일에만 오늘 칸이 비어 보인다.</b>
+     *
+     * @param from 포함 · {@code to} 포함
+     */
+    @Query("select e.baseDate from ExpGrant e "
+            + "where e.userId = :userId and e.reason = :reason "
+            + "and e.baseDate between :from and :to")
+    List<LocalDate> findBaseDates(@Param("userId") Long userId,
+                                  @Param("reason") ExpReason reason,
+                                  @Param("from") LocalDate from,
+                                  @Param("to") LocalDate to);
 
     /**
      * 사용자의 적립 이력 전량 삭제 (MY-04 전체 삭제).

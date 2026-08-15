@@ -242,7 +242,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - **`GET /api/v1/todo`** · **`PATCH /api/v1/todo/{id}`** (TODO-02~05) — **`todo` 도메인 완료.** 추천 엔진(`TodoScoringPolicy`) + 액션 마스터 시드 24행
 - **`GET /api/v1/users/me`**(ONB-01+MY-01) · **`GET /api/v1/users/me/data-status`**(MY-02) · **`DELETE /api/v1/users/me`**(MY-04) · **`POST /api/v1/users/me/attendance`**(HOME-04 출석) — **`user`·`game` 도메인 완료**
 - **`GET /api/v1/report/daily`**(REP-02·04·05) · **`/daily/timeline`**(REP-03) · **`/weekly`**(REP-06·07) · **`/monthly`**(REP-08) — **종합(REP-09~11)만 보류**
-- **게이미피케이션(HOME-04)** — `LevelPolicy`·`ExpService`·`AttendanceService`. 적립 6종 중 **4종이 동작한다**(아래 ⚠️)
+- **게이미피케이션(HOME-04)** — `LevelPolicy`·`ExpService`·`AttendanceService`·`AttendanceWeekCalculator`. 적립 6종 중 **4종이 동작한다**(아래 ⚠️). **월~일 출석 도장판은 체크인 응답에 실려 있다** — 새 테이블 없이 `exp_grant`의 `ATTENDANCE` 행에서 나오고, **엔드포인트를 늘리지 않았다**(api.md §5)
 - **개인 가중치 학습** — `SkinModelService`. 첫 검증에 7행을 `1.0`으로 만들고, 그날 참여한 피처만 보정한다
 - **OpenAI Vision 연동** — `global/infra/openai/`의 `SkinVisionClient`(인터페이스) + `OpenAiSkinVisionClient`(Responses API + Structured Outputs). **점수 방향은 2026-08-10 실호출로 확인됨**
 - `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`OpenAiConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)·`QueryStatus`

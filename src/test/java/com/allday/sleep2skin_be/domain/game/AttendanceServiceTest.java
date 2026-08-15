@@ -1,10 +1,13 @@
 package com.allday.sleep2skin_be.domain.game;
 
+import com.allday.sleep2skin_be.domain.game.dto.AttendanceDayStatus;
 import com.allday.sleep2skin_be.domain.game.dto.ExpGrantCommand;
 import com.allday.sleep2skin_be.domain.game.dto.response.AttendanceResponse;
+import com.allday.sleep2skin_be.domain.game.dto.response.AttendanceResponse.AttendanceDayResponse;
 import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse;
 import com.allday.sleep2skin_be.domain.game.dto.response.ExpResponse.ExpReasonResponse;
 import com.allday.sleep2skin_be.domain.game.entity.ExpReason;
+import com.allday.sleep2skin_be.domain.game.repository.ExpGrantRepository;
 import com.allday.sleep2skin_be.domain.skin.VerificationStreakCalculator;
 import com.allday.sleep2skin_be.domain.skin.repository.SkinMeasurementRepository;
 import com.allday.sleep2skin_be.domain.user.repository.UserRepository;
@@ -37,7 +40,9 @@ import static org.mockito.Mockito.verify;
 class AttendanceServiceTest {
 
     private static final Long USER_ID = 1L;
+    /** 2026-08-14는 금요일이다 — 그 주의 월요일이 08-10이고 토·일이 아직 오지 않았다. */
     private static final LocalDate BASE_DATE = LocalDate.of(2026, 8, 14);
+    private static final LocalDate MONDAY = LocalDate.of(2026, 8, 10);
 
     @Mock
     private UserRepository userRepository;
@@ -45,14 +50,17 @@ class AttendanceServiceTest {
     private ExpService expService;
     @Mock
     private SkinMeasurementRepository skinMeasurementRepository;
+    @Mock
+    private ExpGrantRepository expGrantRepository;
 
     private AttendanceService attendanceService;
 
     @BeforeEach
     void setUp() {
-        // 연속 계산은 진짜를 쓴다 — 스텁으로 두면 검증하려는 규칙을 테스트가 직접 정하게 된다
+        // 두 계산기는 진짜를 쓴다 — 스텁으로 두면 검증하려는 규칙을 테스트가 직접 정하게 된다
         attendanceService = new AttendanceService(userRepository, expService,
-                skinMeasurementRepository, new VerificationStreakCalculator());
+                skinMeasurementRepository, new VerificationStreakCalculator(),
+                expGrantRepository, new AttendanceWeekCalculator());
     }
 
     @Test
@@ -155,6 +163,61 @@ class AttendanceServiceTest {
         verify(expService, never()).grantDaily(anyLong(), any(), any());
     }
 
+    @Test
+    @DisplayName("도장판은 기준일이 속한 주의 월요일부터 7칸이다")
+    void 도장판은_월요일부터_7칸이다() {
+        userExists();
+        verifiedOn();
+        grants(0, 10, new ExpReasonResponse(ExpReason.ATTENDANCE, 10));
+        attendedOn(MONDAY, MONDAY.plusDays(2), BASE_DATE);
+
+        AttendanceResponse response = attendanceService.checkIn(USER_ID, BASE_DATE);
+
+        assertThat(response.weekStartDate()).isEqualTo(MONDAY);
+        assertThat(response.weekDays()).hasSize(7);
+        assertThat(response.weekDays()).extracting(AttendanceDayResponse::status)
+                .containsExactly(
+                        AttendanceDayStatus.ATTENDED,   // 월
+                        AttendanceDayStatus.MISSED,     // 화
+                        AttendanceDayStatus.ATTENDED,   // 수
+                        AttendanceDayStatus.MISSED,     // 목
+                        AttendanceDayStatus.ATTENDED,   // 금 — 기준일
+                        AttendanceDayStatus.UPCOMING,   // 토
+                        AttendanceDayStatus.UPCOMING);  // 일
+    }
+
+    /** 미래 날짜에 출석 행이 있을 수 없으므로 조회 상한은 주의 일요일이 아니라 기준일이다. */
+    @Test
+    @DisplayName("출석 이력은 주 시작일부터 기준일까지만 조회한다")
+    void 조회_범위는_주시작일부터_기준일까지다() {
+        userExists();
+        verifiedOn();
+        grants(0, 10, new ExpReasonResponse(ExpReason.ATTENDANCE, 10));
+        attendedOn();
+
+        attendanceService.checkIn(USER_ID, BASE_DATE);
+
+        verify(expGrantRepository).findBaseDates(USER_ID, ExpReason.ATTENDANCE, MONDAY, BASE_DATE);
+    }
+
+    /**
+     * <b>도장판은 {@code checkedIn}이 아니라 적립 이력을 본다.</b> 재호출을 근거로 삼으면
+     * 하루에 두 번째로 앱을 켠 사용자에게 오늘 도장이 사라진다.
+     */
+    @Test
+    @DisplayName("재호출이라 checkedIn이 false여도 오늘 칸은 ATTENDED다")
+    void 재호출에도_오늘_도장은_남는다() {
+        userExists();
+        verifiedOn();
+        grants(310, 310);                                    // 적립이 일어나지 않았다
+        attendedOn(BASE_DATE);                               // 이력 행은 이미 있다
+
+        AttendanceResponse response = attendanceService.checkIn(USER_ID, BASE_DATE);
+
+        assertThat(response.checkedIn()).isFalse();
+        assertThat(response.weekDays().get(4).status()).isEqualTo(AttendanceDayStatus.ATTENDED);
+    }
+
     // ===== 픽스처 =====
 
     private void userExists() {
@@ -170,6 +233,13 @@ class AttendanceServiceTest {
     private void grants(int before, int after, ExpReasonResponse... reasons) {
         given(expService.grantDaily(eq(USER_ID), eq(BASE_DATE), any()))
                 .willReturn(ExpResponse.of(before, after, List.of(reasons)));
+    }
+
+    /** 출석 이력은 날짜만 돌려준다 — 행의 존재 자체가 그날 앱을 켰다는 기록이다. */
+    private void attendedOn(LocalDate... dates) {
+        given(expGrantRepository.findBaseDates(
+                eq(USER_ID), eq(ExpReason.ATTENDANCE), any(), any()))
+                .willReturn(List.of(dates));
     }
 
 }
