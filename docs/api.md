@@ -4,9 +4,9 @@
 
 코드 작성 규칙은 [conventions.md](conventions.md), 플로우는 [architecture.md](architecture.md) §3, 기능 정의는 [prd.md](prd.md) §4를 본다.
 
-> **작성 기준일** 2026-08-07 · **도메인 API 19개 + 헬스체크 1개**
+> **작성 기준일** 2026-08-07 · **도메인 API 20개 + 헬스체크 1개** — **19개 구현 완료**, 종합 리포트 1개 보류 (§2.5)
 >
-> **최종 갱신** 2026-08-14 — 게이미피케이션(HOME-04) 확정 반영: 출석 체크인 API 신설 (§2.1) · exp 응답 규격 공통화 (§1) · `todo` exp 값 변경 (§2.4)
+> **최종 갱신** 2026-08-15 — `report` 구현 반영: 일간·타임라인·주간·월간 4개 규격 확정 (§2.5) · **월간 파라미터가 `yearMonth`가 아니라 `baseDate`다** · 종합 리포트 보류 사유 · 남은 정리 작업 (§4)
 
 ---
 
@@ -50,6 +50,8 @@ X-User-Id: 1                       ← 모든 API 필수
 ### exp 응답 — 적립이 일어나는 API가 모두 같은 모양을 쓴다
 
 게이미피케이션(HOME-04) 확정으로 **exp가 붙는 자리가 4곳**이 됐다([prd.md](prd.md) §10.9). 넷이 같은 객체를 쓴다 — **앱이 파싱 코드와 레벨 업 연출을 한 번만 만들면 된다.**
+
+> ⚠️ **아직 셋만 이 모양이다** (2026-08-15). `POST /users/me/attendance` · `POST /sleep/sessions` · `POST /skin/selfie`가 `exp` 객체를 내보내고, **`PATCH /todo/{id}`만 옛 `expGained`·`totalExp` 두 필드 그대로다** (§2.4 · §4). 교체 전까지 앱은 그 하나를 따로 다뤄야 한다.
 
 ```jsonc
 "exp": {
@@ -601,6 +603,8 @@ X-User-Id: 1
 
 **exp는 상태가 실제로 바뀔 때만 움직인다.** 값은 2026-08-14에 바뀌었다 — HOME-04이 확정되며 `+10`에서 `+5`가 됐고 **전체 완료 보너스가 생겼다**([prd.md](prd.md) §10.9).
 
+> ⚠️ **위 응답은 확정 규격이고 현재 구현은 아직 다르다** (2026-08-15). 지금 서버가 내보내는 것은 `{ id, status, expGained, totalExp }`이며 **`allCompleted`도 `exp` 객체도 없다.** 적립값도 `+5`가 아니라 `+10`이고 전체 완료 보너스는 지급되지 않는다. **앱은 교체 전까지 이 엔드포인트만 다르게 파싱해야 한다** — 진행 상황은 §4 「남은 정리 작업」.
+
 | 요청 | `reasons` | `exp.gained` |
 |---|---|---|
 | `PENDING` → `DONE` | `TODO_DONE` | `+5` |
@@ -630,19 +634,191 @@ X-User-Id: 1
 
 ### 2.5 `report` — 누적 분석
 
-| # | 기능 | 메서드 | 경로 |
-|---|---|---|---|
-| 1 | 일간 리포트 | `GET` | `/api/v1/report/daily?baseDate=` |
-| 2 | 수면 단계 타임라인 | `GET` | `/api/v1/report/daily/timeline?baseDate=` |
-| 3 | 주간 리포트 | `GET` | `/api/v1/report/weekly?baseDate=` |
-| 4 | 월간 리포트 | `GET` | `/api/v1/report/monthly?yearMonth=` |
-| 5 | 종합 리포트 (트리아지) | `GET` | `/api/v1/report/overall` |
+| # | 기능 | 메서드 | 경로 | 상태 |
+|---|---|---|---|---|
+| 1 | 일간 리포트 | `GET` | `/api/v1/report/daily?baseDate=` | 완료 |
+| 2 | 수면 단계 타임라인 | `GET` | `/api/v1/report/daily/timeline?baseDate=` | 완료 |
+| 3 | 주간 리포트 | `GET` | `/api/v1/report/weekly?baseDate=` | 완료 |
+| 4 | 월간 리포트 | `GET` | `/api/v1/report/monthly?baseDate=` | 완료 |
+| 5 | 종합 리포트 (트리아지) | `GET` | `/api/v1/report/overall` | **보류 — 아래 참조** |
 
-**1. 일간 리포트** (REP-02·04·05) — **화면 3개를 한 응답에 담는다.** 한 화면에서 같이 보이고 전부 같은 날짜의 `sleep_session` + `skin_forecast` 조인이라, 나누면 같은 쿼리를 세 번 돈다.
+**1~4는 구현 완료다** (2026-08-15). **네 개 전부 `baseDate` 하나만 받는다** — 월간도 `yearMonth`가 아니다(아래 4번).
 
-**2. 수면 단계 타임라인** (REP-03) — **일간에서 분리했다.** `sleep_stage_segment`를 수백 행 읽어야 해 응답이 크고, 이 테이블을 쓰는 기능이 여기 하나뿐이다.
+#### 1. 일간 리포트 (REP-02·04·05)
 
-**3~5.** 주간(REP-06/07) · 월간(REP-08) · 종합(REP-09/10/11).
+**화면 3개를 한 응답에 담는다.** 한 화면에서 같이 보이고 전부 같은 날짜의 `sleep_session` + `skin_forecast`를 읽어, 나누면 같은 조회를 세 번 돈다.
+
+```jsonc
+GET /api/v1/report/daily?baseDate=2026-08-14
+X-User-Id: 1
+
+{ "success": true,
+  "data": {
+    "baseDate": "2026-08-14",
+    "sleepSummary": {
+      "status": "AVAILABLE",
+      "message": null,
+      "summary": {
+        "totalSleepMinutes": 432,
+        "sleepScore": 70,
+        "deepSleepMinutes": 126,
+        "lightSleepMinutes": 71,     // = SleepSession.coreSleepMinutes
+        "awakeCount": 2,
+        "awakeMinutes": 7
+      }
+    },
+    "skinForecast": {
+      "status": "AVAILABLE",
+      "message": null,
+      "darkCircle":  { "today": 44, "diffFromYesterday": 1 },
+      "complexion":  { "today": 63, "diffFromYesterday": 7 },
+      "barrier":     { "today": 79, "diffFromYesterday": null }
+    }
+  } }
+```
+
+**두 섹션이 각자 `status`·`message`를 갖는다 — 응답 전체를 하나의 상태로 감싸지 않는다.** 검증을 마친 날의 예보는 세션이 갱신돼도 재산출되지 않으므로(§5.1 중복 수신 차단) **세션 유무와 예보 유무가 항상 같이 가지 않는다.** 한쪽이 비었다고 다른 쪽까지 숨기면 있는 데이터를 못 보여준다. 빈 상태는 각각 `NO_SLEEP_DATA`이며 `summary`는 `null`, 지표 셋은 `today`·`diffFromYesterday`가 전부 `null`이다.
+
+- **`sleepScore`는 예보 점수(HOME-03)와 다른 계산이다** — 그날 참여한 수면 피처 부분점수 `s(f)`의 **단순 평균**이다([prd.md](prd.md) §10.8). 예보는 지표별 가중평균에 개인 가중치까지 곱한 값이다. **화면에서 두 숫자가 나란히 보이므로 라벨을 섞지 말 것**
+- **`diffFromYesterday`는 `오늘 − 어제`이고, 어느 한쪽이 없으면 `null`이다** — "변화 없음"이 아니라 "비교 불가"다. `0`으로 채우면 존재하지 않는 비교가 생긴다
+- **`awakeCount`·`awakeMinutes`를 리포트에서 다시 계산하지 않는다.** 수면 정규화 시점(5분 임계값)에 확정된 `SleepSession`의 값을 그대로 쓴다
+
+#### 2. 수면 단계 타임라인 (REP-03)
+
+**일간에서 분리했다.** `sleep_stage_segment`를 수백 행 읽어야 해 응답이 크고, 이 테이블을 쓰는 기능이 여기 하나뿐이다.
+
+```jsonc
+GET /api/v1/report/daily/timeline?baseDate=2026-08-14
+
+{ "success": true,
+  "data": {
+    "status": "AVAILABLE",
+    "message": null,
+    "baseDate": "2026-08-14",
+    "sleepOnsetTime": "2026-08-13T23:40:00+09:00",
+    "wakeTime": "2026-08-14T07:10:00+09:00",
+    "segments": [
+      { "stage": "DEEP",  "startTime": "...", "endTime": "..." },
+      { "stage": "AWAKE", "startTime": "...", "endTime": "..." }
+    ]
+  } }
+```
+
+`segments`는 **`startTime` 오름차순**이다(리포지토리 조회가 보장 — 응답을 만들며 다시 정렬하지 않는다). `stage`는 `DEEP`·`REM`·`CORE`·`AWAKE`·`UNSPECIFIED` 중 하나이며 **`UNSPECIFIED`도 그대로 나간다** — 렌더링용이라 감추지 않는다.
+
+**집계값(분·비율)을 담지 않는다.** 그건 `SleepSession`이 이미 들고 있고 1번이 내보낸다. 빈 상태는 `200` + `NO_SLEEP_DATA` + 빈 배열이다.
+
+#### 3~4. 주간 (REP-06/07) · 월간 (REP-08)
+
+**기간은 둘 다 `baseDate`에서 역산한다 — 가입일에 고정된 창이 아니다.**
+
+```
+주간   periodStart = baseDate − 6      periodEnd = baseDate     (7일)
+월간   periodStart = baseDate − 27     periodEnd = baseDate     (28일)
+       W1 = baseDate−27 ~ −21 · W2 = −20 ~ −14 · W3 = −13 ~ −7 · W4 = −6 ~ baseDate
+```
+
+**월간이 달력의 달이 아니라 최근 28일인 이유** — 가입일이나 달력 경계에 앵커를 두면 주 경계가 사용자마다·달마다 달라지고, 주간과 월간이 서로 다른 방식으로 기간을 끊게 된다. `baseDate` 역산으로 통일하면 **앱이 아무 날짜나 넣어 "그날 기준 최근 7일/28일"을 자유롭게 조회**할 수 있고 두 화면의 계산이 같아진다. **`W4`가 항상 `baseDate`를 포함한 최근 7일이고 `W1`이 가장 과거다.**
+
+```jsonc
+GET /api/v1/report/weekly?baseDate=2026-08-14
+
+{ "success": true,
+  "data": {
+    "status": "FULL",
+    "periodStart": "2026-08-08",
+    "periodEnd": "2026-08-14",
+    "dailyScores": [
+      { "date": "2026-08-08", "sleepScore": 62 },
+      { "date": "2026-08-09", "sleepScore": null }    // 그날 세션 없음
+    ],
+    "summary": { "avgSleepScore": 70 },
+    "correlations": [ /* 아래 */ ]
+  } }
+```
+
+```jsonc
+GET /api/v1/report/monthly?baseDate=2026-08-14
+
+{ "success": true,
+  "data": {
+    "status": "FULL",
+    "periodStart": "2026-07-18",
+    "periodEnd": "2026-08-14",
+    "weeks": [
+      { "weekLabel": "W1", "avgSleepScore": 58, "isHighest": false },
+      { "weekLabel": "W4", "avgSleepScore": 70, "isHighest": true }
+    ],
+    "summary": { "avgSleepScore": 61 },
+    "correlations": [ /* 아래 */ ]
+  } }
+```
+
+**`status`는 최상위 하나이고 값 집합이 일간과 다르다.** 일간은 두 섹션이 독립적으로 빌 수 있어 섹션마다 `QueryStatus`를 뒀지만, 주간·월간은 **기간 하나가 응답 전체의 성립 여부를 가른다** — 타임라인과 같은 최상위 단일 상태이며 값은 **`FULL`·`INSUFFICIENT_DATA` 둘뿐**이다(`QueryStatus`가 아니라 `ReportPeriodStatus`).
+
+**`INSUFFICIENT_DATA`는 가입일 기준이지 "그 기간에 기록이 있었는가"가 아니다.** 가입 당일을 1일차로 세어(`가입일 → baseDate 일수 + 1`) 주간 7일·월간 28일 미만이면 아직 한 기간 분량이 쌓일 수 없는 신규 사용자다. 이때 `dailyScores`/`weeks`는 빈 배열, `summary`는 `null`, `correlations`도 빈 배열이다.
+
+> **가입한 지 오래됐지만 그 기간에 안 잔 경우는 여전히 `FULL`이다.** 그때는 해당 날짜만 `sleepScore: null`로 나간다 — **데이터 품질 문제와 신규 사용자 문제를 같은 상태로 묶지 않는다.**
+
+- **`dailyScores`는 `FULL`이면 항상 7개다** — 세션이 없는 날도 날짜는 남기고 점수만 `null`이다. **빼버리면 그래프 x축이 주마다 5칸·7칸으로 들쭉날쭉해진다**
+- **`sleepScore`는 일간 리포트의 그것과 같은 계산이다**(§10.8). 일간에 있던 계산을 `DailySleepScoreCalculator`로 뽑아 주간·월간이 하루마다 호출한다
+- **평균은 `null`을 분모에서 뺀다.** 기록 없는 날을 0점으로 채우면 "안 잔 날"이 "최악으로 잔 날"이 된다. 전부 결측이면 평균도 `null`이다
+- **월간 `summary.avgSleepScore`는 주 평균 4개의 평균이 아니라 28일을 한 번에 평균낸 값이다** — 주마다 결측 일수가 다르면 두 계산이 갈린다(주별 가중치가 달라진다)
+- **`isHighest`는 동점이면 여럿이 `true`가 될 수 있다.** `null`인 주는 비교에서 빠지고, 4주 모두 `null`이면 전부 `false`다
+
+**⚠️ 적중률(`hitRate`)·검증일수(`verifiedDays`)는 넣지 않는다** (2026-08-15). 화면에 없어 범위에서 뺐다. 셀피 실측 조회 자체는 아래 `correlations` 때문에 남아 있지만 **적중률로 다시 노출하지 말 것.**
+
+##### `correlations` — 수면 피처 ↔ 피부 지표 상관 강도 (REP-07)
+
+**주간·월간이 같은 배열을 공유한다.** 계산은 `CorrelationCalculator` 한 곳이 하고 두 서비스가 결과를 그대로 싣는다.
+
+```jsonc
+"correlations": [
+  { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클",
+    "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
+  { "sleepFeature": "HRV", "featureLabel": "심박변이도",
+    "skinMetric": "COMPLEXION", "metricLabel": "혈색",
+    "strength": null, "sampleSize": 2, "insufficientSample": true }
+]
+```
+
+**예보값이 아니라 실측값(셀피 검증)과 비교한다.** 예보값은 애초에 이 피처들로 계산한 값이라, 예보와 상관을 내면 **수면으로 만든 값이 수면과 관련 있다는 것을 다시 확인하는 순환 논증**이 된다. 그래서 기간 안에서 **수면 세션과 셀피 검증이 둘 다 있는 날짜만** 짝으로 삼는다 — 검증하지 않은 날은 표본에서 빠진다.
+
+| `sleepFeature` | 상관 계산에 쓰는 원본값 | → `skinMetric` |
+|---|---|---|
+| `AWAKE_COUNT` | 야간 각성 횟수 | `DARK_CIRCLE` |
+| `TOTAL_SLEEP` | 총 수면 시간(분) | `DARK_CIRCLE` |
+| `DEEP_SLEEP` | 깊은 수면 **비율(%)** | `BARRIER` |
+| `REM_SLEEP` | REM 수면 **비율(%)** | `BARRIER` |
+| `BEDTIME_REGULARITY` | 취침 규칙성(표준편차, 분) | `COMPLEXION` |
+| `HRV` | 심박변이도 | `COMPLEXION` |
+| `RESTING_HEART_RATE` | 안정시 심박 | `COMPLEXION` |
+
+**7쌍은 예보 산출(§10.3)과 같은 매핑이다** — 여기가 어긋나면 리포트가 예보와 다른 근거를 말하게 된다.
+
+- **"원본값"이지 0~100 부분점수가 아니다.** 부분점수는 이미 구간선형으로 정규화된 값이라 그것끼리 상관을 내면 **정규화 곡선의 모양이 상관계수에 섞여 들어간다**
+- **비율의 분모는 여기서도 `deep + rem + core`다**(§10.5와 같은 이유). 단계 합이 `0`인 밤은 비율이 성립하지 않아 그 쌍의 표본에서 빠진다
+- **그 피처만 결측인 날은 그 쌍의 계산에서만 빠진다** — 워치 미착용의 HRV·안정시 심박, 이력 3일 미만의 취침 규칙성. 같은 날짜의 다른 쌍은 그대로 쓴다. 그래서 `sampleSize`가 쌍마다 다르다
+- **표본이 5개 미만이면 `insufficientSample: true` + `strength: null`이다.** 극단값 하나에 크게 흔들리는 표본으로 "강한 상관"이라고 말하지 않기 위해서다
+- **7개를 항상 전부 반환한다** — 표본이 부족해도 배열에서 빠지지 않는다. 프론트에서 항목 수가 달라지지 않게 한 것이다
+- **정렬은 상관계수 절댓값 내림차순이고, 표본 부족은 값과 무관하게 맨 뒤로 간다**
+- **`strength`는 절댓값으로만 판정한다.** 부호(방향)는 **응답에 없다** — 계수 자체를 내보내지 않는다
+
+```
+|r| ≥ 0.7  VERY_STRONG      |r| ≥ 0.4  STRONG
+|r| ≥ 0.2  MODERATE         |r| < 0.2  WEAK
+```
+
+> ⚠️ **강도 구간(0.7 / 0.4 / 0.2)과 표본 하한(5개)은 임시값이다** ([prd.md](prd.md) §9.2 L7). 통계학에서 흔히 쓰는 구간을 참고했을 뿐 이 도메인 데이터로 검증된 적이 없다. `CorrelationPolicy` 상수만 바꾸면 되도록 분리해 뒀다.
+>
+> **표본 안에서 한쪽 값이 전부 같으면(분산 0) 상관계수가 정의되지 않는다.** 이 경우 `NaN`을 내보내지 않고 **`0`으로 취급해 `WEAK`이 된다** — `strength: null`이 아니다. `null`은 "표본 부족"만을 뜻하도록 남겨 뒀다.
+
+#### 5. 종합 리포트 (REP-09/10/11) — 보류
+
+**만들지 않았고, 지금은 만들 수 없다.** 트리아지 발동 조건의 절반("수면 목표는 달성했는데")이 B6(수면 목표값) MVP 제외와 함께 사라졌고, 대체 조건과 임계값이 미정이다([prd.md](prd.md) §7 L6). 수면 쪽 근거 없이 임계값만 정해 내보내면 **잠을 못 잔 사람에게도 "클리닉에 가보라"고 말하게 된다.**
+
+화면이 요구하는 "색소침착 추세"·"여드름 흉터"·"구조적 노화"는 **현재 지표 3종으로 만들 수 없다.** 색소침착을 추가하려면 `report`만이 아니라 `skin_measurement` 컬럼 · `SkinMeasurement` 엔티티 · Vision 프롬프트 · 구조화 출력 스키마까지 함께 바뀐다 — **`report` 담당이 단독으로 결정할 수 있는 범위가 아니다.**
 
 ### 2.6 `health`
 
@@ -816,11 +992,27 @@ Content-Type: application/json
 
 ★ 셋이 핵심 루프를 관통한다. 전체 우선순위는 [prd.md](prd.md) §8.
 
-**1단계 6개는 전부 끝났다.** 이어서 `GET /skin/verification/summary`(HOME-09) · `GET /skin/model`(REP-12) · **`todo` 2개**(§2.4) · **`user` 3·4·5번**(§2.1)까지 끝났다.
+**1단계 6개는 전부 끝났다.** 이어서 `GET /skin/verification/summary`(HOME-09) · `GET /skin/model`(REP-12) · **`todo` 2개**(§2.4) · **`user` 3·4·5번**(§2.1) · **출석 체크인**(§2.1 6번) · **`report` 1~4번**(§2.5)까지 끝났다.
 
-**남은 것은 `report` 5개와 출석 체크인 1개다** — 도메인 API 19개 중 13개가 끝났다. 게이미피케이션은 **일간 리포트 다음**이다 — 적립 트리거 둘이 수면 점수를 기준으로 삼고, 그 값이 일간 리포트와 같은 자리에서 나온다([prd.md](prd.md) §8).
+**남은 것은 종합 리포트(`GET /report/overall`) 하나다** — 도메인 API 20개 중 19개가 끝났고, 그 하나는 기능이 아니라 **정책이 미정이라 보류**다(§2.5 5번 · [prd.md](prd.md) §7 L6).
 
-> ⚠️ **출석 체크인만 만들면 끝나는 것이 아니다.** exp 적립은 **네 API에 흩어져 붙는다** — `POST /users/me/attendance`(신규) · `POST /sleep/sessions` · `POST /skin/selfie` · `PATCH /todo/{id}`(값 변경). 앞의 셋은 응답에 `exp` 객체가 새로 생기고, 마지막은 **기존 `expGained`·`totalExp` 두 필드가 `exp` 객체로 대체된다.**
+> ⚠️ **exp 적립은 네 API에 흩어져 붙어 있다** — `POST /users/me/attendance` · `POST /sleep/sessions` · `POST /skin/selfie` · `PATCH /todo/{id}`. **앞의 셋은 `exp` 객체를 응답에 실었지만 `PATCH /todo/{id}`만 아직 옛 `expGained`·`totalExp` 두 필드 그대로다** — 대체가 남아 있다(§2.4).
+
+### 남은 정리 작업 (2026-08-15 기준)
+
+기능은 끝났고 **명세와 코드가 어긋난 자리**가 남았다.
+
+| # | 무엇 | 어디 |
+|---|---|---|
+| 1 | **TODO 완료 exp가 `+10`이다 — 확정값은 `+5`** | `TodoService.EXP_PER_DONE` (확정값은 `LevelPolicy.TODO_DONE_EXP`) |
+| 2 | **그날 `DO` 전부 완료 `+30`/`−30` 보너스가 없다** | `LevelPolicy.TODO_ALL_DONE_EXP`가 정의만 되고 호출부가 없다 |
+| 3 | **`PATCH /todo/{id}` 응답만 `exp` 객체가 아니다** | §2.4 — 나머지 셋과 모양이 다르다 |
+| 4 | **`correlations[].metricLabel`이 `"다크서클"`이다** — 확정 표시명은 **`"다크서클 회복"`** | `CorrelationCalculator.metricLabel` |
+| 5 | **종합 리포트 정책 확정** | [prd.md](prd.md) §7 L6 |
+
+1·2는 [prd.md](prd.md) §10.9 확정값과 코드가 어긋난 것이고, **[erd.md](erd.md) §3.10의 검산식(`SUM(exp_grant.amount) + DO 완료 수 × 5 + 전체 완료일 수 × 30`)이 지금 성립하지 않는다.**
+
+4는 사소해 보이지만 **방향이 뒤집혀 읽힌다.** `DARK_CIRCLE`은 "심한 정도"가 아니라 **"회복된 정도"**(높을수록 좋음)라서([prd.md](prd.md) §1), 그냥 "다크서클"이라고 쓰면 높은 점수가 "다크서클이 심하다"로 읽힌다. 나머지 코드는 전부 "다크서클 회복"으로 통일돼 있다.
 
 ---
 
