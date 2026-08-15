@@ -218,7 +218,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 | [docs/prd.md](docs/prd.md) | 기능 요구사항 확인, 기능 ID(HOME-03 등) 조회, 미결정 사항 확인, 구현 우선순위, **확정된 정책값(§10 등급 컷오프·판정 구간)** |
 | [docs/architecture.md](docs/architecture.md) | 새 도메인 설계, 핵심 플로우 파악, 외부 연동(OpenAI) 구현, RDS 구성 |
 | [docs/erd.md](docs/erd.md) | **엔티티 작성 직전** — 테이블 10개의 컬럼과 근거, 일부러 뺀 컬럼, 유니크 제약 |
-| [docs/api.md](docs/api.md) | **엔드포인트 작업 직전** — 경로·요청·응답의 **유일한 출처**. 도메인별 API 20개, `POST /sleep/sessions` 상세 규격, 구현 순서와 남은 정리 작업, **MVP에서 만들지 않는 것** |
+| [docs/api.md](docs/api.md) | **엔드포인트 작업 직전** — 경로·요청·응답의 **유일한 출처**. 도메인별 API 19개, `POST /sleep/sessions` 상세 규격, 구현 순서와 남은 정리 작업, **MVP에서 만들지 않는 것** |
 | [docs/conventions.md](docs/conventions.md) | 코드 작성 직전 — 응답 포맷, 에러 코드, DTO/Entity 규칙, 경로 명명 규칙, Swagger |
 | [docs/workflow.md](docs/workflow.md) | 브랜치 생성, PR, 팀 분담, 빌드, **배포·운영 DB 설정(§7·§8)** |
 
@@ -227,7 +227,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 ## 현재 상태
 
-**도메인 API 20개 중 19개가 끝났다.** 남은 하나(종합 리포트)는 구현이 아니라 **정책이 미정이라 보류**다.
+**도메인 API 19개 중 18개가 끝났다.** 남은 하나(종합 리포트)는 구현이 아니라 **정책이 미정이라 보류**다.
 
 **구현됨**
 - **엔티티 10개 + Repository 10개** — erd.md의 전부 (`exp_grant` 포함)
@@ -242,7 +242,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - **`GET /api/v1/todo`** · **`PATCH /api/v1/todo/{id}`** (TODO-02~05) — **`todo` 도메인 완료.** 추천 엔진(`TodoScoringPolicy`) + 액션 마스터 시드 24행
 - **`GET /api/v1/users/me`**(ONB-01+MY-01) · **`GET /api/v1/users/me/data-status`**(MY-02) · **`DELETE /api/v1/users/me`**(MY-04) · **`POST /api/v1/users/me/attendance`**(HOME-04 출석) — **`user`·`game` 도메인 완료**
 - **`GET /api/v1/report/daily`**(REP-02·04·05) · **`/daily/timeline`**(REP-03) · **`/weekly`**(REP-06·07) · **`/monthly`**(REP-08) — **종합(REP-09~11)만 보류**
-- **게이미피케이션(HOME-04)** — `LevelPolicy`·`ExpService`·`AttendanceService`. 적립 6종 중 **4종이 동작한다**(아래 ⚠️)
+- **게이미피케이션(HOME-04)** — `LevelPolicy`·`ExpService`·`AttendanceService`·`AttendanceWeekCalculator`. 적립 6종 중 **4종이 동작한다**(아래 ⚠️). **월~일 출석 도장판은 체크인 응답에 실려 있다** — 새 테이블 없이 `exp_grant`의 `ATTENDANCE` 행에서 나오고, **엔드포인트를 늘리지 않았다**(api.md §5)
 - **개인 가중치 학습** — `SkinModelService`. 첫 검증에 7행을 `1.0`으로 만들고, 그날 참여한 피처만 보정한다
 - **OpenAI Vision 연동** — `global/infra/openai/`의 `SkinVisionClient`(인터페이스) + `OpenAiSkinVisionClient`(Responses API + Structured Outputs). **점수 방향은 2026-08-10 실호출로 확인됨**
 - `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`OpenAiConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)·`QueryStatus`

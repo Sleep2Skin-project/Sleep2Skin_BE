@@ -22,7 +22,7 @@ public interface GameControllerSpec {
 
     @Operation(summary = "출석 체크인 (HOME-04)", description = """
             앱이 시작될 때 한 번 호출한다. **하루 첫 호출에만 `+10`**이고, 그 응답으로 홈 화면의
-            출석 완료·연속 검증 보상 팝업까지 그린다.
+            출석 완료·연속 검증 보상 팝업과 **월~일 출석 도장판**까지 그린다.
 
             ### 요청
 
@@ -45,16 +45,54 @@ public interface GameControllerSpec {
                   "gained": 10,
                   "reasons": [ { "reason": "ATTENDANCE", "amount": 10 } ],
                   "totalExp": 320, "level": 3, "levelUp": false, "nextLevelExp": 450
-                }
+                },
+                "weekStartDate": "2026-08-10",   // 기준일이 속한 주의 월요일
+                "weekDays": [
+                  { "date": "2026-08-10", "dayOfWeek": "MONDAY",    "status": "ATTENDED" },
+                  { "date": "2026-08-11", "dayOfWeek": "TUESDAY",   "status": "MISSED"   },
+                  { "date": "2026-08-12", "dayOfWeek": "WEDNESDAY", "status": "ATTENDED" },
+                  { "date": "2026-08-13", "dayOfWeek": "THURSDAY",  "status": "ATTENDED" },
+                  { "date": "2026-08-14", "dayOfWeek": "FRIDAY",    "status": "ATTENDED" },
+                  { "date": "2026-08-15", "dayOfWeek": "SATURDAY",  "status": "UPCOMING" },
+                  { "date": "2026-08-16", "dayOfWeek": "SUNDAY",    "status": "UPCOMING" }
+                ]
               } }
             ```
 
+            ### 출석 도장판 — `weekDays`
+
+            **기준일이 속한 주의 월요일부터 일요일까지 항상 7칸**이고, 첫 칸이 언제나 월요일이다.
+            기록이 없는 날도 빠지지 않는다 — 빼면 도장판 칸 수가 주마다 달라진다.
+
+            | `status` | 뜻 |
+            |---|---|
+            | `ATTENDED` | 그날 출석 기록이 있다. **재호출이어도 오늘 칸은 여기다** |
+            | `MISSED` | 이미 지난 날인데 기록이 없다 |
+            | `UPCOMING` | 기준일보다 **미래**라 아직 판정할 수 없다 |
+
+            > ⚠️ **`MISSED`와 `UPCOMING`을 같은 빈 칸으로 그리지 말 것.** 오늘이 화요일인데 수·목·금이
+            > "빠뜨림"으로 보이면, 사용자는 **하지도 않은 일로** 도장판이 비어 있는 것을 보게 된다.
+
+            **달력 주다 — 리포트 주간(REP-06)과 앵커가 다르다.** 리포트는 `baseDate − 6 ~ baseDate`인
+            롤링 7일이지만 도장판은 월요일에 고정된다. **응답 필드에 `weekly`를 쓰지 않는 이유**이며,
+            두 기간을 같은 규칙으로 읽지 말 것.
+
+            **주 시작일도 `baseDate`에서 역산한다.** 서버 시각으로 계산하면 한국 시간 오전 9시
+            이전에 주가 통째로 하루 밀려 **월요일 아침에 지난주 도장판이 뜬다.**
+
+            **`dayOfWeek`는 `MONDAY` 같은 영어 상수다.** "월"·"화" 같은 표시 문구는 클라이언트가
+            만든다 — 서버가 내려보내면 문구 하나 바꾸는 데 배포가 필요하다.
+
             ### 재호출은 에러가 아니다
 
-            | 상황 | 코드 | `checkedIn` | `exp.gained` |
-            |---|---|---|---|
-            | 그날 첫 호출 | `200` | `true` | `+10` |
-            | 같은 날 재호출 | `200` | `false` | `0` |
+            | 상황 | 코드 | `checkedIn` | `exp.gained` | 오늘 칸 |
+            |---|---|---|---|---|
+            | 그날 첫 호출 | `200` | `true` | `+10` | `ATTENDED` |
+            | 같은 날 재호출 | `200` | `false` | `0` | `ATTENDED` |
+
+            **재호출이어도 오늘 칸은 `ATTENDED`다.** 도장판은 `checkedIn`이 아니라 **적립 이력이
+            있는가**로 정해진다 — `checkedIn`을 근거로 삼으면 하루에 두 번째로 앱을 켠 사용자에게
+            오늘 도장이 사라진다.
 
             **`409`가 아니라 `200`이다.** 앱은 시작할 때마다 호출하므로 하루에 다섯 번 켜면 네 번은
             재호출이다 — **정상 흐름을 에러로 만들면 진짜 문제가 묻힌다.** 대신 `checkedIn`으로

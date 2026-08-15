@@ -119,6 +119,42 @@ class GameApiDocsTest {
     }
 
     /**
+     * <b>{@code MISSED}와 {@code UPCOMING}을 구분해 그리라는 것이 문서에 있어야 한다.</b> 앱이 둘을
+     * 같은 빈 칸으로 그리면 아직 오지 않은 날이 빠뜨린 날처럼 보인다 — 서버는 맞는 값을 냈는데도.
+     */
+    @Test
+    @DisplayName("도장판 3상태와 달력 주 앵커가 문서에 있다")
+    void 도장판_규칙이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(ATTENDANCE_POST + ".description")
+                        .value(containsString("`UPCOMING`")))
+                .andExpect(jsonPath(ATTENDANCE_POST + ".description")
+                        .value(containsString("같은 빈 칸으로 그리지 말 것")))
+                .andExpect(jsonPath(ATTENDANCE_POST + ".description")
+                        .value(containsString("항상 7칸")))
+                .andExpect(jsonPath(ATTENDANCE_POST + ".description")
+                        .value(containsString("리포트 주간(REP-06)과 앵커가 다르다")));
+    }
+
+    /** 도장판 한 칸의 모양이 흔들리면 앱이 요일 자리를 잡지 못한다. */
+    @Test
+    @DisplayName("도장판 스키마가 date · dayOfWeek · status 3필드를 갖는다")
+    void 도장판_스키마가_규격대로다() throws Exception {
+        String daySchema = "$.components.schemas.AttendanceDayResponse.properties";
+
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(daySchema + ".date").exists())
+                .andExpect(jsonPath(daySchema + ".dayOfWeek").exists())
+                .andExpect(jsonPath(daySchema + ".status").exists())
+                .andExpect(jsonPath("$.components.schemas.AttendanceResponse.properties.weekStartDate")
+                        .exists())
+                .andExpect(jsonPath("$.components.schemas.AttendanceResponse.properties.weekDays")
+                        .exists());
+    }
+
+    /**
      * <b>exp 객체는 네 API가 함께 쓴다</b>(api.md §1). 앱이 파싱 코드를 한 번만 만들 수 있어야
      * 하므로 필드 이름이 흔들리면 안 된다.
      */
