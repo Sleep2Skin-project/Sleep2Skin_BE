@@ -9,11 +9,8 @@ import java.util.Objects;
 /**
  * 종합 리포트(REP-09~11) 트리아지 발동 판정 기준.
  *
- * <p>⚠️ <b>임시값 — 팀 확정 필요.</b> 이 서비스에 수면 목표값(B6)이 없어(2026-08-14 MVP 제외)
- * "수면 목표 달성"을 대신할 신호로 <b>최근 3주 수면 점수 추세</b>를 채택했고, 정체 판정의 점수
- * 기준(50점)은 §10.1 등급 컷오프의 "주의" 등급 상한({@code ScoringPolicy.GRADE_CAUTION_MAX})을
- * 재사용한 것이다. 표준편차·변동폭·추세 임계값(5점, 15점)은 이 서비스의 데이터로 검증된 적이
- * 없다 — {@code CorrelationPolicy}와 같은 자리이며, 팀이 재확인하면 이 파일의 상수만 바꾸면 된다.
+ * <p>확정값 — sub-docs/2026-08-16-report-overall.md §5 근거. 문헌 기반은 아니고 실무 판단으로
+ * 정한 값이며, 해커톤 일정상 재확정 없이 이대로 운영한다.
  *
  * <p>표본 하한은 별도로 두지 않고 {@link CorrelationPolicy#MIN_SAMPLE_SIZE}를 그대로 쓴다 — 두
  * 클래스 모두 "5개 미만 표본으로 판단하지 않는다"는 같은 기준을 공유한다.
@@ -25,7 +22,7 @@ public final class TriagePolicy {
 
     // ===== 수면 점수 추세 관찰 창 =====
 
-    /** 수면 점수 추세를 보는 관찰 창(임시값). */
+    // 확정값 — 다른 리포트(REP-06/08)가 7일/28일 단위를 쓰는 것과의 절충 (sub-docs 2026-08-16 §5)
     public static final int SLEEP_TREND_WINDOW_WEEKS = 3;
 
     /** {@link #SLEEP_TREND_WINDOW_WEEKS}를 일수로 편 값 — 21일. */
@@ -40,24 +37,18 @@ public final class TriagePolicy {
 
     // ===== 피부 지표 정체 판정 =====
 
-    /**
-     * 정체 판정 대상이 되려면 그 기간 평균 점수가 이 값 <b>미만</b>이어야 한다(임시값).
-     * §10.1 등급 컷오프의 "주의" 등급 상한을 재사용한다 — 점수가 좋은데 변동폭만 작은 경우를
-     * 정체로 오판하지 않기 위해서다. {@code ScoringPolicy.GRADE_CAUTION_MAX}와 값이 같지만,
-     * 이쪽은 등급이 아니라 트리아지 판정 기준이라 별도 상수로 둔다 — {@code ScoringPolicy}에
-     * 종합 리포트 개념을 섞지 않는다.
-     */
+    // 확정값 — ScoringPolicy 등급 컷오프(§10.1)의 위험/주의 경계값 재사용 (sub-docs 2026-08-16 §5)
     public static final int STAGNANT_SCORE_THRESHOLD = 50;
 
-    /** 정체로 보려면 {@code (최댓값 − 최솟값)}이 이 값 이하여야 한다(임시값). */
+    // 확정값 — 판정 오차 구간(§10.2)의 ±5 적중 폭 재사용 (sub-docs 2026-08-16 §5)
     public static final int STAGNANT_RANGE_MAX = 5;
 
     // ===== 수면 점수 추세 판정 임계값 =====
 
-    /** 유효 표본의 표준편차가 이 값 이상이면 {@link SleepTrend#VOLATILE}(임시값). */
+    /** 유효 표본의 표준편차가 이 값 이상이면 {@link SleepTrend#VOLATILE}(확정값 — sub-docs 2026-08-16 §5). */
     public static final double VOLATILE_STD_DEV_THRESHOLD = 15.0;
 
-    /** {@code |후반부 평균 − 전반부 평균|}이 이 값 이상이면 상승·하락으로 판정한다(임시값). */
+    // 확정값 — 판정 오차 구간(§10.2)의 ±5 적중 폭 재사용 (sub-docs 2026-08-16 §5)
     public static final int TREND_DIFF_THRESHOLD = 5;
 
     /**
