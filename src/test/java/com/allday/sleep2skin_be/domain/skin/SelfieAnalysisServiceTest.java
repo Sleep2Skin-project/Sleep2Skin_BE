@@ -61,12 +61,12 @@ class SelfieAnalysisServiceTest {
         userExists();
         notVerifiedYet();
         forecastExists();
-        given(visionClient.analyze(any(), anyString())).willReturn(new SkinVisionScores(61, 55, 78));
+        given(visionClient.analyze(any(), anyString())).willReturn(new SkinVisionScores(61, 55, 78, false, false, false));
 
         selfieAnalysisService.analyzeAndVerify(USER_ID, BASE_DATE, selfie());
 
         verify(visionClient).analyze(eq("셀피".getBytes(StandardCharsets.UTF_8)), eq("image/jpeg"));
-        verify(verificationService).record(USER_ID, BASE_DATE, new SkinVisionScores(61, 55, 78));
+        verify(verificationService).record(USER_ID, BASE_DATE, new SkinVisionScores(61, 55, 78, false, false, false));
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.allday.sleep2skin_be.domain.report;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse;
+import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
@@ -450,6 +451,130 @@ public interface ReportControllerSpec {
             @CurrentUserId Long userId,
 
             @Parameter(description = "조회 기준일 (`YYYY-MM-DD`). 기간의 마지막 날(`periodEnd`)이 된다",
+                    required = true, example = "2026-08-14")
+            LocalDate baseDate);
+
+    @Operation(summary = "종합 리포트 조회 (REP-09~11)", description = """
+            최근 3주 수면 점수 추세와 피부 지표 정체 여부로 클리닉 트리아지를 판정하고, 앱이 관리하는
+            지표 목록과 클리닉이 필요할 수 있는 신호를 함께 보여준다.
+
+            ### 요청
+
+            `X-User-Id` 헤더와 `baseDate` 쿼리 파라미터가 필요하다.
+
+            ### 응답
+
+            ```jsonc
+            { "success": true,
+              "data": {
+                "status": "FULL",
+                "periodStart": "2026-07-25",
+                "periodEnd": "2026-08-14",
+                "triage": {
+                  "triggered": true,
+                  "sleepTrend": "RISING",
+                  "stagnantMetrics": ["COMPLEXION"]
+                },
+                "appManaged": ["DARK_CIRCLE", "COMPLEXION", "BARRIER"],
+                "clinicNeeded": {
+                  "pigmentationDetected": false,
+                  "acneScarDetected": false,
+                  "agingDetected": true
+                },
+                "clinicLink": "https://amredclinic.com/ko"
+              } }
+            ```
+
+            ### 문장을 만들지 않는다
+
+            `triage`는 판정 결과(추세 값·정체 지표 목록·발동 여부)만 담는다. "수면은 좋아졌지만
+            혈색이 정체됐어요" 같은 안내 문구는 서버가 만들지 않는다 — 프론트가 판정값을 보고
+            문구를 구성한다.
+
+            ### 수면 목표 대신 최근 3주 추세를 쓴다
+
+            이 서비스에는 수면 목표값(B6, MVP에서 제외)이 없다. 트리아지 발동 조건의 절반("수면
+            목표는 달성했는데 특정 피부 지표만 정체")에서 "수면 목표 달성"을 대신할 신호로
+            **최근 3주(21일) 수면 점수 추세**를 쓴다.
+
+            기간을 전반부 10일(가장 과거)·후반부 10일(`baseDate`로 끝난다)로 나누고 가운데
+            1일(11일차)은 비교에서 뺀다. 세션이 없는 날은 결측으로 제외한다.
+
+            | `sleepTrend` | 조건 |
+            |---|---|
+            | `INSUFFICIENT_DATA` | 유효 표본이 5개 미만이거나, 전반부·후반부 중 한쪽이 통째로 결측 |
+            | `VOLATILE` | 유효 표본(전반부+후반부)의 표준편차 ≥ 15 |
+            | `RISING` | 후반부 평균 − 전반부 평균 ≥ +5 |
+            | `FALLING` | 후반부 평균 − 전반부 평균 ≤ −5 |
+            | `STABLE` | 위 어느 조건에도 안 걸림 |
+
+            판정 순서가 결과를 가른다 — 표본 부족을 먼저 걸러낸 뒤에만 변동성·추세를 본다.
+
+            ### `status`는 수면 추세 하나로만 결정된다
+
+            `sleepTrend`가 `INSUFFICIENT_DATA`일 때만 `status`가 `INSUFFICIENT_DATA`다. **가입일
+            기준 게이트가 없다** — 주간·월간 리포트(REP-06·07)와 달리, 신규 사용자든 오래된
+            사용자든 최근 3주 유효 표본 수로만 판정한다.
+
+            `stagnantMetrics`의 표본 부족은 그 지표만 배열에서 빼고 `status`에는 영향을 주지
+            않는다 — `appManaged`·`clinicNeeded`도 `status`와 무관하게 항상 계산된다.
+
+            ### 피부 지표 정체 판정 (`stagnantMetrics`)
+
+            예보 지표 3종 각각에 대해 최근 3주 예보 점수(유효 표본, `baseDate` 이하)를 본다.
+
+            - 유효 표본이 5개 미만이면 판정 불가 — 정체 아님으로 취급해 배열에 담지 않는다
+            - 평균 점수가 50점 이상이면 정체 아님(점수가 좋으면 변동폭만으로 정체로 보지 않는다)
+            - 평균 점수가 50점 미만이고 (최댓값 − 최솟값)이 5점 이하면 정체로 판정한다
+
+            `stagnantMetrics`는 배열이다 — 3종 중 여럿이 동시에 정체일 수 있다.
+
+            ### `triage.triggered`
+
+            `sleepTrend`가 `STABLE` 또는 `RISING`이고 `stagnantMetrics`가 1개 이상일 때만
+            `true`다. 하락·변동성이 큰 추세는 "정체"가 아니라 다른 문제라 트리아지 대상이 아니다.
+
+            ### `appManaged`
+
+            앱이 관리하는 예보 지표 3종의 고정 목록이다. 점수·등급 없이 이름만 나간다.
+
+            ### `clinicNeeded`
+
+            `baseDate` 이하 범위에서 **가장 최근 실측 1건**의 감지 플래그 3종을 그대로 옮긴다 —
+            비교·트렌드는 없다. 셀피 검증 이력이 전혀 없으면 `null`이다(감지되지 않음과 측정한
+            적이 없음을 구분한다).
+
+            ### ⚠️ 임시값
+
+            수면 점수 추세를 판정 신호로 쓰는 것, 정체 판정 점수 기준(50점)·변동폭(5점)·표준편차
+            임계값(15)·추세 임계값(5점)은 전부 임시값이다(`TriagePolicy` 참고) — 팀이 재확인하기
+            전까지는 바뀔 수 있다.
+
+            ### 예외
+
+            | 코드 | `error.code` | 언제 |
+            |---|---|---|
+            | `400` | `INVALID_INPUT` | `baseDate` 누락 또는 형식 오류 |
+            | `400` | `USER_ID_HEADER_INVALID` | `X-User-Id` 헤더가 없거나 숫자가 아님 |
+            | `404` | `USER_NOT_FOUND` | 그 `userId`의 사용자가 DB에 없음 |
+            """)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "조회 성공. **유효 표본이 부족하면 `status: INSUFFICIENT_DATA`로 여기에 해당한다**")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400", description = "`INVALID_INPUT` — `baseDate` 누락 또는 형식 오류",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "INVALID_INPUT",
+                    ref = "#/components/examples/INVALID_INPUT")))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404", description = "`USER_NOT_FOUND` — 존재하지 않는 사용자",
+            content = @Content(mediaType = "application/json", examples = @ExampleObject(
+                    name = "USER_NOT_FOUND",
+                    ref = "#/components/examples/USER_NOT_FOUND")))
+    ApiResponse<OverallReportResponse> getOverallReport(
+            @CurrentUserId Long userId,
+
+            @Parameter(description = "조회 기준일 (`YYYY-MM-DD`). 관찰 기간의 마지막 날(`periodEnd`)이 된다",
                     required = true, example = "2026-08-14")
             LocalDate baseDate);
 

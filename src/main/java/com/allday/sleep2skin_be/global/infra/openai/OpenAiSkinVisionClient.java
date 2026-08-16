@@ -158,7 +158,10 @@ public class OpenAiSkinVisionClient implements SkinVisionClient {
             return new SkinVisionScores(
                     requireScore(scores, "darkCircle"),
                     requireScore(scores, "complexion"),
-                    requireScore(scores, "barrier"));
+                    requireScore(scores, "barrier"),
+                    requireBoolean(scores, "pigmentationDetected"),
+                    requireBoolean(scores, "acneScarDetected"),
+                    requireBoolean(scores, "agingDetected"));
 
         } catch (BusinessException e) {
             throw e;
@@ -195,6 +198,16 @@ public class OpenAiSkinVisionClient implements SkinVisionClient {
             throw new BusinessException(ErrorCode.SELFIE_ANALYSIS_FAILED, "점수 범위 오류: " + field);
         }
         return value.asInt();
+    }
+
+    /** 감지 플래그 3종. strict 스키마의 {@code required}에 있어 항상 존재하지만, 타입만 확인한다. */
+    private boolean requireBoolean(JsonNode scores, String field) {
+        JsonNode value = scores.path(field);
+        if (!value.isBoolean()) {
+            log.error("셀피 분석 플래그가 boolean이 아니다 field={} value={}", field, value);
+            throw new BusinessException(ErrorCode.SELFIE_ANALYSIS_FAILED, "플래그 타입 오류: " + field);
+        }
+        return value.asBoolean();
     }
 
 }

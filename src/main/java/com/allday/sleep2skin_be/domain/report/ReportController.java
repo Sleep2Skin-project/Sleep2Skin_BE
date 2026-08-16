@@ -3,6 +3,7 @@ package com.allday.sleep2skin_be.domain.report;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse;
+import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse;
 import com.allday.sleep2skin_be.global.resolver.CurrentUserId;
 import com.allday.sleep2skin_be.global.response.ApiResponse;
@@ -30,6 +31,7 @@ public class ReportController implements ReportControllerSpec {
     private final DailyTimelineService dailyTimelineService;
     private final WeeklyReportService weeklyReportService;
     private final MonthlyReportService monthlyReportService;
+    private final OverallReportService overallReportService;
 
     @Override
     @GetMapping("/daily")
@@ -65,6 +67,15 @@ public class ReportController implements ReportControllerSpec {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate) {
 
         return ApiResponse.success(monthlyReportService.getMonthlyReport(userId, baseDate));
+    }
+
+    @Override
+    @GetMapping("/overall")
+    public ApiResponse<OverallReportResponse> getOverallReport(
+            @CurrentUserId Long userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate) {
+
+        return ApiResponse.success(overallReportService.getOverallReport(userId, baseDate));
     }
 
 }

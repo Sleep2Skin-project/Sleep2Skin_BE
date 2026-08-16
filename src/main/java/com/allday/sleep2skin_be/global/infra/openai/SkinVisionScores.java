@@ -1,9 +1,10 @@
 package com.allday.sleep2skin_be.global.infra.openai;
 
 /**
- * LLM Vision 이 셀피에서 읽어낸 지표 3종. <b>전부 0~100 이고 높을수록 좋은 상태다.</b>
+ * LLM Vision 이 셀피에서 읽어낸 지표 3종과 클리닉 트리아지용 감지 플래그 3종.
+ * <b>지표 3종은 전부 0~100 이고 높을수록 좋은 상태다.</b>
  *
- * <p><b>{@code SkinMetric} 을 쓰지 않고 필드 3개로 편 것은 의존 방향 때문이다.</b>
+ * <p><b>{@code SkinMetric} 을 쓰지 않고 필드로 편 것은 의존 방향 때문이다.</b>
  * {@code SkinMetric} 은 {@code domain/skin} 의 enum 이고 이 패키지는 {@code global} 이다 —
  * {@code global → domain} 참조는 금지돼 있다(architecture.md §2). 지표가 3종으로 고정이라
  * (prd.md §4.1) 필드로 펴도 늘어날 일이 없다.
@@ -13,9 +14,19 @@ package com.allday.sleep2skin_be.global.infra.openai;
  * Structured Outputs 스키마도 걸러내지 못하고 <b>적중률만 조용히 무너진다.</b> 방어선은
  * {@link SkinVisionPrompt} 의 필드 설명 하나뿐이다.
  *
- * @param darkCircle 다크서클 회복 — 100 이면 눈 밑이 맑다
- * @param complexion 혈색 — 100 이면 안색에 생기가 돈다
- * @param barrier    장벽 — 100 이면 장벽이 튼튼하다
+ * <p><b>{@code pigmentationDetected}·{@code acneScarDetected}·{@code agingDetected}는
+ * 예보 지표 3종과 성격이 다르다.</b> 0~100 점수화하지 않는 감지 여부(boolean)뿐이고,
+ * 예보-실측 대조(HOME-07)·개인 가중치 학습(HOME-08)에 관여하지 않는다 — 종합 리포트의
+ * 클리닉 트리아지(REP-10)에만 쓰인다.
+ *
+ * @param darkCircle           다크서클 회복 — 100 이면 눈 밑이 맑다
+ * @param complexion           혈색 — 100 이면 안색에 생기가 돈다
+ * @param barrier              장벽 — 100 이면 장벽이 튼튼하다
+ * @param pigmentationDetected 색소침착이 보이는가 (감지 여부만, 심각도 점수 없음)
+ * @param acneScarDetected     여드름 흉터가 보이는가 (감지 여부만, 심각도 점수 없음)
+ * @param agingDetected        구조적 노화 징후가 보이는가 (감지 여부만, 심각도 점수 없음)
  */
-public record SkinVisionScores(int darkCircle, int complexion, int barrier) {
+public record SkinVisionScores(int darkCircle, int complexion, int barrier,
+                               boolean pigmentationDetected, boolean acneScarDetected,
+                               boolean agingDetected) {
 }

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Modifying;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -22,6 +23,14 @@ public interface SkinForecastRepository extends JpaRepository<SkinForecast, Long
      * {@code 404 SKIN_FORECAST_NOT_FOUND}다.
      */
     Optional<SkinForecast> findByUserIdAndBaseDate(Long userId, LocalDate baseDate);
+
+    /**
+     * 기간 안의 예보 전부 (REP-09~11 종합 리포트). {@code SleepSessionRepository
+     * .findByUserIdAndSleepDateBetween}과 같은 이유다 — 날짜 하나에 예보는 최대 하나뿐이라
+     * ({@code uk_skin_forecast_user_base_date}) 기간만큼(3주) 단건 조회를 반복하는 대신 한 번에
+     * 가져온다.
+     */
+    List<SkinForecast> findByUserIdAndBaseDateBetween(Long userId, LocalDate from, LocalDate to);
 
     /**
      * 사용자의 예보 전량 삭제 (MY-04 전체 삭제).
