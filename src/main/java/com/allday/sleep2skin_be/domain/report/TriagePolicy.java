@@ -9,7 +9,7 @@ import java.util.Objects;
 /**
  * 종합 리포트(REP-09~11) 트리아지 발동 판정 기준.
  *
- * <p>확정값 — sub-docs/2026-08-16-report-overall.md §5 근거. 문헌 기반은 아니고 실무 판단으로
+ * <p>확정값 — sub-docs/report-overall.md §5 근거. 문헌 기반은 아니고 실무 판단으로
  * 정한 값이며, 해커톤 일정상 재확정 없이 이대로 운영한다.
  *
  * <p>표본 하한은 별도로 두지 않고 {@link CorrelationPolicy#MIN_SAMPLE_SIZE}를 그대로 쓴다 — 두
