@@ -13,8 +13,11 @@ import java.util.List;
  * 판정하고, 앱이 관리하는 지표와 클리닉이 필요할 수 있는 신호를 함께 보여준다.
  *
  * <p><b>문장을 만들지 않는다.</b> {@code triage}는 판정 결과(추세 값·정체 지표 목록·발동 여부)만
- * 담고, "수면은 개선됐지만 혈색이 정체됐어요" 같은 문구는 서버가 만들지 않는다 — 트리아지 발동
- * 조건(L6)이 아직 임시값이라 문구까지 확정하면 되돌리기 더 어렵다.
+ * 담고, "수면은 개선됐지만 혈색이 정체됐어요" 같은 문구는 서버가 만들지 않는다 — 문구를 서버에
+ * 두면 한 글자 고치는 데 배포가 필요하고, REP-02·TODO-01에서 이미 같은 판단을 했다(prd.md §4.4 ⑧).
+ *
+ * <p>판정 기준값은 {@link com.allday.sleep2skin_be.domain.report.TriagePolicy}에 있으며
+ * <b>확정값이다</b>(prd.md §10.10 · sub-docs/report-overall.md §5).
  */
 @Schema(description = "종합 리포트")
 public record OverallReportResponse(

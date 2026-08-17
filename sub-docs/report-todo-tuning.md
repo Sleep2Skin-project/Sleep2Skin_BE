@@ -1,6 +1,7 @@
 # 2026-08-17 프론트 피드백 반영 — 일간 리포트 필드 추가 · REP-07 그룹핑 · TODO threshold 상향
 
-> prd.md / erd.md / api.md 본문은 수정하지 않는다. 이 문서가 변경 근거와 최종 결정, 실제 구현 내용을 담는다.
+> ~~prd.md / erd.md / api.md 본문은 수정하지 않는다.~~ **2026-08-18에 본문으로 옮겼다** (아래 "docs 반영").
+> 이 문서는 변경 근거와 논의 과정을 담고, **규격의 출처는 `docs/`다.**
 > 브랜치: `feature/report-todo-tuning`
 
 ## 배경
@@ -71,6 +72,18 @@ DTO에서만 누락돼 있었음.
 `DailyReportServiceTest` · `WeeklyReportServiceTest` · `MonthlyReportServiceTest` ·
 `ReportControllerTest` · `ReportApiDocsTest` · `ReportControllerSpec`(Swagger).
 전체 테스트 스위트 통과 확인.
+
+## docs 반영 (2026-08-18)
+
+| 무엇 | 어디 |
+|---|---|
+| 일간 `sleepSummary`의 `remSleepMinutes`·`hrv`·`restingHeartRate` | api.md §2.5 1번 |
+| `correlations` 지표별 3그룹 구조 (**파괴적 변경**) | api.md §2.5 3~4번 · CLAUDE.md |
+| `action_master.threshold` `+20` 결정과 근거 | prd.md §4.3 · erd.md §3.8 |
+| 운영 RDS 실행 절차 (`action_master_raise_threshold.sql`) | **workflow.md §8** |
+
+⚠️ **운영 RDS 실행은 여전히 남아 있다** — 배포 후 사람이 한 번 돌린다. 확인 쿼리는
+`SELECT MIN(threshold), MAX(threshold) FROM action_master;` → `50, 90`.
 
 ---
 

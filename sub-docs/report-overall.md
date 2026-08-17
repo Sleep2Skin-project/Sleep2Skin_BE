@@ -89,7 +89,21 @@ GET /api/v1/report/overall?baseDate=...
 
 ## 6. 후속 필요 작업
 
-- api.md에 `GET /report/overall` 정식 반영
-- erd.md에 `skin_measurement` 신규 컬럼 3개 반영
+- ~~api.md에 `GET /report/overall` 정식 반영~~ — **완료 (2026-08-18)** → api.md §2.5 5번
+- ~~erd.md에 `skin_measurement` 신규 컬럼 3개 반영~~ — **완료 (2026-08-18)** → erd.md §3.6
 - REP-11 클릭 이벤트 기록 필요 여부 팀 논의
-- `CorrelationPolicy`(상관 강도 구간·표본 하한)는 여전히 임시값 — 별도로 재확정 필요
+- `CorrelationPolicy`(상관 강도 구간·표본 하한)는 여전히 임시값 — 별도로 재확정 필요.
+  **트리아지 표본 하한이 이 값을 참조하므로 바꾸면 함께 움직인다**(의도한 연결)
+
+## 7. `docs/` 반영 (2026-08-18)
+
+이 문서의 결정이 명세 본문에 옮겨졌다. **이제 규격의 출처는 `docs/`이고 이 파일은 근거 기록이다.**
+
+| 무엇 | 어디 |
+|---|---|
+| 응답 규격·발동 조건·`clinicNeeded` 의미 | api.md §2.5 5번 |
+| 트리아지 판정 기준값 (§1·§5의 상수) | **prd.md §10.10** (신설) |
+| L6·L9 해소 표기 | prd.md §7 · §4.4 |
+| `skin_measurement` 컬럼 3개 | erd.md §3.6 · 관계도 |
+| Vision 스키마·프롬프트 방침 | architecture.md §7 |
+| `OverallReportStatus`를 따로 두는 이유 | conventions.md §2 |
