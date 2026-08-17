@@ -64,7 +64,18 @@ public record SleepSummarySection(
 
             @Schema(description = "야간 각성 총 시간(분). 표시 전용 — 스코어링 피처가 아니다",
                     example = "7")
-            int awakeMinutes
+            int awakeMinutes,
+
+            @Schema(description = "REM 수면(분) — `SleepSession.remSleepMinutes`", example = "36")
+            int remSleepMinutes,
+
+            @Schema(description = "심박변이도(ms). 워치 미착용 시 `null`", nullable = true,
+                    example = "42.0")
+            Double hrv,
+
+            @Schema(description = "안정시 심박(bpm). 워치 미착용 시 `null`", nullable = true,
+                    example = "55")
+            Integer restingHeartRate
     ) {
     }
 

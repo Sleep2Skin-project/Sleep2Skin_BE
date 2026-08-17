@@ -71,7 +71,10 @@ public class DailyReportService {
 
         return new SleepSummary(session.getTotalSleepMinutes(), sleepScore,
                 session.getDeepSleepMinutes(), session.getCoreSleepMinutes(),
-                session.getAwakeCount(), session.getAwakeMinutes());
+                session.getAwakeCount(), session.getAwakeMinutes(),
+                session.getRemSleepMinutes(),
+                session.getHrv() == null ? null : session.getHrv().doubleValue(),
+                session.getRestingHeartRate());
     }
 
     /**

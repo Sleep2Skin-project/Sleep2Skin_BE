@@ -2,6 +2,7 @@ package com.allday.sleep2skin_be.domain.report;
 
 import com.allday.sleep2skin_be.domain.report.dto.CorrelationStrength;
 import com.allday.sleep2skin_be.domain.report.dto.ReportPeriodStatus;
+import com.allday.sleep2skin_be.domain.report.dto.response.CorrelationGroup;
 import com.allday.sleep2skin_be.domain.report.dto.response.FeatureCorrelation;
 import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.WeeklyReportResponse.DailyScore;
@@ -189,12 +190,12 @@ class WeeklyReportServiceTest {
     /**
      * <b>계산 자체가 아니라 배선(wiring)을 확인한다.</b> 상관계수 계산 로직은
      * {@code CorrelationCalculatorTest}가 검증하고, 여기서는 서비스가 그 결과를 가공하지
-     * 않고 그대로 응답에 싣는지만 본다 — 기간(periodStart~baseDate)과 세션 맵을 계산기에
-     * 그대로 넘기는지도 함께 확인한다.
+     * 않고 {@code skinMetric} 기준 3그룹으로만 묶어 응답에 싣는지 본다 — 기간
+     * (periodStart~baseDate)과 세션 맵을 계산기에 그대로 넘기는지도 함께 확인한다.
      */
     @Test
-    @DisplayName("CorrelationCalculator의 결과를 그대로 응답에 싣는다")
-    void 상관_강도를_그대로_싣는다() {
+    @DisplayName("CorrelationCalculator의 결과를 skinMetric 기준 3그룹으로 묶어 싣는다")
+    void 상관_강도를_그룹으로_묶어_싣는다() {
         joinedLongAgo();
         noSessions();
         FeatureCorrelation correlation = new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
@@ -204,7 +205,15 @@ class WeeklyReportServiceTest {
 
         WeeklyReportResponse response = service().getWeeklyReport(USER_ID, BASE_DATE);
 
-        assertThat(response.correlations()).containsExactly(correlation);
+        assertThat(response.correlations()).hasSize(3);
+        assertThat(response.correlations()).extracting(CorrelationGroup::skinMetric)
+                .containsExactly(SkinMetric.DARK_CIRCLE, SkinMetric.COMPLEXION, SkinMetric.BARRIER);
+        CorrelationGroup darkCircleGroup = response.correlations().stream()
+                .filter(group -> group.skinMetric() == SkinMetric.DARK_CIRCLE).findFirst().orElseThrow();
+        assertThat(darkCircleGroup.correlations()).containsExactly(correlation);
+        CorrelationGroup complexionGroup = response.correlations().stream()
+                .filter(group -> group.skinMetric() == SkinMetric.COMPLEXION).findFirst().orElseThrow();
+        assertThat(complexionGroup.correlations()).isEmpty();
     }
 
     @Test

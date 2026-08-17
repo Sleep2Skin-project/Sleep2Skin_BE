@@ -46,7 +46,10 @@ public interface ReportControllerSpec {
                     "deepSleepMinutes": 126,
                     "lightSleepMinutes": 71,
                     "awakeCount": 2,
-                    "awakeMinutes": 7
+                    "awakeMinutes": 7,
+                    "remSleepMinutes": 36,
+                    "hrv": 42.0,
+                    "restingHeartRate": 55
                   }
                 },
                 "skinForecast": {
@@ -90,6 +93,9 @@ public interface ReportControllerSpec {
 
             **`awakeCount`·`awakeMinutes`는 리포트에서 다시 계산하지 않는다.** 수면 정규화
             시점(5분 임계값)에 이미 확정된 `SleepSession`의 값을 그대로 쓴다.
+
+            **`remSleepMinutes`·`hrv`·`restingHeartRate`는 `SleepSession`의 값을 그대로 옮긴다.**
+            `hrv`·`restingHeartRate`는 워치 미착용으로 그 밤에 결측이면 `null`이다(§10.6).
 
             ### 예외
 
@@ -202,12 +208,22 @@ public interface ReportControllerSpec {
                 ],
                 "summary": { "avgSleepScore": 70, "avgDeepSleepMinutes": 126 },
                 "correlations": [
-                  { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-                    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
-                    "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
-                  { "sleepFeature": "HRV", "featureLabel": "심박변이도",
-                    "skinMetric": "COMPLEXION", "metricLabel": "혈색",
-                    "strength": null, "sampleSize": 2, "insufficientSample": true }
+                  { "skinMetric": "DARK_CIRCLE",
+                    "correlations": [
+                      { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+                        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
+                        "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
+                      { "sleepFeature": "TOTAL_SLEEP", "featureLabel": "총 수면 시간",
+                        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
+                        "strength": "MODERATE", "sampleSize": 6, "insufficientSample": false }
+                    ] },
+                  { "skinMetric": "COMPLEXION",
+                    "correlations": [
+                      { "sleepFeature": "HRV", "featureLabel": "심박변이도",
+                        "skinMetric": "COMPLEXION", "metricLabel": "혈색",
+                        "strength": null, "sampleSize": 2, "insufficientSample": true }
+                    ] },
+                  { "skinMetric": "BARRIER", "correlations": [] }
                 ]
               } }
             ```
@@ -284,9 +300,11 @@ public interface ReportControllerSpec {
             3일 미만의 취침 규칙성, 단계 미상의 비율)은 그 피처의 계산에서만 빠지고 다른
             피처-지표 쌍에는 영향이 없다.
 
-            **`correlations`는 항상 7개 전부 반환한다** — 표본이 부족해도 배열에서 빠지지
-            않고 `strength: null`로 포함된다. **정렬은 상관계수 절댓값 내림차순이고, 표본
-            부족은 값과 무관하게 배열 맨 뒤로 간다.**
+            **`correlations`는 `skinMetric` 기준 3그룹(`DARK_CIRCLE`·`COMPLEXION`·`BARRIER`)의
+            배열이다.** 계산 자체는 여전히 7쌍 전부를 낸다 — 표본이 부족해도 빠지지 않고
+            `strength: null`로 포함되며, **각 그룹 안의 정렬은 상관계수 절댓값 내림차순이고
+            표본 부족은 값과 무관하게 그룹 맨 뒤로 간다.** 그룹은 항상 3개 전부 반환하고, 매핑되는
+            피처가 없는 그룹은 `correlations: []`다.
 
             ⚠️ 강도 구간(`VERY_STRONG` 0.7 / `STRONG` 0.4 / `MODERATE` 0.2)과 표본 하한(5개)은
             <b>임시값이다</b> — 통계학에서 흔히 쓰는 구간을 참고해 채택했을 뿐 이 서비스의
@@ -344,9 +362,14 @@ public interface ReportControllerSpec {
                 ],
                 "summary": { "avgSleepScore": 61, "avgDeepSleepMinutes": 118 },
                 "correlations": [
-                  { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-                    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
-                    "strength": "STRONG", "sampleSize": 22, "insufficientSample": false }
+                  { "skinMetric": "DARK_CIRCLE",
+                    "correlations": [
+                      { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+                        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
+                        "strength": "STRONG", "sampleSize": 22, "insufficientSample": false }
+                    ] },
+                  { "skinMetric": "COMPLEXION", "correlations": [] },
+                  { "skinMetric": "BARRIER", "correlations": [] }
                 ]
               } }
             ```
@@ -420,8 +443,10 @@ public interface ReportControllerSpec {
             | `RESTING_HEART_RATE` | 안정시 심박 | `COMPLEXION` |
 
             표본이 5개 미만이면 `insufficientSample: true`이고 `strength`는 `null`이다.
-            **항상 7개 전부 반환**하며, 정렬은 상관계수 절댓값 내림차순 — 표본 부족은 배열
-            맨 뒤로 간다. 28일 기간이라 주간보다 표본이 커지기 쉬워 계산되는 비율이 더 높다.
+            `correlations`는 주간과 같이 `skinMetric` 기준 3그룹의 배열이고, **계산 자체는
+            여전히 7쌍 전부**를 낸다 — 그룹 안의 정렬은 상관계수 절댓값 내림차순이며 표본
+            부족은 그룹 맨 뒤로 간다. 28일 기간이라 주간보다 표본이 커지기 쉬워 계산되는
+            비율이 더 높다.
 
             ⚠️ 강도 구간과 표본 하한은 **임시값**이다 — 자세한 근거는 `GET /report/weekly`
             문서와 `CorrelationPolicy`를 참고한다.
