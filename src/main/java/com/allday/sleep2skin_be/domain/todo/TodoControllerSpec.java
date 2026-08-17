@@ -43,10 +43,11 @@ public interface TodoControllerSpec {
 
                     ### 매칭·정렬 기준
 
-                    후보 추출(뜰지 말지)은 그날 예보 점수 기준이다. 우선순위는
-                    `impact_score × (100 − 예보 점수) + verdictBonus`로 계산되며, 가장 최근
-                    검증에서 위험을 과소평가한(`OVERESTIMATED`) 지표가 있으면 관련 항목의
-                    `verdictBonus`가 붙어 우선순위가 올라간다.
+                    우선순위는 `impact_score × (100 − 예보 점수) + verdictBonus`로 계산되며,
+                    가장 최근 검증에서 위험을 과소평가한(`OVERESTIMATED`) 지표가 있으면 관련
+                    항목의 `verdictBonus`가 붙어 우선순위가 올라간다. 임계값
+                    (`action_master.threshold`)은 **어느 항목을 먼저 뽑을지**를 정한다 — 만족
+                    여부가 우선순위보다 앞서지만, 만족하는 항목이 모자라도 목록은 채워진다.
 
                     ### 응답 형태
 
@@ -63,9 +64,18 @@ public interface TodoControllerSpec {
                     사용자가 TODO 탭을 열면 일상적으로 발생한다. 앱은 `message`가 아니라
                     **`status`로 분기**한다.
 
-                    후보가 0개인 날(그날 모든 지표가 임계값보다 좋음)은 `AVAILABLE`인데 배열만
-                    비어 있다. **"예보가 없다"와 "처방할 것이 없다"는 다른 상태**이므로 문구도
-                    달라야 한다.
+                    후보가 0개인 날은 `AVAILABLE`인데 배열만 비어 있다.
+                    **"예보가 없다"와 "처방할 것이 없다"는 다른 상태**이므로 문구도 달라야 한다.
+
+                    ### 개수는 `AVOID` 3 + `DO` 5로 채워진다 (2026-08-18)
+
+                    **상한이 아니라 고정 개수다.** 임계값(`action_master.threshold`)은 후보를
+                    거르지 않고 **정렬 1순위로만** 쓰인다 — 만족하는 후보를 우선순위순으로 먼저
+                    담고, 모자라면 미만족 후보가 뒤를 채운다.
+
+                    **그보다 적어지는 경우가 하나 남아 있다** — 그날 예보가 `null`인 지표
+                    (`complexion`·`barrier`)를 겨냥한 액션은 우선순위를 계산할 수 없어 빠진다.
+                    **앱은 배열 길이로 그린다** — 8개를 가정하고 칸을 고정하지 말 것.
                     """
     )
     @io.swagger.v3.oas.annotations.responses.ApiResponse(

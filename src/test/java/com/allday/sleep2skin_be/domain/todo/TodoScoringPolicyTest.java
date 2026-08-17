@@ -21,28 +21,54 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TodoScoringPolicyTest {
 
+    /**
+     * 임계값 미달인 쪽이 우선순위가 더 높아도 뒤로 밀린다 — 임계값이 정렬 1순위라는 뜻이다.
+     * ({@code 미발동}은 영향도가 커서 우선순위 점수 자체는 앞선다: 9 × 55 &gt; 5 × 55)
+     */
     @Test
-    @DisplayName("예보 점수가 임계값 이하인 액션만 후보가 된다")
-    void 임계값을_넘으면_뜨지_않는다() {
+    @DisplayName("예보 점수가 임계값 이하인 액션이 항상 앞선다")
+    void 임계값을_만족하는_것이_먼저다() {
         ActionMaster 발동 = action(1L, SkinMetric.BARRIER, 50, 5);
         ActionMaster 미발동 = action(2L, SkinMetric.BARRIER, 40, 9);
 
         List<ActionMaster> selected = TodoScoringPolicy.selectTop(
                 List.of(발동, 미발동), Map.of(SkinMetric.BARRIER, 45), Map.of(), 5);
 
-        assertThat(selected).containsExactly(발동);
+        assertThat(selected).containsExactly(발동, 미발동);
     }
 
-    /** 경계값이 어느 쪽에 붙는지는 값 범위로는 드러나지 않는다. */
+    /**
+     * <b>임계값이 후보를 거르면 컨디션이 좋은 날 목록이 4개·0개로 내려간다.</b> 임계값을
+     * 올린 뒤(2026-08-17, 전 행 +20) 실제로 그렇게 됐고, 화면이 그리는 칸 수가 날마다 달라졌다.
+     */
+    @Test
+    @DisplayName("임계값을 만족하는 후보가 모자라면 미만족 후보가 뒤를 채운다")
+    void 모자라면_임계값_미만족으로_채운다() {
+        ActionMaster 발동 = action(1L, SkinMetric.BARRIER, 90, 5);
+        ActionMaster 미발동_높음 = action(2L, SkinMetric.BARRIER, 50, 9);
+        ActionMaster 미발동_낮음 = action(3L, SkinMetric.BARRIER, 50, 1);
+
+        // 예보 80 — 만족하는 것은 발동 하나뿐이다
+        List<ActionMaster> selected = TodoScoringPolicy.selectTop(
+                List.of(발동, 미발동_낮음, 미발동_높음), Map.of(SkinMetric.BARRIER, 80), Map.of(), 3);
+
+        assertThat(selected).containsExactly(발동, 미발동_높음, 미발동_낮음);
+    }
+
+    /**
+     * 경계값이 어느 쪽에 붙는지는 값 범위로는 드러나지 않는다. 이제 미발동도 목록에 실리므로
+     * <b>순서로 확인한다</b> — 경계가 발동이면 우선순위가 더 높은 미발동보다 앞에 온다.
+     */
     @Test
     @DisplayName("점수가 임계값과 같으면 발동한다")
     void 경계값은_포함이다() {
         ActionMaster 경계 = action(1L, SkinMetric.BARRIER, 50, 5);
+        ActionMaster 한_끗_미달 = action(2L, SkinMetric.BARRIER, 49, 9);
 
         List<ActionMaster> selected = TodoScoringPolicy.selectTop(
-                List.of(경계), Map.of(SkinMetric.BARRIER, 50), Map.of(), 5);
+                List.of(경계, 한_끗_미달), Map.of(SkinMetric.BARRIER, 50), Map.of(), 5);
 
-        assertThat(selected).containsExactly(경계);
+        assertThat(selected).containsExactly(경계, 한_끗_미달);
     }
 
     /**
@@ -155,13 +181,18 @@ class TodoScoringPolicyTest {
                 .containsExactly(9, 8, 7);
     }
 
+    /**
+     * 남는 빈 상태는 이것 하나다 — <b>임계값 미달로는 더 이상 비지 않는다.</b>
+     * 예보가 산출된 지표를 겨냥한 액션이 하나도 없을 때만 목록이 빈다.
+     */
     @Test
-    @DisplayName("후보가 하나도 없으면 빈 목록이다 — 예외가 아니다")
+    @DisplayName("우선순위를 매길 후보가 하나도 없으면 빈 목록이다 — 예외가 아니다")
     void 후보가_없으면_비어_있다() {
-        ActionMaster 미발동 = action(1L, SkinMetric.BARRIER, 30, 9);
+        ActionMaster 혈색 = action(1L, SkinMetric.COMPLEXION, 30, 9);
 
+        // 혈색 예보가 산출되지 않아 맵에 아예 없다
         List<ActionMaster> selected = TodoScoringPolicy.selectTop(
-                List.of(미발동), Map.of(SkinMetric.BARRIER, 90), Map.of(), 5);
+                List.of(혈색), Map.of(SkinMetric.BARRIER, 90), Map.of(), 5);
 
         assertThat(selected).isEmpty();
     }
