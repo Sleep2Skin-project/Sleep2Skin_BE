@@ -4,11 +4,13 @@
 
 코드 작성 규칙은 [conventions.md](conventions.md), 플로우는 [architecture.md](architecture.md) §3, 기능 정의는 [prd.md](prd.md) §4를 본다.
 
-> **작성 기준일** 2026-08-07 · **도메인 API 19개 + 헬스체크 1개** — **18개 구현 완료**, 종합 리포트 1개 보류 (§2.5)
+> **작성 기준일** 2026-08-07 · **도메인 API 19개 + 헬스체크 1개** — **19개 전부 구현 완료** (§2.5)
 >
-> **최종 갱신** 2026-08-16 — 출석 체크인 응답에 **월~일 출석 도장판** 추가 (§2.1 6번) · **엔드포인트를 늘리지 않았다**(§5) · 엔드포인트 개수를 19개로 정정 (출석 체크인을 두 번 세고 있었다)
+> **최종 갱신** 2026-08-18 — **종합 리포트(REP-09~11) 구현 반영** (§2.5 5번) — 보류가 풀렸다(§7 L6·L9 해소, 근거는 `sub-docs/report-overall.md`) · 일간 `sleepSummary`에 **REM·HRV·안정시 심박** 추가 · 주간·월간 `correlations`가 **지표별 3그룹 구조로 교체**됐다 (§2.5 3~4번)
 >
-> 2026-08-15 — `report` 구현 반영: 일간·타임라인·주간·월간 4개 규격 확정 (§2.5) · **월간 파라미터가 `yearMonth`가 아니라 `baseDate`다** · 종합 리포트 보류 사유 · 남은 정리 작업 (§4)
+> 2026-08-16 — 출석 체크인 응답에 **월~일 출석 도장판** 추가 (§2.1 6번) · **엔드포인트를 늘리지 않았다**(§5) · 엔드포인트 개수를 19개로 정정 (출석 체크인을 두 번 세고 있었다)
+>
+> 2026-08-15 — `report` 구현 반영: 일간·타임라인·주간·월간 4개 규격 확정 (§2.5) · **월간 파라미터가 `yearMonth`가 아니라 `baseDate`다** · 남은 정리 작업 (§4)
 
 ---
 
@@ -426,6 +428,8 @@ image: (파일)
 
 **`difference`는 `예보 − 실측`이다.** 판정 구간(§10.2)이 이 방향으로 정의돼 있다. `verdict`는 `HIT`(±5) · `CLOSE`(±6~15) · `UNDERESTIMATED`(−16 이하) · `OVERESTIMATED`(+16 이상)이며, **`UNDERESTIMATED`는 점수를 낮게 예측한 것 = 피부 위험을 과대평가한 것**이다. 두 축이 반대라 문구에서 뒤집히기 쉽다.
 
+**⚠️ LLM은 지표 3종 외에 감지 플래그 3종도 함께 산출하지만 이 응답에는 담지 않는다** (2026-08-16 추가). `pigmentationDetected`·`acneScarDetected`·`agingDetected`는 `skin_measurement`에 **저장만 되고** 종합 리포트(`GET /report/overall`)에서만 읽힌다(§2.5 5번). **검증(HOME-07)에도 개인 가중치 학습(HOME-08)에도 관여하지 않는다** — 대조할 예보값이 없기 때문이다. 화면이 이 셋을 요구하는 자리가 종합 리포트뿐이라 검증 응답에 실을 이유가 없다.
+
 **실측 3종은 항상 나온다.** LLM은 예보와 무관하게 셋을 모두 산출하고 `skin_measurement`도 셋 다 `NOT NULL`이다. **갈리는 것은 실측이 아니라 대조 가능 여부**이며, 그래서 `skipped`에도 `measured`가 실린다 — 예보가 없어 판정만 못 한 것이지 사진을 못 읽은 것이 아니다.
 
 **`hitRate`의 분모는 `verifications`의 길이다 — 3이 아니다.** 빈 지표를 0점으로 취급하면 존재하지 않는 오차가 적중률에 섞이고, 같은 값이 HOME-08의 학습 입력으로 들어가 **없던 값이 개인 가중치를 움직인다.** `verifications`는 비지 않는다 — `DARK_CIRCLE`은 예보가 빈 상태가 될 수 없기 때문이다([erd.md](erd.md) §3.5).
@@ -685,9 +689,9 @@ X-User-Id: 1
 | 2 | 수면 단계 타임라인 | `GET` | `/api/v1/report/daily/timeline?baseDate=` | 완료 |
 | 3 | 주간 리포트 | `GET` | `/api/v1/report/weekly?baseDate=` | 완료 |
 | 4 | 월간 리포트 | `GET` | `/api/v1/report/monthly?baseDate=` | 완료 |
-| 5 | 종합 리포트 (트리아지) | `GET` | `/api/v1/report/overall` | **보류 — 아래 참조** |
+| 5 | 종합 리포트 (트리아지) | `GET` | `/api/v1/report/overall?baseDate=` | 완료 |
 
-**1~4는 구현 완료다** (2026-08-15). **네 개 전부 `baseDate` 하나만 받는다** — 월간도 `yearMonth`가 아니다(아래 4번).
+**다섯 개 전부 구현 완료다** (1~4는 2026-08-15, 5는 2026-08-16). **전부 `baseDate` 하나만 받는다** — 월간도 `yearMonth`가 아니다(아래 4번).
 
 #### 1. 일간 리포트 (REP-02·04·05)
 
@@ -709,7 +713,10 @@ X-User-Id: 1
         "deepSleepMinutes": 126,
         "lightSleepMinutes": 71,     // = SleepSession.coreSleepMinutes
         "awakeCount": 2,
-        "awakeMinutes": 7
+        "awakeMinutes": 7,
+        "remSleepMinutes": 36,       // 2026-08-17 추가
+        "hrv": 42.0,                 // 2026-08-17 추가 — 워치 미착용이면 null
+        "restingHeartRate": 55       // 2026-08-17 추가 — 워치 미착용이면 null
       }
     },
     "skinForecast": {
@@ -727,6 +734,11 @@ X-User-Id: 1
 - **`sleepScore`는 예보 점수(HOME-03)와 다른 계산이다** — 그날 참여한 수면 피처 부분점수 `s(f)`의 **단순 평균**이다([prd.md](prd.md) §10.8). 예보는 지표별 가중평균에 개인 가중치까지 곱한 값이다. **화면에서 두 숫자가 나란히 보이므로 라벨을 섞지 말 것**
 - **`diffFromYesterday`는 `오늘 − 어제`이고, 어느 한쪽이 없으면 `null`이다** — "변화 없음"이 아니라 "비교 불가"다. `0`으로 채우면 존재하지 않는 비교가 생긴다
 - **`awakeCount`·`awakeMinutes`를 리포트에서 다시 계산하지 않는다.** 수면 정규화 시점(5분 임계값)에 확정된 `SleepSession`의 값을 그대로 쓴다
+
+**`remSleepMinutes`·`hrv`·`restingHeartRate`는 2026-08-17에 프론트 요청으로 추가됐다** (`sub-docs/report-todo-tuning.md`). 셋 다 **`SleepSession`에 이미 저장돼 있던 값**이고 계산이 새로 생기지 않았다 — `POST /sleep/sessions` 응답에는 나가는데 조회 쪽 DTO에서만 빠져 있어 프론트가 REM을 하드코딩하고 있었다.
+
+- **`hrv`는 `Double`, `restingHeartRate`는 `Integer`이며 워치 미착용 시 `null`이다.** 엔티티가 `BigDecimal`로 들고 있는 `hrv`를 `Double`로 변환해 싣는다. **`null`을 `0`으로 채우지 않는다** — 결측 처리 원칙(§10.6)과 같은 자리다. 값이 없다고 섹션 전체를 `NO_SLEEP_DATA`로 바꾸지도 않는다: 세션은 존재하기 때문이다
+- **`remSleepMinutes`는 `int`다** — 단계별 분은 세션이 있으면 항상 채워진다(MVP 전제, [prd.md](prd.md) §2)
 
 #### 2. 수면 단계 타임라인 (REP-03)
 
@@ -824,16 +836,25 @@ GET /api/v1/report/monthly?baseDate=2026-08-14
 
 **주간·월간이 같은 배열을 공유한다.** 계산은 `CorrelationCalculator` 한 곳이 하고 두 서비스가 결과를 그대로 싣는다.
 
+**⚠️ 2026-08-17에 구조가 바뀌었다 — flat 7개 배열에서 지표별 3그룹으로 교체했다** (`sub-docs/report-todo-tuning.md`). 화면이 7줄 나열이라 **다크서클·장벽·혈색 3개 카드로 묶어 달라는 프론트 요청**이었다. **필드를 병행하지 않고 타입을 바꿨다** — 소비자가 프론트 하나뿐이라 하위호환을 유지할 이유가 없었다.
+
 ```jsonc
 "correlations": [
-  { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-    "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클",
-    "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
-  { "sleepFeature": "HRV", "featureLabel": "심박변이도",
-    "skinMetric": "COMPLEXION", "metricLabel": "혈색",
-    "strength": null, "sampleSize": 2, "insufficientSample": true }
+  { "skinMetric": "DARK_CIRCLE",
+    "correlations": [
+      { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
+        "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
+      { "sleepFeature": "TOTAL_SLEEP", "featureLabel": "총 수면 시간", "...": "..." }
+    ] },
+  { "skinMetric": "COMPLEXION", "correlations": [ /* 3개 */ ] },
+  { "skinMetric": "BARRIER",    "correlations": [ /* 2개 */ ] }
 ]
 ```
+
+- **`FULL`이면 그룹은 항상 3개다** — `SkinMetric.values()` 순서(`DARK_CIRCLE`·`COMPLEXION`·`BARRIER`)이고, 매핑된 피처가 없어도 빈 배열로 포함된다. 안쪽 항목 수는 7쌍 매핑 그대로 **2·3·2**다. **`INSUFFICIENT_DATA`면 그룹 자체가 없다**(빈 배열) — 3개의 빈 그룹이 아니다
+- **`FeatureCorrelation`의 필드는 그대로다.** 그룹 안에도 `skinMetric`·`metricLabel`이 남아 있다 — 항목 하나만 떼어 봐도 어느 지표인지 알 수 있게 한 것이고, 바깥 `skinMetric`과 항상 같은 값이다
+- **묶는 것은 응답 조립 단계뿐이다.** `CorrelationCalculator`는 여전히 flat 7개를 내고 `CorrelationGroup.groupBySkinMetric()`이 재배열한다 — **상관계수 계산·정렬 로직은 건드리지 않았다.** 그래서 원래 정렬(절댓값 내림차순, 표본 부족은 뒤로)이 **그룹 안에서 그대로 유지된다**
 
 **예보값이 아니라 실측값(셀피 검증)과 비교한다.** 예보값은 애초에 이 피처들로 계산한 값이라, 예보와 상관을 내면 **수면으로 만든 값이 수면과 관련 있다는 것을 다시 확인하는 순환 논증**이 된다. 그래서 기간 안에서 **수면 세션과 셀피 검증이 둘 다 있는 날짜만** 짝으로 삼는다 — 검증하지 않은 날은 표본에서 빠진다.
 
@@ -853,8 +874,8 @@ GET /api/v1/report/monthly?baseDate=2026-08-14
 - **비율의 분모는 여기서도 `deep + rem + core`다**(§10.5와 같은 이유). 단계 합이 `0`인 밤은 비율이 성립하지 않아 그 쌍의 표본에서 빠진다
 - **그 피처만 결측인 날은 그 쌍의 계산에서만 빠진다** — 워치 미착용의 HRV·안정시 심박, 이력 3일 미만의 취침 규칙성. 같은 날짜의 다른 쌍은 그대로 쓴다. 그래서 `sampleSize`가 쌍마다 다르다
 - **표본이 5개 미만이면 `insufficientSample: true` + `strength: null`이다.** 극단값 하나에 크게 흔들리는 표본으로 "강한 상관"이라고 말하지 않기 위해서다
-- **7개를 항상 전부 반환한다** — 표본이 부족해도 배열에서 빠지지 않는다. 프론트에서 항목 수가 달라지지 않게 한 것이다
-- **정렬은 상관계수 절댓값 내림차순이고, 표본 부족은 값과 무관하게 맨 뒤로 간다**
+- **7개를 항상 전부 반환한다** — 표본이 부족해도 빠지지 않는다. 프론트에서 항목 수가 달라지지 않게 한 것이며, **그룹으로 묶은 뒤에도 그대로다**(3그룹 안에 2·3·2)
+- **정렬은 상관계수 절댓값 내림차순이고, 표본 부족은 값과 무관하게 맨 뒤로 간다** — **그룹 안에서 유지된다**(그룹 사이에는 정렬이 없다. `SkinMetric` 선언 순서 고정)
 - **`strength`는 절댓값으로만 판정한다.** 부호(방향)는 **응답에 없다** — 계수 자체를 내보내지 않는다
 
 ```
@@ -866,11 +887,64 @@ GET /api/v1/report/monthly?baseDate=2026-08-14
 >
 > **표본 안에서 한쪽 값이 전부 같으면(분산 0) 상관계수가 정의되지 않는다.** 이 경우 `NaN`을 내보내지 않고 **`0`으로 취급해 `WEAK`이 된다** — `strength: null`이 아니다. `null`은 "표본 부족"만을 뜻하도록 남겨 뒀다.
 
-#### 5. 종합 리포트 (REP-09/10/11) — 보류
+#### 5. 종합 리포트 (REP-09/10/11)
 
-**만들지 않았고, 지금은 만들 수 없다.** 트리아지 발동 조건의 절반("수면 목표는 달성했는데")이 B6(수면 목표값) MVP 제외와 함께 사라졌고, 대체 조건과 임계값이 미정이다([prd.md](prd.md) §7 L6). 수면 쪽 근거 없이 임계값만 정해 내보내면 **잠을 못 잔 사람에게도 "클리닉에 가보라"고 말하게 된다.**
+**2026-08-16에 구현됐다.** 오래 막고 있던 둘이 함께 풀렸다 — 발동 조건의 수면 쪽 항을 **수면 점수 추세**로 대체했고(§7 L6), "클리닉 필요" 3종을 **셀피 실측 전용 boolean 플래그**로 추가했다(§7 L9). 결정 근거는 `sub-docs/report-overall.md`, 정책값은 [prd.md](prd.md) §10.10이다.
 
-화면이 요구하는 "색소침착 추세"·"여드름 흉터"·"구조적 노화"는 **현재 지표 3종으로 만들 수 없다.** 색소침착을 추가하려면 `report`만이 아니라 `skin_measurement` 컬럼 · `SkinMeasurement` 엔티티 · Vision 프롬프트 · 구조화 출력 스키마까지 함께 바뀐다 — **`report` 담당이 단독으로 결정할 수 있는 범위가 아니다.**
+```jsonc
+GET /api/v1/report/overall?baseDate=2026-08-14
+X-User-Id: 1
+
+{ "success": true,
+  "data": {
+    "status": "FULL",                  // FULL | INSUFFICIENT_DATA
+    "periodStart": "2026-07-25",       // baseDate − 20 (21일)
+    "periodEnd": "2026-08-14",
+    "triage": {
+      "triggered": true,
+      "sleepTrend": "RISING",          // STABLE | RISING | FALLING | VOLATILE | INSUFFICIENT_DATA
+      "stagnantMetrics": ["COMPLEXION"]
+    },
+    "appManaged": ["DARK_CIRCLE", "COMPLEXION", "BARRIER"],
+    "clinicNeeded": {                  // 실측 이력이 전혀 없으면 null
+      "pigmentationDetected": false,
+      "acneScarDetected": false,
+      "agingDetected": true
+    },
+    "clinicLink": "https://amredclinic.com/ko"
+  } }
+```
+
+**기간은 `baseDate − 20 ~ baseDate`(21일)로, 주간·월간과 다른 세 번째 창이다.** 역산 방식은 같다 — 여기서도 `baseDate`가 **모든 조회의 상한**이고 "오늘"이나 "전체 최신"을 쓰는 곳이 없다.
+
+**발동 조건은 두 절반의 AND다.**
+
+```
+triggered = (sleepTrend ∈ {STABLE, RISING}) AND (stagnantMetrics 가 1개 이상)
+```
+
+- **수면 쪽 절반이 없으면 안 되는 이유는 그대로다.** "수면으로는 잡히지 않는 신호"라고 말하려면 **수면은 괜찮았다는 근거**가 있어야 한다. 목표 달성 판정(B6)이 사라진 자리를 **추세**가 대신한다 — 잘 자고 있는데(`STABLE`·`RISING`) 특정 지표만 정체일 때만 발동한다. `FALLING`·`VOLATILE`이면 **정체 지표가 있어도 발동하지 않는다**: 그건 수면으로 설명되는 신호다
+- **`stagnantMetrics`는 배열이다.** 3종이 동시에 정체일 수 있다. **표본이 부족한 지표는 여기 담기지 않는다** — 판정 불가와 "정체 아님"을 이 배열에서는 구분하지 않는다
+- **문장은 서버가 만들지 않는다.** 판정 라벨과 근거 데이터만 나가고 "수면은 좋아졌는데 혈색이 정체됐어요"는 클라이언트가 조립한다 — REP-02와 같은 원칙이다([prd.md](prd.md) §4.4 ⑧)
+
+**`status`는 수면 추세 하나로만 갈린다.** `sleepTrend`가 `INSUFFICIENT_DATA`일 때만 전체가 `INSUFFICIENT_DATA`이고, **피부 지표 쪽 표본 부족은 그 지표를 `stagnantMetrics`에서 빼기만 한다.**
+
+> **⚠️ 주간·월간과 달리 가입일을 보지 않는다.** 그쪽 `INSUFFICIENT_DATA`는 "가입한 지 7일/28일이 지났는가"지만, 여기는 **실제로 쌓인 유효 표본 수**로만 결정된다 — 가입한 지 오래됐어도 최근 3주에 잔 날이 5일 미만이면 같은 판정을 받는다. **같은 이름의 상태가 두 가지 다른 기준에서 나온다는 것을 기억할 것.** (`ReportPeriodStatus`가 아니라 `OverallReportStatus`인 이유이기도 하다.)
+
+**`appManaged`는 계산하지 않는다.** `SkinMetric` 선언 순서를 그대로 쓰는 **고정 라벨 배열**이고, 지표별 개선 여부에 따라 달라지지 않는다.
+
+##### `clinicNeeded` — 셀피 실측 전용 감지 플래그 3종
+
+**`baseDate` 이하에서 가장 최근 실측 1건**의 플래그를 그대로 옮긴다. 추세·비교가 없다 — "지금 클리닉이 필요해 보이는가"만 보여준다.
+
+- **점수화하지 않는다.** 0~100이 아니라 감지 여부(boolean)뿐이다. 심각도를 셀피 한 장으로 판정할 근거가 없다
+- **예보 3종과 분리돼 있다.** 대응하는 예보값이 없어 **HOME-07 대조에도 HOME-08 개인 가중치 학습에도 관여하지 않는다** — "예보와 실측은 같은 세트"라는 원칙은 그 세트(`darkCircle`·`complexion`·`barrier`) 안에서 그대로다. **이 셋을 예보 3종에 섞으면 그때가 원칙 위반이다**
+- **`clinicNeeded` 전체가 `null`인 것과 필드 하나가 `null`인 것은 뜻이 다르다.** 전체 `null`은 **실측 이력이 아예 없는 것**이고, 필드 하나만 `null`이면 **그 실측 행이 이 컬럼 도입(2026-08-16) 이전 데이터**라 미측정이다. **어느 쪽도 `false`로 채우지 않는다** — "감지 안 됨"과 "측정한 적 없음"은 다르다
+- **`POST /skin/selfie` 응답에는 이 셋이 나가지 않는다.** 저장만 하고 여기서만 읽는다(§2.3)
+
+**`clinicLink`는 서버 상수 고정값**이며 앱은 파싱하지 않고 그대로 연다. **연결 클릭 이벤트 기록(REP-11 "필요 시")은 이번 범위에 없다** — 제휴 지표가 필요해지면 그때 연다.
+
+**도메인 에러는 `404 USER_NOT_FOUND` 하나뿐이다** (나머지는 다른 API와 공통인 `400 INVALID_INPUT`·`400 USER_ID_HEADER_INVALID`). **데이터가 없는 상황은 전부 `200`이다** — 표본이 부족하면 `INSUFFICIENT_DATA`, 실측 이력이 없으면 `clinicNeeded: null`이며 **어느 쪽도 4xx가 아니다.**
 
 ### 2.6 `health`
 
@@ -1046,7 +1120,7 @@ Content-Type: application/json
 
 **1단계 6개는 전부 끝났다.** 이어서 `GET /skin/verification/summary`(HOME-09) · `GET /skin/model`(REP-12) · **`todo` 2개**(§2.4) · **`user` 3·4·5번**(§2.1) · **출석 체크인**(§2.1 6번) · **`report` 1~4번**(§2.5)까지 끝났다.
 
-**남은 것은 종합 리포트(`GET /report/overall`) 하나다** — 도메인 API 19개 중 18개가 끝났고, 그 하나는 기능이 아니라 **정책이 미정이라 보류**다(§2.5 5번 · [prd.md](prd.md) §7 L6).
+**종합 리포트(`GET /report/overall`)까지 끝나 도메인 API 19개가 전부 구현됐다** (2026-08-16 · §2.5 5번). 마지막까지 남아 있던 정책 미정(§7 L6·L9)이 해소된 결과다 — 근거는 `sub-docs/report-overall.md`.
 
 > **exp 적립은 네 API에 흩어져 붙어 있다** — `POST /users/me/attendance` · `POST /sleep/sessions` · `POST /skin/selfie` · `PATCH /todo/{id}`. **넷이 같은 `exp` 객체를 쓴다**(§1). 다섯 번째 적립 지점을 만든다면 그 모양을 따르고, **적립량은 `LevelPolicy`에서 가져온다** — 도메인 쪽에 상수를 복사하면 조용히 갈린다.
 
@@ -1064,7 +1138,19 @@ Content-Type: application/json
 - **1·2는 [erd.md](erd.md) §3.10의 검산식으로만 드러났다** — `SUM(exp_grant.amount) + (DO 완료 수 × 5) + (전체 완료일 수 × 30) = users.exp`. **이제 성립한다**
 - **4는 방향이 뒤집혀 읽히는 문제였다.** `DARK_CIRCLE`은 "심한 정도"가 아니라 **"회복된 정도"**(높을수록 좋음)라서([prd.md](prd.md) §1), "다크서클"이라고만 쓰면 높은 점수가 "다크서클이 심하다"로 읽힌다
 
-**남은 것은 종합 리포트 정책 결정 하나다**(§2.5 5번 · [prd.md](prd.md) §7 L6·L9). 코드로 할 일은 없다.
+### 2026-08-16~17에 더해진 것
+
+| 무엇 | 어디 |
+|---|---|
+| 종합 리포트 `GET /report/overall` — 마지막 도메인 API | §2.5 5번 |
+| `skin_measurement` 감지 플래그 3종 (클리닉 트리아지 전용) | §2.5 5번 · [erd.md](erd.md) §3.6 |
+| 일간 `sleepSummary`에 `remSleepMinutes`·`hrv`·`restingHeartRate` | §2.5 1번 |
+| 주간·월간 `correlations`가 지표별 3그룹으로 **교체** (필드 병행 없음) | §2.5 3~4번 |
+| `action_master.threshold` 전 행 `+20` (상한 `90`) — 추천이 너무 드물게 뜨는 문제 | [erd.md](erd.md) §3.8 |
+
+**API 스펙이 바뀐 것은 셋이고 그중 하나는 파괴적 변경이다** — `correlations`는 필드를 병행하지 않고 타입을 바꿨다. 소비자가 프론트 하나뿐이라 합의된 교체다.
+
+**⚠️ `action_master.threshold` 상향은 운영 RDS에 아직 반영되지 않았다** — 배포 후 `action_master_raise_threshold.sql`을 사람이 실행해야 한다([workflow.md](workflow.md) §8).
 
 ---
 

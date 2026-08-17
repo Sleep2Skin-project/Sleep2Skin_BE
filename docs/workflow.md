@@ -286,7 +286,7 @@ API 개발자가 합류하면 도메인 단위로 나눈다. 도메인 패키지
 |---|---|
 | 공통 `global` · `user` · `game` | **완료** — 동의·온보딩·조회 3개·출석까지 |
 | A `sleep` · `skin` | **완료** |
-| B `todo` · `report` | **완료** — 종합 리포트(REP-09~11)만 정책 미정으로 보류 |
+| B `todo` · `report` | **완료** — 마지막까지 보류였던 종합 리포트(REP-09~11)도 2026-08-16에 끝났다 |
 
 **A를 쪼개지 않았다.** `POST /sleep/sessions`가 업로드받고 그 자리에서 예보까지 돌려주는 계약이라([api.md](api.md) §3) 두 도메인이 한 트랜잭션에 묶여 있다.
 
@@ -295,6 +295,15 @@ API 개발자가 합류하면 도메인 단위로 나눈다. 도메인 패키지
 > **분담할 때 명세 갱신을 PR 범위에 넣는다.** 도메인을 나누면 **각자 자기 도메인의 문서를 함께 고쳐야** 한다 — 코드는 리뷰에서 보이지만 **문서가 안 바뀐 것은 보이지 않는다.** 특히 [api.md](api.md)는 앱 팀이 보는 유일한 출처라, 어긋나면 **앱이 잘못 구현된 뒤에야 드러난다.**
 >
 > 별도로 정리 문서(노션 등)를 쓰는 것은 좋지만 **그것이 `docs/`를 대신하지 않는다.** 결정은 노션에서 하되 확정되면 `docs/`로 옮긴다 — 저장소만 보고 작업하는 사람(그리고 다음 세션의 AI)이 노션을 읽지 않는다.
+
+##### `sub-docs/`는 결정 근거를 남기는 곳이지 명세가 아니다 (2026-08-18 정리)
+
+**2026-08-16~17 작업(종합 리포트 · 리포트 필드 추가 · TODO 임계값)은 `docs/` 본문을 건드리지 않고 별도 파일에 결정만 적어 뒀다.** 기존 명세를 흔들지 않으려는 의도였고 근거 기록으로서는 잘 남았지만, **그 사이 `docs/`는 "종합 리포트는 보류"라고 계속 말하고 있었다** — 위 문단이 경고하는 상황이 리포지토리 안에서 되풀이된 것이다.
+
+- **`sub-docs/`에는 "왜 그렇게 정했나"를 남긴다.** 논의 과정·검토했다 버린 선택지·프롬프트 원문처럼 명세 본문에 넣기엔 긴 것들이다
+- **"무엇이 규격인가"는 항상 `docs/`가 말한다.** 특히 [api.md](api.md)는 앱 팀이 보는 유일한 출처다
+- **기능 PR에서 둘을 함께 갱신한다.** 나중에 몰아서 맞추면 그 사이 문서를 읽은 사람이 틀린 것을 읽는다
+- **디렉터리는 `sub-docs/` 하나다.** 한때 `sub.docs/`가 따로 있었고 같은 목적의 문서가 두 곳에 나뉘어 **한쪽만 보고 지나치기 쉬웠다** — 2026-08-18에 합쳤다. **점(`.`)이 들어간 이름을 다시 만들지 말 것**
 
 **`action_master` 마스터 데이터(prd.md §7 P5)는 해소됐다** — 시드 24행이 들어왔다.
 
@@ -540,7 +549,26 @@ docker run -i --rm mysql:8 mysql --default-character-set=utf8mb4 \
   -h "$RDS" -u sleep2skin -p sleep2skin < action_master_fix_encoding.sql
 ```
 
-**두 파일 모두 `src/main/resources/db/seed/`에 있고 Git에 커밋돼 있다.**
+#### ⚠️ 아직 실행하지 않은 것 — `threshold` 상향 (2026-08-17)
+
+**액션 마스터 24행의 `threshold`를 전부 `+20` 했다** (`30~70` → `50~90`). TODO 탭이 좋은 컨디션에서 빈 화면으로 보이던 문제 때문이다([erd.md](erd.md) §3.8 · [prd.md](prd.md) §4.3).
+
+**시드 파일(`action_master.sql`)의 값은 이미 올라가 있지만, 운영 RDS에는 이미 옛 값으로 들어간 24행이 있다.** 그래서 **`UPDATE` 한 줄짜리 파일을 따로 뒀다.**
+
+```bash
+docker run -i --rm mysql:8 mysql --default-character-set=utf8mb4 \
+  -h "$RDS" -u sleep2skin -p sleep2skin < action_master_raise_threshold.sql
+```
+
+- **DELETE 후 재INSERT가 아니다.** `daily_todo.action_master_id`가 기존 id를 참조하고 있어 지우면 과거 TODO 목록이 끊긴다 — `action_master_fix_encoding.sql`과 같은 이유, 같은 방식이다
+- **`LEAST(threshold + 20, 90)`이라 상한을 넘지 않지만 멱등하지는 않다.** 두 번 실행하면 두 번 오른다(현재 값 기준 최대 `90`까지). **한 번만 실행할 것**
+- **로컬은 `docker compose down -v` 후 시드를 다시 넣으면 이미 새 값이라 이 파일이 필요 없다.** 운영에만 해당한다
+
+```sql
+SELECT MIN(threshold), MAX(threshold) FROM action_master;   -- 50, 90 이어야 한다
+```
+
+**세 파일 모두 `src/main/resources/db/seed/`에 있고 Git에 커밋돼 있다** — `action_master.sql`(신규 구축) · `action_master_fix_encoding.sql`(인코딩 복구) · `action_master_raise_threshold.sql`(임계값 상향).
 
 **멱등하지 않다.** `INSERT`에 조건이 없어 두 번 실행하면 24행이 더 생기고, `action_master`에는 유니크 제약이 없어 DB가 막지 않는다. 추천 결과에 같은 항목이 중복으로 뜬다.
 
@@ -582,8 +610,11 @@ SHOW CREATE TABLE skin_forecast;   -- (user_id, base_date)
 **액션 마스터가 채워져 있는지도 본다.** 비어 있으면 TODO 탭이 빈 배열로만 응답한다 — 에러가 아니라 로그에 안 남는다(위 "액션 마스터 시드").
 
 ```sql
-SELECT COUNT(*) FROM action_master;   -- 24
+SELECT COUNT(*) FROM action_master;                         -- 24
+SELECT MIN(threshold), MAX(threshold) FROM action_master;   -- 50, 90 (2026-08-17 상향 반영 여부)
 ```
+
+**이번 배포에서는 `threshold` 상향 SQL도 함께 실행해야 한다** (위 "아직 실행하지 않은 것"). `30, 70`이 나오면 아직 안 돌린 것이다 — **에러가 아니라 추천이 드물게 뜰 뿐이라 알아채기 어렵다.**
 
 ### 앱은 nginx 뒤에 있다 (2026-08-09)
 

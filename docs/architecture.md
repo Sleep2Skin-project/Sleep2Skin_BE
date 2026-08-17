@@ -66,7 +66,7 @@ com.allday.sleep2skin_be
     ├── sleep/                  수면 세션 수신 · 정규화 · 집계
     ├── skin/                   피부 예보 · 셀피 실측 · 검증 · 개인 모델
     ├── todo/                   추천 엔진 · TODO 리스트
-    ├── report/                 일간 · 타임라인 · 주간 · 월간 (종합은 보류)
+    ├── report/                 일간 · 타임라인 · 주간 · 월간 · 종합(트리아지)
     ├── game/                   레벨 · 경험치 적립 · 출석 (HOME-04)
     └── health/                 헬스체크 (구현 완료)
 ```
@@ -255,8 +255,9 @@ POST /api/v1/skin/selfie
    │
    ├─ SelfieAnalysisService                 (multipart/form-data)
    │     ├─ MultipartFile → byte[]          메모리에서만 다룬다. 디스크·버킷에 쓰지 않는다
-   │     ├─ OpenAI Vision 호출 (Structured Outputs로 지표 3종 강제)
-   │     ├─ 0~100 정규화 → SkinMeasurement 저장 (RDS — 숫자 3개)
+   │     ├─ OpenAI Vision 호출 (Structured Outputs — 지표 3종 + 감지 플래그 3종 강제)
+   │     ├─ 0~100 정규화 → SkinMeasurement 저장 (RDS — 숫자 3개 + boolean 3개)
+   │     │                                        플래그는 저장만 하고 아래 검증에 넣지 않는다
    │     └─ 바이트 참조 해제                  ← 메서드를 벗어나면 남는 참조가 없다
    │
    ├─ SkinVerificationService
@@ -302,7 +303,7 @@ GET /api/v1/todo?baseDate=
 
 **룰 기반**으로 구현한다. LLM 생성은 재현성과 비용 때문에 해커톤 범위에서 제외한다. 액션 마스터는 DB 테이블로 관리하며, 초기 데이터는 시드 SQL(24행)로 넣는다 — **사람이 한 번 실행한다**([workflow.md](workflow.md) §8).
 
-### 3.4 리포트 집계 (REP-02~08) — 구현 완료 (2026-08-15)
+### 3.4 리포트 집계 (REP-02~11) — 구현 완료 (REP-02~08은 2026-08-15, 종합은 2026-08-16)
 
 **리포트는 새 값을 만들지 않는다.** 저장된 `sleep_session`·`skin_forecast`·`skin_measurement`를 읽어 기간으로 묶을 뿐이고, **파생값을 컬럼으로 두지 않는다**는 원칙([erd.md](erd.md) §2 원칙 ①) 그대로 볼 때마다 계산한다. 그래서 **리포트 전용 테이블이 하나도 없다.**
 
@@ -331,7 +332,27 @@ CorrelationCalculator(같은 세션 맵을 그대로 재사용)  ← 세션을 �
 
 **상관 강도(REP-07)만 다른 원천을 쓴다** — `skin_measurement`(셀피 실측)다. 예보와 상관을 내면 **수면으로 만든 값이 수면과 관련 있다는 순환 논증**이 되기 때문이며, 그래서 **세션과 검증이 둘 다 있는 날짜만 표본**이 된다. 값도 정규화된 부분점수가 아니라 **저장된 원본값**을 쓴다.
 
-**⚠️ 수면 점수 계산이 두 클래스에 있다** — `sleep/SleepScoreCalculator`(exp 적립)와 `report/DailySleepScoreCalculator`(리포트). 산식은 같고 입력 모양만 다르다(전자는 부분점수 맵 또는 재조회, 후자는 이미 조회한 세션). **한쪽만 바뀌면 exp로 지급한 점수와 리포트가 보여준 점수가 갈린다** — `VerificationStreakCalculator`를 한 곳으로 묶은 것과 같은 자리다. **세 번째를 만들지 말 것.**
+**⚠️ 수면 점수 계산이 두 클래스에 있다** — `sleep/SleepScoreCalculator`(exp 적립)와 `report/DailySleepScoreCalculator`(리포트). 산식은 같고 입력 모양만 다르다(전자는 부분점수 맵 또는 재조회, 후자는 이미 조회한 세션). **한쪽만 바뀌면 exp로 지급한 점수와 리포트가 보여준 점수가 갈린다** — `VerificationStreakCalculator`를 한 곳으로 묶은 것과 같은 자리다. **세 번째를 만들지 말 것.** 종합 리포트(REP-09)도 `DailySleepScoreCalculator`를 하루씩 호출한다.
+
+#### 종합 리포트(REP-09~11)는 세 번째 기간 창을 쓴다 (2026-08-16)
+
+```
+GET /report/overall?baseDate=
+        ↓
+periodStart = baseDate − 20 (21일)                 ← 주간 7일·월간 28일과 다른 세 번째 창
+        ↓
+전반부 10일 | 가운데 1일 제외 | 후반부 10일        ← 경계에 걸친 하루의 소속을 없앤다
+        ↓
+TriagePolicy.classifySleepTrend(...)               ← 표본 부족 → 변동성 → 추세 순서로 판정
+        ↓
+지표 3종 각각 정체 판정 (같은 기간 skin_forecast)   ← 예보 점수를 본다 (실측이 아니다)
+        ↓
+clinicNeeded = baseDate 이하 최신 skin_measurement 1건의 플래그 3종
+```
+
+- **가입일을 보지 않는다.** 주간·월간의 `INSUFFICIENT_DATA`는 "가입한 지 기간만큼 지났는가"지만, 여기는 **실제 유효 표본 수**로만 결정된다. 그래서 서비스가 `stagnantMetrics`·`clinicNeeded`·`appManaged`를 상태와 무관하게 항상 계산한다 — 각 판정 함수가 표본 부족을 스스로 걸러낸다
+- **`baseDate`가 모든 조회의 상한이다.** "오늘"이나 "전체 최신"을 쓰는 곳이 없다 — 서버는 오늘을 모르고([conventions.md](conventions.md) §8), 미래 날짜가 섞이면 과거 리포트가 재현되지 않는다
+- **판정 기준값은 전부 `TriagePolicy`에 있다** ([prd.md](prd.md) §10.10). 표본 하한만 `CorrelationPolicy.MIN_SAMPLE_SIZE`를 참조한다 — 사본을 두지 않는다
 
 ---
 
@@ -473,7 +494,7 @@ public SkinForecastResponse getForecast(Long userId, LocalDate date)
 | 모델 | `gpt-5.6-terra` (기본값) |
 | API | Responses API + `input_image` |
 | 이미지 전달 | 요청 본문에 **base64 인라인**. URL을 넘기지 않는다(넘길 URL이 없다 — §5) |
-| 출력 강제 | Structured Outputs — 지표 3종 정수 스키마 |
+| 출력 강제 | Structured Outputs — **지표 3종 정수 + 감지 플래그 3종 boolean** 스키마 |
 | 대체 모델 | `gpt-5.6-luna` (비용 문제 시) |
 
 모델 ID는 `application.yml`에 프로퍼티로 둬서 코드 수정 없이 교체할 수 있게 한다.
@@ -509,9 +530,24 @@ Structured Outputs로 응답 스키마를 강제하면 파싱 실패가 사라�
 >
 > ✅ **2026-08-10에 실호출로 확인했다.** 다크서클이 뚜렷한 사진과 눈 밑이 맑은 사진을 각각 `POST /skin/selfie`에 넣어 대조했고, **맑은 쪽이 더 높은 `darkCircle`**이 나왔다 — 정의(`회복된 정도`)와 같은 방향이다. **`SkinVisionPrompt`를 고쳤다면 이 확인을 다시 해야 한다.**
 
+#### 감지 플래그 3종도 같은 호출에서 받는다 (2026-08-16 추가)
+
+종합 리포트(REP-10)의 "클리닉 필요" 항목을 위해 **`pigmentationDetected`·`acneScarDetected`·`agingDetected`**를 같은 스키마에 넣었다. **호출을 늘리지 않았다** — 사진 한 장에 요청 하나다.
+
+| 필드 | `true` | `false` |
+|---|---|---|
+| `pigmentationDetected` | 색소침착(잡티·기미·불균일한 착색)이 보인다 | 안 보이거나 없다 |
+| `acneScarDetected` | 여드름 흉터(패임·착색된 흉터 조직)가 보인다 | 안 보이거나 없다 |
+| `agingDetected` | 구조적 노화(주름·잔주름·처짐·탄력 저하)가 보인다 | 안 보이거나 없다 |
+
+- **심각도를 묻지 않는다 — 존재 여부만이다.** 프롬프트에 `Presence only — do NOT judge severity`를 명시한다. 점수 3종과 성격이 다른 값이 같은 응답에 섞이므로 **여기서 척도가 흐려지면 지표 쪽 방향까지 흔들린다**
+- **판단이 어려우면 `false`다.** 점수 쪽은 "중간값으로 답하라"이지만 플래그는 **모르면 감지되지 않은 것으로** 답하게 한다 — 애매한 사진에서 클리닉을 권하지 않기 위해서다
+- **strict 모드라 셋 다 `required`다.** 그래서 새 실측 행의 세 컬럼은 항상 채워지고, `NULL`은 컬럼 도입 이전 행에만 남는다([erd.md](erd.md) §3.6)
+- **이 셋은 검증(HOME-07)에도 개인 가중치 학습(HOME-08)에도 들어가지 않는다.** 대응하는 예보값이 없다
+
 **인터페이스로 감싼다** — 제공자를 바꿀 가능성이 있으므로 `SkinVisionClient` 인터페이스를 두고 `OpenAiSkinVisionClient`로 구현한다. **인터페이스는 `byte[]`(또는 `MultipartFile`)를 받는다 — 스토리지 키를 받지 않는다.** 테스트에서는 고정값을 반환하는 스텁으로 대체한다.
 
-**반환 타입은 `SkinVisionScores`(필드 3개)이고 `SkinMetric`을 쓰지 않는다.** 이 패키지는 `global`이라 `domain`을 참조할 수 없다(§2). 지표가 3종 고정이라 필드로 펴도 늘어날 일이 없다.
+**반환 타입은 `SkinVisionScores`(점수 3개 + 플래그 3개)이고 `SkinMetric`을 쓰지 않는다.** 이 패키지는 `global`이라 `domain`을 참조할 수 없다(§2). 지표가 3종 고정이라 필드로 펴도 늘어날 일이 없다.
 
 **범위를 벗어난 점수는 자르지 않고 실패시킨다.** strict 스키마가 `minimum`/`maximum`을 지원하지 않아(넣으면 요청이 400이다) 0~100은 코드가 지켜야 하는데, 클램프하면 **모델이 다른 척도로 답했다는 사실이 숨는다** — 101을 100으로 만들면 저장은 되고 적중률만 틀린다. 실패하면 앱이 재시도하고 행은 생기지 않는다([erd.md](erd.md) §3.6).
 

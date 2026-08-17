@@ -70,6 +70,9 @@ erDiagram
         int dark_circle
         int complexion
         int barrier
+        boolean pigmentation_detected
+        boolean acne_scar_detected
+        boolean aging_detected
     }
     personal_weight {
         bigint id PK
@@ -437,12 +440,27 @@ awake_count = 1,  awake_minutes = 7
 | `dark_circle` | INT | NOT NULL, CHECK 0~100 | LLM 산출값 — 예보와 **같은 방향**(높을수록 맑음) |
 | `complexion` | INT | NOT NULL, CHECK 0~100 | 높을수록 생기 있음 |
 | `barrier` | INT | NOT NULL, CHECK 0~100 | 높을수록 튼튼함 |
+| `pigmentation_detected` | BOOLEAN | **NULL 허용** | 색소침착 감지 여부 — 클리닉 트리아지 전용 (2026-08-16 추가) |
+| `acne_scar_detected` | BOOLEAN | **NULL 허용** | 여드름 흉터 감지 여부 — 같음 |
+| `aging_detected` | BOOLEAN | **NULL 허용** | 구조적 노화 징후 감지 여부 — 같음 |
 | `analyzed_at` | DATETIME(6) | NOT NULL | 분석 완료 시각 |
 | `created_at` | DATETIME(6) | NOT NULL | |
 
 **UNIQUE `(user_id, base_date)`** — 하루 1회 검증.
 
-`skin_forecast`와 컬럼이 거의 같다. **의도한 것이다** — 같은 세트여야 HOME-07 대조가 성립한다.
+`skin_forecast`와 **점수 3종이** 거의 같다. **의도한 것이다** — 같은 세트여야 HOME-07 대조가 성립한다.
+
+#### 감지 플래그 3종은 예보와 짝이 없다 (2026-08-16 추가 — [prd.md](prd.md) §7 L9 해소)
+
+**종합 리포트(REP-10)의 "클리닉 필요" 세 항목을 만들기 위해 추가됐다.** LLM Vision이 매 실측마다 지표 3종과 함께 판정한다.
+
+- **점수화하지 않는다 — 감지 여부만이다.** 0~100으로 매길 근거가 셀피 한 장에 없다. `CHECK` 제약도 붙지 않는다(범위가 없다)
+- **`skin_forecast`에 대응 컬럼을 만들지 않는다.** 예보가 없으므로 **HOME-07 대조에도 HOME-08 개인 가중치 학습에도 들어가지 않는다** — `personal_weight`는 여전히 7행이다. **여기에 예보 컬럼을 추가하는 순간 "예보와 실측은 같은 세트"라는 원칙이 깨진다**
+- **읽는 곳이 `GET /report/overall` 하나뿐이다.** `baseDate` 이하 가장 최근 1건을 그대로 보여주고 추세를 계산하지 않는다. **`POST /skin/selfie` 응답에도 실리지 않는다**
+
+**⚠️ `boolean`이 아니라 `Boolean`(NULL 허용)인 것이 핵심이다.** `ddl-auto: update`가 컬럼을 추가할 때 `NOT NULL`이면 **기존 행에 기본값 `0`(false)이 채워져** "이 기능 도입 이전이라 측정하지 않았다"와 "측정했고 감지되지 않았다"가 DB에서 구분되지 않는다. `NULL`을 허용하면 **도입 이전 행만 `NULL`로 남아** 응답에서 그대로 구분된다.
+
+> **새 행은 항상 세 값이 채워진다.** Structured Outputs가 strict 모드라 세 필드 전부 `required`이고, `SkinVisionScores`에서는 원시 `boolean`이다. **`NULL`은 과거 행에서만 나온다.**
 
 **점수 방향도 예보와 같아야 한다.** 셋 다 높을수록 좋은 상태다. LLM이 `dark_circle`을 "다크서클이 심한 정도"로 해석하면 값이 뒤집히는데, 범위·타입은 그대로라 `CHECK` 제약도 스키마 검증도 걸리지 않는다. **적중률만 조용히 무너진다.** 프롬프트에서 방향을 명시하는 것이 유일한 방어선이다 → [architecture.md](architecture.md) §OpenAI Vision
 
@@ -621,7 +639,13 @@ verdictBonus = (가장 최근 검증의 verdict == OVERESTIMATED) ? impact_score
 
 **앱이 자동으로 넣지 않는다.** `spring.sql.init`도 Flyway도 쓰지 않으므로 **사람이 한 번 실행한다.** 절차와 인코딩 주의사항은 [workflow.md](workflow.md) §8.
 
-`impact_score`는 전 행이 **5~9** 범위이고, `threshold`는 30~70이다. 위 "1~10, 기본 5" 규칙 안에 있다.
+`impact_score`는 전 행이 **5~9** 범위이고 위 "1~10, 기본 5" 규칙 안에 있다.
+
+**`threshold`는 2026-08-17에 전 행 `+20` 됐다 — 이제 `50~90`이다** (원래 `30~70`). **TODO 탭이 종종 빈 화면으로 보이던 문제** 때문이다: 매칭이 `예보 점수 ≤ threshold`라 컨디션이 좋은 날엔 후보가 0개가 됐다. 버그가 아니라 설계대로 동작한 결과이며, **좋은 컨디션에서도 일부 추천이 뜨도록 임계값을 올린 것**이다([prd.md](prd.md) §4.3).
+
+- **`impact_score`는 건드리지 않았다.** 임계값은 **뜰지 말지만** 결정하고 심각도는 `100 − 점수`가 정하므로(아래), 임계값을 올려도 **정렬 순서가 따라 움직이지 않는다.** 이 분리가 여기서 값을 했다
+- **운영 RDS에는 `action_master_raise_threshold.sql`을 사람이 실행한다** — `UPDATE` 한 줄이며 **DELETE 후 재INSERT가 아니다**(`daily_todo.action_master_id`가 기존 id를 참조한다). 절차는 [workflow.md](workflow.md) §8
+- **시드 파일(`action_master.sql`)의 값도 함께 올렸다.** 새 환경에서 처음 실행하면 이미 `50~90`이라 UPDATE를 또 돌릴 필요가 없다
 
 ### 3.9 `daily_todo` — 일자별 TODO
 
@@ -864,10 +888,12 @@ users
 | 수면 단계 매핑 계약 | `sleep_stage_segment.stage` 값 | §7 B5 |
 | 상관 강도 구간·표본 하한 | REP-07 표시 (스키마 무관) — 구현값 `0.7/0.4/0.2`, `5` | §7 L7 |
 | ~~모델 신뢰도 등급 일수 구간~~ | **서버 대상 아님** — MY-01이 숫자를 그대로 반환한다 | §7 L8 |
-| 트리아지 발동 조건·임계값 | REP-09 (스키마 무관, **보류**) | §7 L6·L9 |
+| ~~트리아지 발동 조건·임계값~~ | **확정 (2026-08-16)** → [prd.md](prd.md) §10.10. `TriagePolicy` 상수 | §7 L6 |
 
-**스키마에 영향을 주는 것은 없다.** 전부 값이나 로직이다 — 예보 스코어링은 `ScoringPolicy`, 상관 강도는 `CorrelationPolicy`에 모인다.
+**남은 것은 스키마에 영향을 주지 않는다.** 값이나 로직이며 — 예보 스코어링은 `ScoringPolicy`, 상관 강도는 `CorrelationPolicy`, 트리아지는 `TriagePolicy`에 모인다.
 
-> ⚠️ **하나만 예외가 될 수 있다.** REP-09 논의에서 나온 **색소침착을 셀피 실측 전용 지표로 추가하는 안**은 `skin_measurement`에 **컬럼이 하나 늘어난다** ([prd.md](prd.md) §4.4). 결정되기 전까지 컬럼을 미리 만들지 말 것 — `ddl-auto: update`는 컬럼을 지우지 않는다(§5).
+> ✅ **예외였던 하나는 실제로 스키마를 건드렸다** (2026-08-16). REP-09 논의의 **셀피 실측 전용 지표 추가 안**이 채택되어 `skin_measurement`에 **컬럼이 셋** 늘었다(색소침착 하나가 아니라 여드름 흉터·구조적 노화까지 — §3.6). 점수가 아니라 **감지 여부 boolean**이라 예보 쪽에는 아무 컬럼도 늘지 않았다.
+>
+> ⚠️ **`ddl-auto: update`는 컬럼을 지우지 않는다는 점은 그대로다**(§5). 그래서 이 셋은 처음부터 **NULL 허용**으로 들어갔다 — 되돌릴 수 없는 변경이라면 최소한 기존 행을 오염시키지 않아야 한다.
 
 > **2026-08-07에 스코어링 관련 항목이 전부 해소됐다** — 가중합 공식·피처 매핑·각성 총 시간 배정(→ 피처로 쓰지 않음)·결측 밤 처리. [prd.md](prd.md) §10.3~§10.6 참조. **이 표에서 빠졌다는 것은 `personal_weight` 7행 구성이 확정됐다는 뜻이다.**
