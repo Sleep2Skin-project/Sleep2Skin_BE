@@ -33,6 +33,19 @@ import java.time.OffsetDateTime;
  * {@code SELFIE_ANALYSIS_FAILED} 에러로 끝나고 앱이 재시도한다. 항상 {@code SUCCESS}인 컬럼은
  * 의미가 없다.
  *
+ * <p><b>{@code pigmentationDetected}·{@code acneScarDetected}·{@code agingDetected}는 예보
+ * 지표 3종({@code darkCircle}·{@code complexion}·{@code barrier})과 성격이 다르다.</b> 매 실측마다
+ * LLM Vision이 함께 판정하는 <b>클리닉 트리아지 전용 boolean 플래그</b>다 — 0~100 점수화하지
+ * 않고(감지 여부만), {@code SkinForecast}에 대응하는 예보 값이 없어 HOME-07 대조·HOME-08 개인
+ * 가중치 학습 어느 쪽에도 관여하지 않는다. 종합 리포트(REP-10)가 "baseDate 이하 가장 최근 실측"
+ * 1건에서 그대로 읽어 클리닉 필요 여부를 보여줄 뿐이다.
+ *
+ * <p><b>세 필드는 {@code boolean}이 아니라 {@code Boolean}(nullable)이다.</b> 이 컬럼이 생기기
+ * 전에 만들어진 행과의 구분을 위해서다 — {@code NULL}은 이 기능 도입 이전 데이터(미측정),
+ * {@code false}는 실제 미검출이다. {@code boolean}으로 두면 {@code ddl-auto: update}가 컬럼을
+ * 추가할 때 기존 행에 {@code NOT NULL} 기본값(0)을 채워 넣어 "미측정"과 "미검출"이 DB상 구분되지
+ * 않는다.
+ *
  * <p>{@code updated_at}이 없다({@link BaseCreatedEntity} 상속). 실측값은 갱신되지 않는다 —
  * 셀피를 다시 찍는 건 다시 분석하는 것이고 하루 1회 제약에 걸린다.
  */
@@ -77,6 +90,18 @@ public class SkinMeasurement extends BaseCreatedEntity {
     @Column(nullable = false)
     private int barrier;
 
+    /** 색소침착 감지 여부 — 클리닉 트리아지 전용. 심각도 점수 없음. null이면 이 컬럼 도입 이전 데이터. */
+    @Column(nullable = true)
+    private Boolean pigmentationDetected;
+
+    /** 여드름 흉터 감지 여부 — 클리닉 트리아지 전용. 심각도 점수 없음. null이면 이 컬럼 도입 이전 데이터. */
+    @Column(nullable = true)
+    private Boolean acneScarDetected;
+
+    /** 구조적 노화 징후 감지 여부 — 클리닉 트리아지 전용. 심각도 점수 없음. null이면 이 컬럼 도입 이전 데이터. */
+    @Column(nullable = true)
+    private Boolean agingDetected;
+
     /**
      * 분석 완료 시각. {@code created_at}과 따로 두는 이유는 <b>LLM 호출이 최대 30초 걸려
      * 실제 시차가 있기</b> 때문이다. 응답 지연 측정에 쓴다.
@@ -86,12 +111,16 @@ public class SkinMeasurement extends BaseCreatedEntity {
 
     @Builder
     private SkinMeasurement(Long userId, LocalDate baseDate, int darkCircle, int complexion,
-                            int barrier, OffsetDateTime analyzedAt) {
+                            int barrier, Boolean pigmentationDetected, Boolean acneScarDetected,
+                            Boolean agingDetected, OffsetDateTime analyzedAt) {
         this.userId = userId;
         this.baseDate = baseDate;
         this.darkCircle = darkCircle;
         this.complexion = complexion;
         this.barrier = barrier;
+        this.pigmentationDetected = pigmentationDetected;
+        this.acneScarDetected = acneScarDetected;
+        this.agingDetected = agingDetected;
         this.analyzedAt = analyzedAt;
     }
 

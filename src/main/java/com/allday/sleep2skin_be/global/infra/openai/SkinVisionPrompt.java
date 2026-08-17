@@ -31,11 +31,15 @@ final class SkinVisionPrompt {
             Rate three metrics. All three use the SAME scale: an integer from 0 to 100 where
             a HIGHER score always means a BETTER (healthier-looking) condition.
 
+            Also flag three additional conditions as true/false only — do NOT rate their
+            severity, only whether they are visibly present.
+
             This is an observational rating of what is visible in the photo. It is not a
             medical diagnosis. Judge only what you can see; do not speculate about causes.
 
             If lighting, angle, or resolution make a metric hard to judge, give your best
-            estimate near the middle of the range rather than an extreme value.
+            estimate near the middle of the range rather than an extreme value. For the
+            true/false flags, answer false when you cannot tell.
 
             Answer only with the JSON object required by the schema.
             """;
@@ -70,12 +74,25 @@ final class SkinVisionPrompt {
                 Skin barrier condition. \
                 0 = visibly dry, flaky, red, irritated or rough. \
                 100 = smooth, calm and well-hydrated-looking, with no redness or flaking."""));
+        properties.put("pigmentationDetected", booleanField("""
+                Whether visible pigmentation (dark spots, melasma, uneven pigmented patches) is \
+                present anywhere on the face. true = visibly present. false = not visible or absent. \
+                Presence only — do NOT judge severity."""));
+        properties.put("acneScarDetected", booleanField("""
+                Whether visible acne scarring (pitted, indented, or discolored scar tissue from \
+                past acne) is present anywhere on the face. true = visibly present. \
+                false = not visible or absent. Presence only — do NOT judge severity."""));
+        properties.put("agingDetected", booleanField("""
+                Whether visible structural aging signs (wrinkles, fine lines, sagging, loss of \
+                elasticity) are present. true = visibly present. false = not visible or absent. \
+                Presence only — do NOT judge severity."""));
 
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "object");
         schema.put("properties", properties);
         // strict 모드는 모든 프로퍼티가 required 여야 한다 — 하나라도 빠지면 요청이 거절된다
-        schema.put("required", List.of("darkCircle", "complexion", "barrier"));
+        schema.put("required", List.of("darkCircle", "complexion", "barrier",
+                "pigmentationDetected", "acneScarDetected", "agingDetected"));
         schema.put("additionalProperties", false);
         return schema;
     }
@@ -83,6 +100,14 @@ final class SkinVisionPrompt {
     private static Map<String, Object> integerField(String description) {
         Map<String, Object> field = new LinkedHashMap<>();
         field.put("type", "integer");
+        field.put("description", description);
+        return field;
+    }
+
+    /** 감지 여부만 묻는 필드 — 심각도 점수가 아니라 {@code boolean}이다. */
+    private static Map<String, Object> booleanField(String description) {
+        Map<String, Object> field = new LinkedHashMap<>();
+        field.put("type", "boolean");
         field.put("description", description);
         return field;
     }

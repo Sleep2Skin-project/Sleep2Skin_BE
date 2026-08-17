@@ -30,6 +30,7 @@ class ReportApiDocsTest {
     private static final String TIMELINE_GET = "$.paths.['/api/v1/report/daily/timeline'].get";
     private static final String WEEKLY_GET = "$.paths.['/api/v1/report/weekly'].get";
     private static final String MONTHLY_GET = "$.paths.['/api/v1/report/monthly'].get";
+    private static final String OVERALL_GET = "$.paths.['/api/v1/report/overall'].get";
 
     @Autowired
     private MockMvc mockMvc;
@@ -267,6 +268,62 @@ class ReportApiDocsTest {
                         .value(containsString("항상 7개 전부 반환")))
                 .andExpect(jsonPath(MONTHLY_GET + ".description")
                         .value(containsString("임시값")));
+    }
+
+    // ===== 종합 (REP-09~11) =====
+
+    @Test
+    @DisplayName("종합 리포트 문서가 반영되고 성공 응답이 응답 스키마를 가리킨다")
+    void 종합_문서가_반영된다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(OVERALL_GET + ".summary").value(containsString("종합 리포트 조회")))
+                .andExpect(jsonPath(OVERALL_GET + ".summary").value(containsString("REP-09~11")))
+                .andExpect(jsonPath(OVERALL_GET + ".description")
+                        .value(containsString("최근 3주 수면 점수 추세와 피부 지표 정체 여부")))
+                .andExpect(jsonPath(OVERALL_GET + ".responses.['200'].content.['application/json'].schema.['$ref']")
+                        .value("#/components/schemas/ApiResponseOverallReportResponse"));
+    }
+
+    /**
+     * <b>이 API의 {@code status}는 주간·월간과 결정 기준 자체가 다르다.</b> 가입일 게이트가
+     * 없다는 것이 문서에서 사라지면, 프론트가 다른 리포트와 같은 규칙(가입 후 며칠)으로
+     * {@code INSUFFICIENT_DATA}를 오해할 수 있다.
+     */
+    @Test
+    @DisplayName("status가 수면 추세 하나로만 결정되고 가입일 게이트가 없다는 것이 문서에 있다")
+    void 종합_status_판정_기준이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(OVERALL_GET + ".description")
+                        .value(containsString("`sleepTrend`가 `INSUFFICIENT_DATA`일 때만 `status`가 `INSUFFICIENT_DATA`다")))
+                .andExpect(jsonPath(OVERALL_GET + ".description")
+                        .value(containsString("기준 게이트가 없다")));
+    }
+
+    @Test
+    @DisplayName("X-User-Id 헤더와 baseDate 쿼리 파라미터가 둘 다 필수로 문서에 붙는다")
+    void 종합_기준일_파라미터가_문서에_붙는다() throws Exception {
+        String userIdParameter = OVERALL_GET + ".parameters[?(@.name == 'X-User-Id')]";
+        String baseDateParameter = OVERALL_GET + ".parameters[?(@.name == 'baseDate')]";
+
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(userIdParameter + ".in").value(hasItem("header")))
+                .andExpect(jsonPath(userIdParameter + ".required").value(hasItem(true)))
+                .andExpect(jsonPath(baseDateParameter + ".in").value(hasItem("query")))
+                .andExpect(jsonPath(baseDateParameter + ".required").value(hasItem(true)));
+    }
+
+    @Test
+    @DisplayName("상태 코드마다 그 상황에 맞는 에러 예시가 붙는다")
+    void 종합_에러_예시가_상황별로_붙는다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(OVERALL_GET + ".responses.['400'].content.['application/json'].examples.INVALID_INPUT.['$ref']")
+                        .value("#/components/examples/INVALID_INPUT"))
+                .andExpect(jsonPath(OVERALL_GET + ".responses.['404'].content.['application/json'].examples.USER_NOT_FOUND.['$ref']")
+                        .value("#/components/examples/USER_NOT_FOUND"));
     }
 
 }

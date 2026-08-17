@@ -94,6 +94,28 @@ class SkinVerificationServiceTest {
     }
 
     /**
+     * 클리닉 트리아지 플래그 3종은 검증(예보-실측 대조)과 무관하게 <b>저장만 된다</b> — 응답에는
+     * 실리지 않는다(REP-10이 조회 시점에 {@code skin_measurement}에서 직접 읽는다).
+     */
+    @Test
+    @DisplayName("클리닉 트리아지 플래그 3종이 그대로 저장된다")
+    void 트리아지_플래그를_저장한다() {
+        forecastIs(67, 62, 81);
+        watchWorn();
+        given(skinMeasurementRepository.save(any(SkinMeasurement.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+
+        skinVerificationService.record(USER_ID, BASE_DATE,
+                new SkinVisionScores(61, 55, 78, true, false, true));
+
+        ArgumentCaptor<SkinMeasurement> captor = ArgumentCaptor.forClass(SkinMeasurement.class);
+        verify(skinMeasurementRepository).save(captor.capture());
+        assertThat(captor.getValue().getPigmentationDetected()).isTrue();
+        assertThat(captor.getValue().getAcneScarDetected()).isFalse();
+        assertThat(captor.getValue().getAgingDetected()).isTrue();
+    }
+
+    /**
      * <b>이 테스트가 지키는 것은 분모다.</b> 빈 지표를 0점으로 취급하면 존재하지 않는 오차가
      * 적중률에 섞이고, 같은 값이 HOME-08의 학습 입력이 되어 없던 값이 개인 가중치를 움직인다.
      */
@@ -332,7 +354,7 @@ class SkinVerificationServiceTest {
 
     private SelfieVerificationResponse analyze(int darkCircle, int complexion, int barrier) {
         return skinVerificationService.record(USER_ID, BASE_DATE,
-                new SkinVisionScores(darkCircle, complexion, barrier));
+                new SkinVisionScores(darkCircle, complexion, barrier, false, false, false));
     }
 
     private void forecastIs(int darkCircle, Integer complexion, Integer barrier) {
