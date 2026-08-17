@@ -141,9 +141,14 @@ public class OverallReportService {
                 .orElse(null);
     }
 
+    /**
+     * 행은 있지만 특정 필드가 {@code null}일 수 있다 — 이 컬럼 도입 이전에 만들어진 실측 행이다.
+     * {@code Boolean}을 그대로 옮기면 그 필드만 {@code null}로 나가고 나머지는 실제 값이
+     * 그대로 응답된다. 별도 분기가 필요 없다.
+     */
     private ClinicNeeded toClinicNeeded(SkinMeasurement measurement) {
-        return new ClinicNeeded(measurement.isPigmentationDetected(), measurement.isAcneScarDetected(),
-                measurement.isAgingDetected());
+        return new ClinicNeeded(measurement.getPigmentationDetected(), measurement.getAcneScarDetected(),
+                measurement.getAgingDetected());
     }
 
 }

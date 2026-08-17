@@ -110,9 +110,9 @@ class SkinVerificationServiceTest {
 
         ArgumentCaptor<SkinMeasurement> captor = ArgumentCaptor.forClass(SkinMeasurement.class);
         verify(skinMeasurementRepository).save(captor.capture());
-        assertThat(captor.getValue().isPigmentationDetected()).isTrue();
-        assertThat(captor.getValue().isAcneScarDetected()).isFalse();
-        assertThat(captor.getValue().isAgingDetected()).isTrue();
+        assertThat(captor.getValue().getPigmentationDetected()).isTrue();
+        assertThat(captor.getValue().getAcneScarDetected()).isFalse();
+        assertThat(captor.getValue().getAgingDetected()).isTrue();
     }
 
     /**

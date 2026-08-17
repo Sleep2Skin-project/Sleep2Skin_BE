@@ -80,18 +80,26 @@ public record OverallReportResponse(
     /**
      * {@code baseDate} 이하 범위에서 가장 최근 실측 1건의 감지 플래그를 그대로 옮긴 값이다.
      * 비교·트렌드는 없다 — "지금 클리닉이 필요해 보이는가"만 보여준다.
+     *
+     * <p><b>레코드 전체가 {@code null}인 것과 필드 하나가 {@code null}인 것은 다른 뜻이다.</b>
+     * {@code clinicNeeded} 전체가 {@code null}이면 실측 이력이 전혀 없는 것이고, 레코드는 있는데
+     * 필드 하나만 {@code null}이면 그 실측 행이 이 컬럼 도입 이전에 만들어졌다는 뜻이다(미측정).
+     * 어느 쪽도 {@code false}(실제 미검출)로 채우지 않는다.
      */
     @Schema(description = "클리닉이 필요할 수 있는 신호 3종 (가장 최근 실측 기준)")
     public record ClinicNeeded(
 
-            @Schema(description = "색소침착 감지 여부", example = "false")
-            boolean pigmentationDetected,
+            @Schema(description = "색소침착 감지 여부. null이면 이 실측 행이 컬럼 도입 이전 데이터(미측정)",
+                    example = "false", nullable = true)
+            Boolean pigmentationDetected,
 
-            @Schema(description = "여드름 흉터 감지 여부", example = "false")
-            boolean acneScarDetected,
+            @Schema(description = "여드름 흉터 감지 여부. null이면 이 실측 행이 컬럼 도입 이전 데이터(미측정)",
+                    example = "false", nullable = true)
+            Boolean acneScarDetected,
 
-            @Schema(description = "구조적 노화 징후 감지 여부", example = "false")
-            boolean agingDetected
+            @Schema(description = "구조적 노화 징후 감지 여부. null이면 이 실측 행이 컬럼 도입 이전 데이터(미측정)",
+                    example = "false", nullable = true)
+            Boolean agingDetected
     ) {
     }
 

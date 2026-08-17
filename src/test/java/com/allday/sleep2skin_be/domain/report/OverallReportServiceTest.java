@@ -262,6 +262,30 @@ class OverallReportServiceTest {
             assertThat(response.clinicNeeded().agingDetected()).isTrue();
         }
 
+        /**
+         * 이 컬럼 도입 이전에 만들어진 실측 행을 흉내낸다 — 행은 있지만 특정 필드만
+         * {@code null}이다. {@code false}(실제 미검출)로 채워지면 안 된다.
+         */
+        @Test
+        @DisplayName("행은 있지만 특정 필드만 null이면 그 필드만 null로, 나머지는 값 그대로 응답한다")
+        void 특정_필드만_null이면_그_필드만_null이다() {
+            SkinMeasurement measurement = SkinMeasurement.builder()
+                    .userId(USER_ID).baseDate(BASE_DATE)
+                    .darkCircle(60).complexion(60).barrier(60)
+                    .pigmentationDetected(null).acneScarDetected(false).agingDetected(true)
+                    .analyzedAt(BASE_DATE.atTime(9, 0).atOffset(ZoneOffset.UTC))
+                    .build();
+            given(skinMeasurementRepository
+                    .findFirstByUserIdAndBaseDateLessThanEqualOrderByBaseDateDesc(USER_ID, BASE_DATE))
+                    .willReturn(Optional.of(measurement));
+
+            OverallReportResponse response = service().getOverallReport(USER_ID, BASE_DATE);
+
+            assertThat(response.clinicNeeded().pigmentationDetected()).isNull();
+            assertThat(response.clinicNeeded().acneScarDetected()).isFalse();
+            assertThat(response.clinicNeeded().agingDetected()).isTrue();
+        }
+
         @Test
         @DisplayName("clinicLink는 고정 URL이다")
         void clinicLink는_고정이다() {
