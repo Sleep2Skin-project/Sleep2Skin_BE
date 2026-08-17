@@ -205,7 +205,7 @@ class ReportApiDocsTest {
                 .andExpect(jsonPath(WEEKLY_GET + ".description")
                         .value(containsString("표본이 5개 미만")))
                 .andExpect(jsonPath(WEEKLY_GET + ".description")
-                        .value(containsString("항상 7개 전부 반환한다")))
+                        .value(containsString("skinMetric` 기준 3그룹")))
                 .andExpect(jsonPath(WEEKLY_GET + ".description")
                         .value(containsString("정렬은 상관계수 절댓값 내림차순")))
                 .andExpect(jsonPath(WEEKLY_GET + ".description")
@@ -265,7 +265,7 @@ class ReportApiDocsTest {
                 .andExpect(jsonPath(MONTHLY_GET + ".description")
                         .value(containsString("대상 기간만 최근 28일")))
                 .andExpect(jsonPath(MONTHLY_GET + ".description")
-                        .value(containsString("항상 7개 전부 반환")))
+                        .value(containsString("skinMetric` 기준 3그룹")))
                 .andExpect(jsonPath(MONTHLY_GET + ".description")
                         .value(containsString("임시값")));
     }
