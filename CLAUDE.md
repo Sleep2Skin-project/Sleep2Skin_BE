@@ -116,7 +116,11 @@ enum SkinMetric { DARK_CIRCLE, COMPLEXION, BARRIER }   // 다크서클 회복 ·
 
 **액션 마스터는 앱이 채우지 않는다.** `src/main/resources/db/seed/action_master.sql` 24행을 **사람이 한 번 실행한다** (workflow.md §8). 비어 있으면 TODO 탭이 빈 배열로 나가는데 **에러가 아니라 로그에도 안 남는다.** 실행할 때 `--default-character-set=utf8mb4`가 없으면 한국어가 `???`로 들어가고 INSERT는 성공한다.
 
-**`threshold`는 2026-08-17에 전 행 `+20` 됐다 (`30~70` → `50~90`).** 매칭이 `예보 점수 ≤ threshold`라 **컨디션이 좋은 날엔 후보가 0개**가 됐고, 그게 빈 TODO 탭으로 보였다 — 버그가 아니라 설계대로 동작한 결과다. **⚠️ 운영 RDS에는 아직 반영되지 않았다** — `action_master_raise_threshold.sql`(`UPDATE` 한 줄)을 배포 후 실행한다. **DELETE 후 재INSERT 금지**(`daily_todo.action_master_id`가 기존 id를 참조한다).
+**`threshold`는 후보를 거르지 않는다 — 정렬 1순위다** (2026-08-18). 만족하는 후보를 우선순위순으로 먼저 담고 **모자란 만큼 미만족 후보가 뒤를 채운다.** 그래서 **절단 개수(`AVOID` 3 · `DO` 5)는 상한이 아니라 고정 개수다.** 걸러 내던 시절에는 컨디션이 좋은 날 `DO`가 4개·0개로 내려가 **화면이 그리는 칸 수가 날마다 달라졌다.**
+
+- **8행보다 적어지는 경로는 하나만 남았다** — 그날 예보가 `null`인 지표를 겨냥한 액션은 우선순위를 계산할 수 없어 빠진다. **`AVAILABLE` + 빈 배열 상태는 사라지지 않았다**
+- **임계값을 더 올려 해결하지 않은 이유**: 계속 올리면 전 행이 `100`이 되어 컬럼이 무의미해진다. 정렬 1순위로 남기면 "지금 급한 것부터"가 유지된다
+- **`threshold` 전 행 `+20`(2026-08-17, `30~70` → `50~90`)은 유효하다.** 이제 선발 *순서*를 정한다. **⚠️ 운영 RDS에는 아직 반영되지 않았다** — `action_master_raise_threshold.sql`(`UPDATE` 한 줄)을 배포 후 실행한다. **DELETE 후 재INSERT 금지**(`daily_todo.action_master_id`가 기존 id를 참조한다)
 
 ### 리포트 기간은 `baseDate`에서 역산한다 — 가입일이 아니다
 
@@ -229,7 +233,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 | [docs/api.md](docs/api.md) | **엔드포인트 작업 직전** — 경로·요청·응답의 **유일한 출처**. 도메인별 API 19개, `POST /sleep/sessions` 상세 규격, 구현 순서와 남은 정리 작업, **MVP에서 만들지 않는 것** |
 | [docs/conventions.md](docs/conventions.md) | 코드 작성 직전 — 응답 포맷, 에러 코드, DTO/Entity 규칙, 경로 명명 규칙, Swagger |
 | [docs/workflow.md](docs/workflow.md) | 브랜치 생성, PR, 팀 분담, 빌드, **배포·운영 DB 설정(§7·§8)** |
-| `sub-docs/` | **"왜 그렇게 정했나"가 필요할 때** — 종합 리포트 트리아지 결정(`report-overall.md`) · 리포트 필드 추가와 TODO 임계값 상향(`report-todo-tuning.md`). **규격의 출처는 아니다** (아래 "결정 근거는 `sub-docs/`") |
+| `sub-docs/` | **"왜 그렇게 정했나"가 필요할 때** — 종합 리포트 트리아지 결정(`report-overall.md`) · 리포트 필드 추가와 TODO 임계값 상향(`report-todo-tuning.md`) · TODO 절단 개수를 고정 개수로(`todo-fixed-count.md`). **규격의 출처는 아니다** (아래 "결정 근거는 `sub-docs/`") |
 
 기능 ID는 `ONB-01~05` / `HOME-01~09` / `TODO-01~07` / `REP-01~12` / `MY-01~05`.
 원본 기획: Notion 「기능명세서」 (prd.md §11에 링크)

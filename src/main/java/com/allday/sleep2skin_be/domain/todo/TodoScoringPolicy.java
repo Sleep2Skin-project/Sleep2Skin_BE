@@ -7,6 +7,7 @@ import com.allday.sleep2skin_be.domain.todo.entity.ActionMaster;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * TODO-02 추천 엔진의 매칭·가중·정렬·절단.
@@ -20,6 +21,10 @@ import java.util.Map;
  * <p><b>임계값 매칭은 예보 점수만 본다.</b> 실측(직전 검증)은 임계값 비교에 관여하지 않고,
  * {@code verdictBonus}로만 우선순위에 반영된다 — 후보 추출과 우선순위 계산이 서로 다른
  * 점수 소스를 쓰는 것은 의도된 설계다.
+ *
+ * <p><b>임계값은 후보를 거르지 않는다 — 정렬 1순위일 뿐이다.</b> 만족하는 것을 먼저 담고
+ * 모자란 만큼 미만족에서 이어 붙인다. 걸러 내던 시절에는 컨디션이 좋은 날 후보가 {@code limit}에
+ * 못 미쳐 목록이 4개·0개로 내려갔고, <b>화면이 그리는 칸 수가 날마다 달라졌다.</b>
  */
 public final class TodoScoringPolicy {
 
@@ -30,10 +35,12 @@ public final class TodoScoringPolicy {
     }
 
     /**
-     * 후보 중 임계값을 만족하는 것만 우선순위순으로 정렬해 상위 {@code limit}개를 고른다.
+     * 후보를 우선순위순으로 정렬해 {@code limit}개를 고른다. <b>임계값을 만족하는 것이 항상
+     * 앞서고</b>, 그것만으로 {@code limit}이 차지 않으면 미만족 후보가 뒤를 채운다.
      *
      * <p>그날 예보가 없는 지표(complexion·barrier는 워치 미착용 등으로 null일 수 있다)를
-     * targetMetric으로 하는 후보는 매칭 대상에서 제외한다 — 비교할 점수가 없기 때문이다.
+     * targetMetric으로 하는 후보는 <b>여기서만 진짜로 제외된다</b> — 비교할 점수가 없어
+     * 우선순위 자체를 계산할 수 없다. 그런 날은 {@code limit}보다 적게 나올 수 있다.
      *
      * @param forecastScores 지표별 오늘 예보 점수. 산출 불가한 지표는 맵에서 빠져 있다
      * @param latestVerdicts 지표별 가장 최근 검증 판정. 검증 이력이 없으면 빈 맵
@@ -42,15 +49,25 @@ public final class TodoScoringPolicy {
                                                 Map<SkinMetric, Integer> forecastScores,
                                                 Map<SkinMetric, VerificationVerdict> latestVerdicts,
                                                 int limit) {
-        return candidates.stream()
+        // 한 번만 정렬해 두고 두 갈래로 나눈다 — 정렬이 안정적이라 각 갈래 안의 순서가 그대로 남는다
+        List<ActionMaster> sorted = candidates.stream()
                 .filter(action -> forecastScores.get(action.getTargetMetric()) != null)
-                .filter(action -> forecastScores.get(action.getTargetMetric()) <= action.getThreshold())
                 .sorted(Comparator
                         .comparingInt((ActionMaster action) -> priority(action, forecastScores, latestVerdicts))
                         .reversed()
                         .thenComparing(ActionMaster::getId))   // 동점은 id 오름차순
+                .toList();
+
+        return Stream.concat(
+                        sorted.stream().filter(action -> matchesThreshold(action, forecastScores)),
+                        sorted.stream().filter(action -> !matchesThreshold(action, forecastScores)))
                 .limit(limit)
                 .toList();
+    }
+
+    /** 예보 점수가 임계값 이하면 "지금 필요한 액션"이다. 경계값은 포함이다. */
+    private static boolean matchesThreshold(ActionMaster action, Map<SkinMetric, Integer> forecastScores) {
+        return forecastScores.get(action.getTargetMetric()) <= action.getThreshold();
     }
 
     private static int priority(ActionMaster action, Map<SkinMetric, Integer> forecastScores,
