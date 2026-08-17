@@ -73,12 +73,16 @@ public class ActionMaster extends BaseTimeEntity {
     private SkinMetric targetMetric;
 
     /**
-     * 해당 지표가 <b>이 값 이하</b>일 때 발동.
+     * 해당 지표가 <b>이 값 이하</b>면 우선 선발.
+     *
+     * <p><b>탈락 조건이 아니다</b>(2026-08-18). 만족하는 후보가 절단 개수에 모자라면 미만족
+     * 후보가 뒤를 채운다 — {@link com.allday.sleep2skin_be.domain.todo.TodoScoringPolicy}.
+     * 걸러 내던 시절에는 컨디션이 좋은 날 목록이 4개·0개로 내려갔다.
      *
      * <p>심각도를 {@code threshold − 점수}가 아니라 {@code 100 − 점수}로 잡은 이유가 여기 있다 —
-     * 그러면 임계값이 발동 조건과 우선순위를 겸하게 되어, 기획자가 "이 항목이 잘 안 떠요" 하고
+     * 그러면 임계값이 선발 조건과 우선순위를 겸하게 되어, 기획자가 "이 항목이 잘 안 떠요" 하고
      * 임계값을 올리는 순간 그 항목의 우선순위까지 조용히 올라간다.
-     * <b>임계값은 뜰지 말지만, 심각도는 지표 점수만 결정한다.</b>
+     * <b>임계값은 어느 갈래에 설지만, 심각도는 지표 점수만 결정한다.</b>
      */
     @Column(nullable = false)
     private int threshold;

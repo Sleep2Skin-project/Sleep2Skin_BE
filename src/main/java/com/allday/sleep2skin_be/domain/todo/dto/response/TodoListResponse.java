@@ -45,8 +45,8 @@ public record TodoListResponse(
     private static final String NO_SLEEP_DATA_MESSAGE = "수면 데이터가 없어 오늘의 처방이 없습니다.";
 
     /**
-     * baseDate를 파라미터로 받는다 — todos가 비어 있을 수 있어(예: 그날 모든 지표가 임계값보다
-     * 좋아서 AVOID·DO 후보가 0개인 경우) todos.getFirst()로 날짜를 꺼내면 예외가 난다.
+     * baseDate를 파라미터로 받는다 — todos가 비어 있을 수 있어(그날 예보가 산출된 지표를
+     * 겨냥한 후보가 하나도 없는 경우) todos.getFirst()로 날짜를 꺼내면 예외가 난다.
      *
      * <p><b>후보가 0개인 날도 {@code AVAILABLE}이다.</b> "예보가 없다"와 "예보는 있는데 처방할
      * 것이 없다"는 다른 상태이고, 앱이 띄울 문구도 다르다.

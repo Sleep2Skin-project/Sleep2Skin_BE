@@ -111,14 +111,17 @@ class TodoServiceTest {
         /**
          * <b>"예보가 없다"와 "예보는 있는데 처방할 것이 없다"는 다른 상태다.</b> 앱이 띄울 문구가
          * 달라야 하므로 둘을 같은 status로 묶으면 안 된다.
+         *
+         * <p>임계값 미달만으로는 더 이상 비지 않는다(그런 후보도 뒤를 채운다). 남은 경우는
+         * <b>예보가 산출된 지표를 겨냥한 액션이 하나도 없을 때</b>뿐이다.
          */
         @Test
         @DisplayName("후보가 0개인 날은 AVAILABLE이고 배열만 비어 있다")
         void 후보가_없어도_정상_상태다() {
             todosOf();
-            forecast(90, 90, 90);                       // 전부 임계값보다 좋다
+            forecast(90, null, null);                   // 혈색·장벽 예보가 산출되지 않았다
             candidates(ActionCategory.AVOID, action(1L, ActionCategory.AVOID, SkinMetric.BARRIER, 50, 5));
-            candidates(ActionCategory.DO, action(2L, ActionCategory.DO, SkinMetric.BARRIER, 50, 5));
+            candidates(ActionCategory.DO, action(2L, ActionCategory.DO, SkinMetric.COMPLEXION, 50, 5));
 
             TodoListResponse response = service.getTodos(USER_ID, BASE_DATE);
 
@@ -126,6 +129,25 @@ class TodoServiceTest {
             assertThat(response.message()).isNull();
             assertThat(response.avoidItems()).isEmpty();
             assertThat(response.checklistItems()).isEmpty();
+        }
+
+        /**
+         * <b>회귀 방지.</b> 임계값이 후보를 거르던 시절에는 컨디션이 좋은 날 DO가 4개·0개로
+         * 내려갔고, 화면이 그리는 칸 수가 날마다 달라졌다.
+         */
+        @Test
+        @DisplayName("예보 점수가 전부 임계값보다 좋아도 AVOID 3 + DO 5를 채운다")
+        void 컨디션이_좋은_날에도_개수를_채운다() {
+            todosOf();
+            forecast(90, 90, 90);                       // 전부 임계값보다 좋다
+            candidates(ActionCategory.AVOID, actions(ActionCategory.AVOID, 6));
+            candidates(ActionCategory.DO, actions(ActionCategory.DO, 6));
+
+            TodoListResponse response = service.getTodos(USER_ID, BASE_DATE);
+
+            assertThat(response.status()).isEqualTo(QueryStatus.AVAILABLE);
+            assertThat(response.avoidItems()).hasSize(3);
+            assertThat(response.checklistItems()).hasSize(5);
         }
 
         /**
