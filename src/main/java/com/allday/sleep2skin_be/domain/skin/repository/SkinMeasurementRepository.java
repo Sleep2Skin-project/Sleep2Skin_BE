@@ -26,6 +26,18 @@ public interface SkinMeasurementRepository extends JpaRepository<SkinMeasurement
     Optional<SkinMeasurement> findByUserIdAndBaseDate(Long userId, LocalDate baseDate);
 
     /**
+     * {@code baseDate} 이하 범위에서 <b>가장 최근</b> 실측 1건 (REP-10 클리닉 트리아지의
+     * {@code clinicNeeded}).
+     *
+     * <p><b>전체 최신이 아니라 {@code baseDate} 이하 최신이다</b> — 서버는 "오늘"을 모르므로,
+     * 앱이 알려준 기준일보다 미래의 행이 섞이면 안 된다(conventions.md §8과 같은 이유). 예보·
+     * 정체 판정과 달리 <b>기간 하한이 없다</b> — 색소침착·여드름 흉터·구조적 노화는 추세가 아니라
+     * "지금 상태"를 보여주는 값이라 3주 창 밖의 실측이라도 가장 최근 것이면 유효하다.
+     */
+    Optional<SkinMeasurement> findFirstByUserIdAndBaseDateLessThanEqualOrderByBaseDateDesc(
+            Long userId, LocalDate baseDate);
+
+    /**
      * 검증한 날들을 <b>최신순</b>으로. 예보와 실측을 조인해 하루씩 묶는다.
      *
      * <p><b>연관관계가 아니라 값으로 조인한다.</b> {@code skin_forecast}와

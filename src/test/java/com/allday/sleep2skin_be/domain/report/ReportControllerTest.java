@@ -1,12 +1,16 @@
 package com.allday.sleep2skin_be.domain.report;
 
 import com.allday.sleep2skin_be.domain.report.dto.CorrelationStrength;
+import com.allday.sleep2skin_be.domain.report.dto.SleepTrend;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse.SegmentResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.FeatureCorrelation;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.WeekScore;
+import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse;
+import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse.ClinicNeeded;
+import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse.Triage;
 import com.allday.sleep2skin_be.domain.report.dto.response.SkinForecastSection;
 import com.allday.sleep2skin_be.domain.report.dto.response.SkinForecastSection.MetricDiff;
 import com.allday.sleep2skin_be.domain.report.dto.response.SleepSummarySection;
@@ -63,6 +67,9 @@ class ReportControllerTest {
 
     @MockitoBean
     private MonthlyReportService monthlyReportService;
+
+    @MockitoBean
+    private OverallReportService overallReportService;
 
     @Nested
     @DisplayName("일간 리포트 (GET /report/daily)")
@@ -358,6 +365,78 @@ class ReportControllerTest {
         @DisplayName("존재하지 않는 사용자는 404 USER_NOT_FOUND다")
         void 없는_사용자는_404다() throws Exception {
             given(monthlyReportService.getMonthlyReport(USER_ID, BASE_DATE))
+                    .willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-14"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"));
+        }
+    }
+
+    @Nested
+    @DisplayName("종합 리포트 (GET /report/overall)")
+    class OverallReport {
+
+        private static final String PATH = "/api/v1/report/overall";
+
+        @Test
+        @DisplayName("트리아지·appManaged·clinicNeeded·clinicLink을 반환한다")
+        void 종합_리포트를_반환한다() throws Exception {
+            given(overallReportService.getOverallReport(USER_ID, BASE_DATE)).willReturn(
+                    OverallReportResponse.of(BASE_DATE.minusDays(20), BASE_DATE,
+                            new Triage(true, SleepTrend.RISING, List.of(SkinMetric.COMPLEXION)),
+                            List.of(SkinMetric.DARK_CIRCLE, SkinMetric.COMPLEXION, SkinMetric.BARRIER),
+                            new ClinicNeeded(false, false, true)));
+
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-14"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("FULL"))
+                    .andExpect(jsonPath("$.data.periodStart").value("2026-07-25"))
+                    .andExpect(jsonPath("$.data.periodEnd").value("2026-08-14"))
+                    .andExpect(jsonPath("$.data.triage.triggered").value(true))
+                    .andExpect(jsonPath("$.data.triage.sleepTrend").value("RISING"))
+                    .andExpect(jsonPath("$.data.triage.stagnantMetrics[0]").value("COMPLEXION"))
+                    .andExpect(jsonPath("$.data.appManaged[0]").value("DARK_CIRCLE"))
+                    .andExpect(jsonPath("$.data.appManaged[1]").value("COMPLEXION"))
+                    .andExpect(jsonPath("$.data.appManaged[2]").value("BARRIER"))
+                    .andExpect(jsonPath("$.data.clinicNeeded.pigmentationDetected").value(false))
+                    .andExpect(jsonPath("$.data.clinicNeeded.agingDetected").value(true))
+                    .andExpect(jsonPath("$.data.clinicLink").value("https://amredclinic.com/ko"));
+        }
+
+        @Test
+        @DisplayName("수면 추세 표본이 부족하면 INSUFFICIENT_DATA다")
+        void 표본이_부족하면_INSUFFICIENT_DATA다() throws Exception {
+            given(overallReportService.getOverallReport(USER_ID, BASE_DATE)).willReturn(
+                    OverallReportResponse.of(BASE_DATE.minusDays(20), BASE_DATE,
+                            new Triage(false, SleepTrend.INSUFFICIENT_DATA, List.of()),
+                            List.of(SkinMetric.DARK_CIRCLE, SkinMetric.COMPLEXION, SkinMetric.BARRIER),
+                            null));
+
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-14"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("INSUFFICIENT_DATA"))
+                    .andExpect(jsonPath("$.data.triage.triggered").value(false))
+                    .andExpect(content().string(containsString("\"clinicNeeded\":null")));
+        }
+
+        @Test
+        @DisplayName("baseDate가 없으면 400이고 서비스를 호출하지 않는다")
+        void 기준일이_없으면_400이다() throws Exception {
+            mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+
+            verify(overallReportService, never()).getOverallReport(anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 사용자는 404 USER_NOT_FOUND다")
+        void 없는_사용자는_404다() throws Exception {
+            given(overallReportService.getOverallReport(USER_ID, BASE_DATE))
                     .willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)

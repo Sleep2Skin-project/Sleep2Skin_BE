@@ -171,6 +171,9 @@ public class SkinVerificationService {
                     .darkCircle(scores.darkCircle())
                     .complexion(scores.complexion())
                     .barrier(scores.barrier())
+                    .pigmentationDetected(scores.pigmentationDetected())
+                    .acneScarDetected(scores.acneScarDetected())
+                    .agingDetected(scores.agingDetected())
                     .analyzedAt(OffsetDateTime.now())
                     .build());
 
