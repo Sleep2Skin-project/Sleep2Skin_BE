@@ -85,6 +85,9 @@ class DailyReportServiceTest {
         assertThat(response.sleepSummary().summary().awakeCount()).isEqualTo(2);
         assertThat(response.sleepSummary().summary().awakeMinutes()).isEqualTo(7);
         assertThat(response.sleepSummary().summary().sleepScore()).isEqualTo(STUBBED_SLEEP_SCORE);
+        assertThat(response.sleepSummary().summary().remSleepMinutes()).isEqualTo(36);
+        assertThat(response.sleepSummary().summary().hrv()).isEqualTo(42.0);
+        assertThat(response.sleepSummary().summary().restingHeartRate()).isEqualTo(55);
 
         assertThat(response.skinForecast().status()).isEqualTo(QueryStatus.AVAILABLE);
         assertThat(response.skinForecast().darkCircle().today()).isEqualTo(44);
@@ -119,6 +122,26 @@ class DailyReportServiceTest {
         assertThat(response.skinForecast().darkCircle().diffFromYesterday()).isNull();
 
         verify(dailySleepScoreCalculator, never()).calculate(anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("워치 미착용으로 hrv·restingHeartRate가 없으면 null로 내려간다")
+    void hrv와_안정시_심박이_없으면_null이다() {
+        userExists();
+        SleepSession session = session(null, null);
+        given(sleepSessionRepository.findByUserIdAndSleepDate(USER_ID, BASE_DATE))
+                .willReturn(Optional.of(session));
+        given(dailySleepScoreCalculator.calculate(USER_ID, BASE_DATE, session))
+                .willReturn(STUBBED_SLEEP_SCORE);
+        given(skinForecastRepository.findByUserIdAndBaseDate(USER_ID, BASE_DATE))
+                .willReturn(Optional.of(forecast(BASE_DATE, 44, 63, 79)));
+        given(skinForecastRepository.findByUserIdAndBaseDate(USER_ID, BASE_DATE.minusDays(1)))
+                .willReturn(Optional.empty());
+
+        DailyReportResponse response = service().getDailyReport(USER_ID, BASE_DATE);
+
+        assertThat(response.sleepSummary().summary().hrv()).isNull();
+        assertThat(response.sleepSummary().summary().restingHeartRate()).isNull();
     }
 
     @Test

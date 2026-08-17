@@ -1,5 +1,6 @@
 package com.allday.sleep2skin_be.domain.report;
 
+import com.allday.sleep2skin_be.domain.report.dto.response.CorrelationGroup;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.Summary;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.WeekScore;
@@ -73,9 +74,11 @@ public class MonthlyReportService {
         Integer avgSleepScore = average(dailyScores);
         Integer avgDeepSleepMinutes = average(dailyDeepSleepMinutes);
 
-        return MonthlyReportResponse.of(periodStart, baseDate, weeks,
-                new Summary(avgSleepScore, avgDeepSleepMinutes),
+        List<CorrelationGroup> correlations = CorrelationGroup.groupBySkinMetric(
                 correlationCalculator.calculate(userId, periodStart, baseDate, sessions));
+
+        return MonthlyReportResponse.of(periodStart, baseDate, weeks,
+                new Summary(avgSleepScore, avgDeepSleepMinutes), correlations);
     }
 
     /**

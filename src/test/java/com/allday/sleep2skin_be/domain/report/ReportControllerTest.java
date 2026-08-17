@@ -5,6 +5,7 @@ import com.allday.sleep2skin_be.domain.report.dto.SleepTrend;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse.SegmentResponse;
+import com.allday.sleep2skin_be.domain.report.dto.response.CorrelationGroup;
 import com.allday.sleep2skin_be.domain.report.dto.response.FeatureCorrelation;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.WeekScore;
@@ -36,6 +37,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
@@ -82,7 +84,7 @@ class ReportControllerTest {
         void 두_섹션을_반환한다() throws Exception {
             given(dailyReportService.getDailyReport(USER_ID, BASE_DATE)).willReturn(
                     DailyReportResponse.of(BASE_DATE,
-                            SleepSummarySection.of(new SleepSummary(432, 70, 126, 71, 2, 7)),
+                            SleepSummarySection.of(new SleepSummary(432, 70, 126, 71, 2, 7, 36, 42.0, 55)),
                             new SkinForecastSection(QueryStatus.AVAILABLE, null,
                                     new MetricDiff(44, 1), new MetricDiff(63, 7),
                                     new MetricDiff(79, null))));
@@ -97,6 +99,9 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.sleepSummary.summary.totalSleepMinutes").value(432))
                     .andExpect(jsonPath("$.data.sleepSummary.summary.sleepScore").value(70))
                     .andExpect(jsonPath("$.data.sleepSummary.summary.lightSleepMinutes").value(71))
+                    .andExpect(jsonPath("$.data.sleepSummary.summary.remSleepMinutes").value(36))
+                    .andExpect(jsonPath("$.data.sleepSummary.summary.hrv").value(42.0))
+                    .andExpect(jsonPath("$.data.sleepSummary.summary.restingHeartRate").value(55))
                     .andExpect(jsonPath("$.data.skinForecast.status").value("AVAILABLE"))
                     .andExpect(jsonPath("$.data.skinForecast.darkCircle.today").value(44))
                     .andExpect(jsonPath("$.data.skinForecast.darkCircle.diffFromYesterday").value(1))
@@ -235,11 +240,12 @@ class ReportControllerTest {
                             List.of(new DailyScore(BASE_DATE.minusDays(6), 62),
                                     new DailyScore(BASE_DATE.minusDays(5), null)),
                             new WeeklyReportResponse.Summary(70, 126),
-                            List.of(new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
+                            CorrelationGroup.groupBySkinMetric(List.of(
+                                    new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
                                             SkinMetric.DARK_CIRCLE, "다크서클 회복",
                                             CorrelationStrength.VERY_STRONG, 6, false),
                                     new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
-                                            SkinMetric.COMPLEXION, "혈색", null, 2, true))));
+                                            SkinMetric.COMPLEXION, "혈색", null, 2, true)))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -254,11 +260,18 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.summary.avgDeepSleepMinutes").value(126))
                     .andExpect(jsonPath("$.data.summary.hitRate").doesNotExist())
                     .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
-                    .andExpect(jsonPath("$.data.correlations[0].sleepFeature").value("AWAKE_COUNT"))
-                    .andExpect(jsonPath("$.data.correlations[0].strength").value("VERY_STRONG"))
-                    .andExpect(jsonPath("$.data.correlations[0].insufficientSample").value(false))
-                    .andExpect(jsonPath("$.data.correlations[1].strength").doesNotExist())
-                    .andExpect(jsonPath("$.data.correlations[1].insufficientSample").value(true));
+                    .andExpect(jsonPath("$.data.correlations", hasSize(3)))
+                    .andExpect(jsonPath("$.data.correlations[0].skinMetric").value("DARK_CIRCLE"))
+                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].sleepFeature")
+                            .value("AWAKE_COUNT"))
+                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].strength")
+                            .value("VERY_STRONG"))
+                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].insufficientSample")
+                            .value(false))
+                    .andExpect(jsonPath("$.data.correlations[1].skinMetric").value("COMPLEXION"))
+                    .andExpect(jsonPath("$.data.correlations[1].correlations[0].strength").doesNotExist())
+                    .andExpect(jsonPath("$.data.correlations[1].correlations[0].insufficientSample")
+                            .value(true));
         }
 
         @Test
@@ -313,9 +326,10 @@ class ReportControllerTest {
                             List.of(new WeekScore("W1", 65, 110, false), new WeekScore("W2", 58, 105, false),
                                     new WeekScore("W3", 52, 98, false), new WeekScore("W4", 70, 132, true)),
                             new MonthlyReportResponse.Summary(61, 118),
-                            List.of(new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
+                            CorrelationGroup.groupBySkinMetric(List.of(
+                                    new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
                                     SkinMetric.DARK_CIRCLE, "다크서클 회복",
-                                    CorrelationStrength.STRONG, 22, false))));
+                                    CorrelationStrength.STRONG, 22, false)))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -332,8 +346,9 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.summary.avgDeepSleepMinutes").value(118))
                     .andExpect(jsonPath("$.data.summary.hitRate").doesNotExist())
                     .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
+                    .andExpect(jsonPath("$.data.correlations", hasSize(3)))
                     .andExpect(jsonPath("$.data.correlations[0].skinMetric").value("DARK_CIRCLE"))
-                    .andExpect(jsonPath("$.data.correlations[0].sampleSize").value(22));
+                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].sampleSize").value(22));
         }
 
         @Test
