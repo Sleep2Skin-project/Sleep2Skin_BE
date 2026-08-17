@@ -28,7 +28,7 @@ com.allday.sleep2skin_be
     ├── sleep/    수면 세션 수신 · 정규화 · 집계
     ├── skin/     피부 예보 · 셀피 실측 · 검증 · 개인 모델
     ├── todo/     추천 엔진 · TODO 리스트
-    ├── report/   일간 · 타임라인 · 주간 · 월간 (종합은 보류)
+    ├── report/   일간 · 타임라인 · 주간 · 월간 · 종합(트리아지)
     ├── game/     레벨 · 경험치 적립 · 출석 (HOME-04)
     └── health/   헬스체크 (구현 완료 — 패턴 참고용)
 ```
@@ -116,23 +116,31 @@ enum SkinMetric { DARK_CIRCLE, COMPLEXION, BARRIER }   // 다크서클 회복 ·
 
 **액션 마스터는 앱이 채우지 않는다.** `src/main/resources/db/seed/action_master.sql` 24행을 **사람이 한 번 실행한다** (workflow.md §8). 비어 있으면 TODO 탭이 빈 배열로 나가는데 **에러가 아니라 로그에도 안 남는다.** 실행할 때 `--default-character-set=utf8mb4`가 없으면 한국어가 `???`로 들어가고 INSERT는 성공한다.
 
+**`threshold`는 2026-08-17에 전 행 `+20` 됐다 (`30~70` → `50~90`).** 매칭이 `예보 점수 ≤ threshold`라 **컨디션이 좋은 날엔 후보가 0개**가 됐고, 그게 빈 TODO 탭으로 보였다 — 버그가 아니라 설계대로 동작한 결과다. **⚠️ 운영 RDS에는 아직 반영되지 않았다** — `action_master_raise_threshold.sql`(`UPDATE` 한 줄)을 배포 후 실행한다. **DELETE 후 재INSERT 금지**(`daily_todo.action_master_id`가 기존 id를 참조한다).
+
 ### 리포트 기간은 `baseDate`에서 역산한다 — 가입일이 아니다
 
 ```
 주간   baseDate − 6  ~ baseDate     (7일)
 월간   baseDate − 27 ~ baseDate     (28일 = 7일 × 4주, W1 최과거 ~ W4 최근)
+종합   baseDate − 20 ~ baseDate     (21일 = 전반부 10 + 가운데 1일 제외 + 후반부 10)
 ```
 
-**월간은 달력의 달이 아니다.** `yearMonth`를 받지 않는다 — 네 API 전부 `baseDate` 하나만 받는다. 가입일이나 달력에 앵커를 두면 주 경계가 사용자마다·달마다 달라지고 **앱이 날짜를 옮겨 가며 조회할 수 없다.**
+**월간은 달력의 달이 아니다.** `yearMonth`를 받지 않는다 — 다섯 API 전부 `baseDate` 하나만 받는다. 가입일이나 달력에 앵커를 두면 주 경계가 사용자마다·달마다 달라지고 **앱이 날짜를 옮겨 가며 조회할 수 없다.**
 
 **가입일(`users.created_at`)은 `INSUFFICIENT_DATA` 판정에만 쓴다** — 가입 당일을 1일차로 세어 7일·28일 미만이면 신규 사용자다. **"가입한 지 오래됐지만 그 주에 안 잤다"는 여기 해당하지 않는다**(정상 응답 + 그 날짜만 `null`) — 데이터 품질 문제와 신규 사용자 문제를 같은 상태로 묶지 말 것.
 
 - **주간·월간의 `status`는 `QueryStatus`가 아니라 `ReportPeriodStatus`(`FULL`·`INSUFFICIENT_DATA`)다.** 일간은 두 섹션이 독립적으로 비므로 섹션마다 `QueryStatus`를 갖는다 — **응답 전체를 하나로 감싸지 말 것**
+- **⚠️ 종합은 또 다른 enum(`OverallReportStatus`)이고 값 이름만 같다.** 주간·월간은 **가입일**로, 종합은 **최근 3주에 실제로 쌓인 유효 표본 수**로 `INSUFFICIENT_DATA`를 정한다 — **종합은 가입일을 아예 보지 않는다.** 값 집합이 같다고 enum을 합치지 말 것
 - **기록 없는 날은 배열에서 빼지 않고 점수만 `null`이다.** 빼면 그래프 x축이 주마다 5칸·7칸이 된다. **평균에서는 `null`을 분모에서 뺀다** — 0으로 채우면 "안 잔 날"이 "최악으로 잔 날"이 된다
 - **월간 전체 평균은 주 평균 4개의 평균이 아니라 28일을 한 번에 평균낸 값이다** (주별 결측 수가 다르면 갈린다)
 - **적중률·검증일수는 넣지 않는다** (2026-08-15, 화면에 없음). 셀피 실측 조회는 상관 강도 때문에 남아 있을 뿐이다
 
 **REP-07 상관 강도는 예보가 아니라 실측(셀피)과 비교한다.** 예보값은 이 피처들로 만든 값이라 **수면으로 만든 값이 수면과 관련 있다는 순환 논증**이 된다. **세션과 검증이 둘 다 있는 날짜만 표본**이고, 상관은 **정규화된 부분점수가 아니라 원본값**끼리 낸다(정규화 곡선이 상관계수에 섞여 든다). 비율의 분모는 여기서도 `deep + rem + core`다.
+
+**`correlations` 응답은 flat 7개가 아니라 지표별 3그룹이다** (2026-08-17 교체 · api.md §2.5). **계산은 그대로 flat 7개로 나오고 `CorrelationGroup.groupBySkinMetric()`이 응답 조립 단계에서만 재배열한다** — `CorrelationCalculator`를 건드리지 말 것. 그룹은 항상 3개이고 매핑된 피처가 없어도 빈 배열로 포함된다.
+
+**종합 리포트의 정체 판정은 반대로 예보 점수를 본다.** 순환 논증 문제가 여기엔 없다 — 수면과 피부의 관계를 주장하는 게 아니라 **지표가 안 움직인다는 사실만** 보기 때문이다. **두 곳이 다른 원천을 쓰는 것은 의도된 것이니 통일하지 말 것.**
 
 **수면 점수 계산기가 두 개다 — 세 번째를 만들지 말 것.** `sleep/SleepScoreCalculator`(exp 적립용)와 `report/DailySleepScoreCalculator`(리포트용)가 같은 산식(prd.md §10.8)을 각자 갖고 있다. **지금은 같은 숫자를 내지만 한쪽만 바뀌면 exp로 지급한 점수와 리포트가 보여준 점수가 갈린다.** 정리한다면 리포트 쪽이 `SleepScoreCalculator.calculate(featureScores)`를 호출하는 방향이다.
 
@@ -221,13 +229,14 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 | [docs/api.md](docs/api.md) | **엔드포인트 작업 직전** — 경로·요청·응답의 **유일한 출처**. 도메인별 API 19개, `POST /sleep/sessions` 상세 규격, 구현 순서와 남은 정리 작업, **MVP에서 만들지 않는 것** |
 | [docs/conventions.md](docs/conventions.md) | 코드 작성 직전 — 응답 포맷, 에러 코드, DTO/Entity 규칙, 경로 명명 규칙, Swagger |
 | [docs/workflow.md](docs/workflow.md) | 브랜치 생성, PR, 팀 분담, 빌드, **배포·운영 DB 설정(§7·§8)** |
+| `sub-docs/` | **"왜 그렇게 정했나"가 필요할 때** — 종합 리포트 트리아지 결정(`report-overall.md`) · 리포트 필드 추가와 TODO 임계값 상향(`report-todo-tuning.md`). **규격의 출처는 아니다** (아래 "결정 근거는 `sub-docs/`") |
 
 기능 ID는 `ONB-01~05` / `HOME-01~09` / `TODO-01~07` / `REP-01~12` / `MY-01~05`.
 원본 기획: Notion 「기능명세서」 (prd.md §11에 링크)
 
 ## 현재 상태
 
-**도메인 API 19개 중 18개가 끝났다.** 남은 하나(종합 리포트)는 구현이 아니라 **정책이 미정이라 보류**다.
+**도메인 API 19개가 전부 끝났다** (2026-08-16). 마지막까지 보류였던 종합 리포트는 정책(prd.md §7 L6·L9)이 확정되며 함께 구현됐다.
 
 **구현됨**
 - **엔티티 10개 + Repository 10개** — erd.md의 전부 (`exp_grant` 포함)
@@ -241,14 +250,23 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 - **`GET /api/v1/skin/verification/summary`** (HOME-09) · **`GET /api/v1/skin/model`** (REP-12) — **`skin` 도메인 완료**
 - **`GET /api/v1/todo`** · **`PATCH /api/v1/todo/{id}`** (TODO-02~05) — **`todo` 도메인 완료.** 추천 엔진(`TodoScoringPolicy`) + 액션 마스터 시드 24행
 - **`GET /api/v1/users/me`**(ONB-01+MY-01) · **`GET /api/v1/users/me/data-status`**(MY-02) · **`DELETE /api/v1/users/me`**(MY-04) · **`POST /api/v1/users/me/attendance`**(HOME-04 출석) — **`user`·`game` 도메인 완료**
-- **`GET /api/v1/report/daily`**(REP-02·04·05) · **`/daily/timeline`**(REP-03) · **`/weekly`**(REP-06·07) · **`/monthly`**(REP-08) — **종합(REP-09~11)만 보류**
+- **`GET /api/v1/report/daily`**(REP-02·04·05) · **`/daily/timeline`**(REP-03) · **`/weekly`**(REP-06·07) · **`/monthly`**(REP-08) · **`/overall`**(REP-09~11) — **`report` 도메인 완료.** 종합은 `TriagePolicy`·`OverallReportService`이며 기간 창이 **`baseDate − 20`(21일)**로 주간·월간과 다르다
 - **게이미피케이션(HOME-04)** — `LevelPolicy`·`ExpService`·`AttendanceService`·`AttendanceWeekCalculator`. 적립 6종 중 **4종이 동작한다**(아래 ⚠️). **월~일 출석 도장판은 체크인 응답에 실려 있다** — 새 테이블 없이 `exp_grant`의 `ATTENDANCE` 행에서 나오고, **엔드포인트를 늘리지 않았다**(api.md §5)
 - **개인 가중치 학습** — `SkinModelService`. 첫 검증에 7행을 `1.0`으로 만들고, 그날 참여한 피처만 보정한다
 - **OpenAI Vision 연동** — `global/infra/openai/`의 `SkinVisionClient`(인터페이스) + `OpenAiSkinVisionClient`(Responses API + Structured Outputs). **점수 방향은 2026-08-10 실호출로 확인됨**
 - `global/` — `ApiResponse`·`ErrorResponse`·`ErrorCode`·`BusinessException`·`GlobalExceptionHandler`·`BaseTimeEntity`·`BaseCreatedEntity`·`JpaConfig`·`SwaggerConfig`·`CorsConfig`·`WebMvcConfig`·`OpenAiConfig`·`CurrentUserId`(+`CurrentUserIdArgumentResolver`)·`QueryStatus`
 - 인프라 — MySQL + JPA + validation 의존성, Docker/Compose, GitHub Actions CI/CD
 
-**미도입**: **종합 리포트(`GET /report/overall`, REP-09~11) 하나뿐이다.** 핵심 루프(수면 → 예보 → 처방 → 검증 → 학습)는 닫혔고 리포트·게이미피케이션까지 얹혔다.
+**미도입 기능이 없다.** 핵심 루프(수면 → 예보 → 처방 → 검증 → 학습)가 닫혔고 리포트·게이미피케이션·종합 트리아지까지 전부 얹혔다.
+
+### 클리닉 트리아지 3종은 예보 지표가 아니다 (2026-08-16 추가)
+
+`skin_measurement`에 **`pigmentationDetected`·`acneScarDetected`·`agingDetected`** 세 컬럼이 늘었다. **지표 3종 고정 원칙을 깬 것이 아니다** — 예보에 대응 값이 없는 **실측 전용 감지 플래그**이고, 점수가 아니라 boolean이다.
+
+- **검증(HOME-07)에도 개인 가중치 학습(HOME-08)에도 들어가지 않는다.** `personal_weight`는 그대로 7행이다. **`SkinForecast`에 대응 컬럼을 만들면 그때 원칙 위반이다**
+- **읽는 곳은 `GET /report/overall` 하나뿐이다.** `POST /skin/selfie` 응답에는 실리지 않는다
+- **`boolean`이 아니라 `Boolean`이다.** `NULL`은 "컬럼 도입 이전 행(미측정)", `false`는 "측정했고 미검출"이다 — `ddl-auto: update`가 `NOT NULL` 컬럼을 추가하면 기존 행이 `0`으로 채워져 둘이 구분되지 않는다
+- **`SkinMetric` enum에 넣지 말 것.** 예보와 실측이 같은 세트라는 전제는 그 enum이 지키고 있다
 
 ### 코드와 확정 명세가 어긋났던 곳 — 2026-08-15에 정리됐다
 
@@ -268,7 +286,7 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 
 **검산식이 이제 성립한다** (erd.md §3.10) — `SUM(exp_grant.amount) + (DO 완료 수 × 5) + (전체 완료일 수 × 30) = users.exp`. **적립 지점을 새로 만들면 이 식이 여전히 맞는지 확인한다.**
 
-**모든 도메인이 같은 테스트 구성을 갖췄다** — 정책 클래스(DB 없이 도는 순수 로직) · Service · Controller(`@WebMvcTest`) · `*ApiDocsTest`. `todo`가 기준이고(`TodoScoringPolicyTest`·`TodoServiceTest`·`TodoControllerTest`·`TodoApiDocsTest`), `report`(`CorrelationPolicyTest`·`CorrelationCalculatorTest`·`DailySleepScoreCalculatorTest`·서비스 3종·`ReportControllerTest`·`ReportApiDocsTest`)와 `game`(`LevelPolicyTest`·`ExpServiceTest`·`AttendanceServiceTest`·`GameControllerTest`·`GameApiDocsTest`)도 같다. **새 도메인은 이 네 자리를 채운다.**
+**모든 도메인이 같은 테스트 구성을 갖췄다** — 정책 클래스(DB 없이 도는 순수 로직) · Service · Controller(`@WebMvcTest`) · `*ApiDocsTest`. `todo`가 기준이고(`TodoScoringPolicyTest`·`TodoServiceTest`·`TodoControllerTest`·`TodoApiDocsTest`), `report`(`CorrelationPolicyTest`·`TriagePolicyTest`·`CorrelationCalculatorTest`·`DailySleepScoreCalculatorTest`·서비스 5종·`ReportControllerTest`·`ReportApiDocsTest`)와 `game`(`LevelPolicyTest`·`ExpServiceTest`·`AttendanceServiceTest`·`GameControllerTest`·`GameApiDocsTest`)도 같다. **새 도메인은 이 네 자리를 채운다.**
 
 **연속 검증 횟수는 `VerificationStreakCalculator` 한 곳에서만 계산한다.** HOME-09와 MY-01이 같은 숫자를 써야 하고(prd.md §4.2), 각자 계산하면 두 화면이 어긋난다. **두 API가 실제로 이 컴포넌트를 호출하고 있다 — 세 번째가 생겨도 계산을 다시 적지 말 것.**
 
@@ -310,9 +328,9 @@ Entity → DTO 변환은 DTO의 정적 팩토리 메서드로. `HealthCheckRespo
 5. ~~TODO 추천 엔진·리스트 (TODO-02~05)~~ · ~~배너(HOME-09)·내 모델(REP-12)~~ — 완료
 6. ~~일간 리포트·타임라인 (REP-02~05)~~ — 완료
 7. ~~게이미피케이션 (HOME-04)~~ — 완료. `todo` 쪽 적립값 교체까지 끝났다 (2026-08-15)
-8. ~~주간(REP-06/07) · 월간(REP-08)~~ — 완료. **종합(REP-09~11)은 보류** — 정책 미정(prd.md §7 L6·L9)
+8. ~~주간(REP-06/07) · 월간(REP-08) · 종합(REP-09~11)~~ — 완료. 종합은 2026-08-16에 정책(prd.md §7 L6·L9)이 확정되며 함께 끝났다
 
-**코드로 할 일은 남지 않았다.** 남은 셋은 전부 사람이 정하거나 실행하는 것이다 — ① 종합 리포트 정책 결정(prd.md §7 L6·L9) ② 임시값 확정(상관 강도, §9.2 L7) ③ 약관 원문(P4). 그 밖에 **dev → main 배포**가 밀려 있다.
+**코드로 할 일은 남지 않았다.** 남은 것은 전부 사람이 정하거나 실행한다 — ① **`action_master_raise_threshold.sql` 운영 RDS 실행**(배포 후, workflow.md §8) ② 임시값 확정(상관 강도, §9.2 L7) ③ 약관 원문(P4) ④ REP-11 클릭 이벤트 기록 필요 여부. 그 밖에 **dev → main 배포**가 밀려 있다.
 
 **P5(액션 마스터 데이터)는 해소됐다** — 24행이 시드 SQL로 들어왔다.
 
@@ -359,7 +377,9 @@ w(f)  = clamp(w(f) + Δw(f), 0.5, 2.0)
 
 ## 임시값 주의
 
-§10으로 확정되지 않은 값들은 아직 임시다 — **상관 강도 구간·표본 하한(L7) · 트리아지 임계값(L6)** (prd.md §9.2). L8(신뢰도 등급)은 서버 대상에서 빠졌다.
+§10으로 확정되지 않은 값은 이제 하나다 — **상관 강도 구간·표본 하한(L7)** (prd.md §9.2). **트리아지 임계값(L6)은 2026-08-16에 확정**됐고(§10.10), L8(신뢰도 등급)은 서버 대상에서 빠졌다.
+
+**트리아지 판정값은 `domain/report/TriagePolicy`이며 확정값이다** — 관찰 창 3주 · 정체 컷 `50` · 추세/변동폭 `±5` · `VOLATILE` 표준편차 `15`. **새 숫자를 거의 만들지 않고 §10.1 등급 컷오프와 §10.2 판정 오차 폭을 재사용**했다. **표본 하한만은 `CorrelationPolicy.MIN_SAMPLE_SIZE`를 참조한다 — 사본을 두지 말 것.** 그래서 L7이 확정되면 트리아지 표본 하한도 함께 움직인다(의도한 연결이다).
 
 **리포트 쪽 임시값은 `domain/report/CorrelationPolicy`에 모여 있다** — 강도 구간 `0.7 / 0.4 / 0.2`와 표본 하한 `5`. **`ScoringPolicy`가 아니다**: 예보 스코어링은 정규화된 부분점수를, 상관 강도는 저장된 원본값을 다룬다. 확정되면 **이 클래스의 상수만 바꾸고 계산 로직은 손대지 않는다.**
 
@@ -371,15 +391,24 @@ w(f)  = clamp(w(f) + Δw(f), 0.5, 2.0)
 
 ## 확정이 필요한 것
 
-**블로커가 하나도 남지 않았다.** B1·B2·B3·B7이 확정됐고, B4는 고지 문구가 답에 의존하지 않게 만들어 해소, B5는 MVP 전제로 보류, **B6(수면 목표값)은 2026-08-14에 MVP에서 제외**됐다. **구현이 막힌 곳도 없다** — 남은 결정은 아래 종합 리포트뿐이고, 그것도 4단계라 다른 작업을 막지 않는다.
+**블로커가 하나도 남지 않았다.** B1·B2·B3·B7이 확정됐고, B4는 고지 문구가 답에 의존하지 않게 만들어 해소, B5는 MVP 전제로 보류, **B6(수면 목표값)은 2026-08-14에 MVP에서 제외**됐다. **구현이 막힌 곳도 없다.**
 
 **HOME-04(게이미피케이션)도 2026-08-14에 확정됐다** — 레벨 컷오프·적립량·수면 점수 정의까지 전부 정해졌고(prd.md §10.8·§10.9), S5(캐릭터 클릭 동작)는 **서버가 캐릭터를 모르므로** 클라이언트 영역으로 정리됐다.
 
-**종합 리포트(REP-09~11)가 유일하게 막혀 있고, 막힌 것이 둘이다.**
+**마지막까지 막혀 있던 종합 리포트(REP-09~11)도 2026-08-16에 풀렸다.** 결정 근거 원문은 `sub-docs/report-overall.md`, 확정값은 prd.md §10.10이다.
 
-1. **발동 조건** (L6) — "수면 목표는 달성했는데 특정 피부 지표만 정체"에서 앞 절반이 사라졌다. 수면 쪽 근거 없이 두면 **잠을 못 잔 사람에게도 "클리닉에 가보라"고 말하게 된다**
-2. **화면이 요구하는 항목을 현재 지표로 만들 수 없다** (L9) — REP-10의 "클리닉 필요" 셋(색소침착·여드름 흉터·구조적 노화)이 전부 지표 3종 밖이다. 색소침착을 **셀피 실측 전용 지표**로 되살리는 안이 논의됐는데, **`report`만 고쳐서 되는 일이 아니다** — `skin_measurement` 컬럼 · 엔티티 · DTO · Vision 프롬프트 · 구조화 출력 스키마까지 함께 바뀐다. **`skin` 담당과 합의 없이 넣지 말 것.** 예보 3종에 섞으면 "예보와 실측이 같은 세트"라는 원칙 위반이다
+1. **발동 조건** (L6) — 사라진 "수면 목표 달성"을 **수면 점수 추세**로 대체했다. `STABLE`·`RISING`일 때만 발동하고 **`FALLING`·`VOLATILE`이면 정체 지표가 있어도 발동하지 않는다.** **B6를 되살리지 않고 해결했다는 점이 중요하다** — `ScoringPolicy`에 목표값 상수는 여전히 없다
+2. **클리닉 필요 3종** (L9) — 색소침착만이 아니라 **셋 전부**를 `skin_measurement`의 감지 boolean으로 추가했다(위 "클리닉 트리아지 3종"). 예고대로 `skin` 도메인(엔티티 · `SkinVisionScores` · Vision 프롬프트 · 구조화 출력 스키마)이 함께 바뀌었고, **담당자 부재로 `report` 쪽에서 직접 구현하며 기존 지표 3종 경로가 그대로인지 diff로 확인**했다. **다음에 `skin`을 건드릴 때도 같은 확인을 거친다**
 
 값을 임의로 정하지 말고 사용자에게 확인할 것. 전체 미결정 목록은 prd.md §7 (B=블로커, L=로직, E=빈상태, S=화면, P=정책).
 
-**사람이 움직여야 하는 것은 둘이다** — **약관 원문(P4)**(`consent_history.terms_version`의 출처)과 **위 종합 리포트 결정**. 그 밖에 임시값 확정(L7 상관 강도)이 있으나 개발을 막지 않는다. (액션 마스터 데이터 P5는 해소됐다.)
+**사람이 움직여야 하는 것은 셋이다** — **약관 원문(P4)**(`consent_history.terms_version`의 출처) · **`action_master_raise_threshold.sql` 운영 실행**(배포 후) · **REP-11 클릭 이벤트 기록 필요 여부**. 그 밖에 임시값 확정(L7 상관 강도)이 있으나 개발을 막지 않는다. (액션 마스터 데이터 P5는 해소됐다.)
+
+## 결정 근거는 `sub-docs/`, 규격은 `docs/`
+
+**2026-08-16~17 작업은 `docs/`를 건드리지 않고 별도 파일에 결정만 적어 뒀고, 그 사이 `docs/`가 "종합 리포트는 보류"라고 계속 말하고 있었다.** 2026-08-18에 맞췄다(workflow.md §4).
+
+- **`sub-docs/`에는 "왜 그렇게 정했나"를 남긴다** — 검토했다 버린 선택지, 논의 과정, 프롬프트 원문
+- **"무엇이 규격인가"는 항상 `docs/`가 말한다.** 특히 api.md는 앱 팀이 보는 유일한 출처다
+- **기능 PR에서 둘을 함께 갱신한다.** 나중에 몰아서 맞추면 그 사이 문서를 읽은 사람이 틀린 것을 읽는다
+- **디렉터리는 `sub-docs/` 하나다** — 한때 `sub.docs/`가 따로 있어 문서가 두 곳에 나뉘어 있었고 2026-08-18에 합쳤다. **점(`.`)이 들어간 이름을 다시 만들지 말 것**
