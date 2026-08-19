@@ -249,7 +249,7 @@ class ReportControllerTest {
                                     new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
                                             SkinMetric.COMPLEXION, "혈색", null, 2, true),
                                     new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
-                                            SkinMetric.BARRIER, "장벽",
+                                            SkinMetric.BARRIER, "피부 장벽",
                                             CorrelationStrength.MODERATE, 6, false)))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
@@ -339,7 +339,7 @@ class ReportControllerTest {
                                     SkinMetric.COMPLEXION, "혈색",
                                     CorrelationStrength.WEAK, 22, false),
                                     new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
-                                    SkinMetric.BARRIER, "장벽",
+                                    SkinMetric.BARRIER, "피부 장벽",
                                     CorrelationStrength.MODERATE, 22, false)))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)

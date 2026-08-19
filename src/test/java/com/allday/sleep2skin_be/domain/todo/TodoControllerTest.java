@@ -52,7 +52,7 @@ class TodoControllerTest {
         given(todoService.getTodos(USER_ID, BASE_DATE)).willReturn(new TodoListResponse(
                 QueryStatus.AVAILABLE, null, BASE_DATE,
                 List.of(new TodoItemResponse(41L, ActionCategory.AVOID, "강한 각질 제거",
-                        "장벽 약화의 원인", "과도한 각질 제거는 피부를 자극할 수 있어요", null)),
+                        "피부 장벽 약화의 원인", "과도한 각질 제거는 피부를 자극할 수 있어요", null)),
                 List.of(new TodoItemResponse(44L, ActionCategory.DO, "보습 크림 바르기",
                         null, null, TodoStatus.PENDING))));
 
@@ -62,7 +62,7 @@ class TodoControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.error").doesNotExist())
                 .andExpect(jsonPath("$.data.status").value("AVAILABLE"))
-                .andExpect(jsonPath("$.data.avoidItems[0].causeLabel").value("장벽 약화의 원인"))
+                .andExpect(jsonPath("$.data.avoidItems[0].causeLabel").value("피부 장벽 약화의 원인"))
                 .andExpect(jsonPath("$.data.avoidItems[0].status").doesNotExist())
                 .andExpect(jsonPath("$.data.checklistItems[0].status").value("PENDING"))
                 .andExpect(jsonPath("$.data.checklistItems[0].causeLabel").doesNotExist());

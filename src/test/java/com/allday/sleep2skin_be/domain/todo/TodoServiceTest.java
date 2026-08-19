@@ -192,7 +192,7 @@ class TodoServiceTest {
             TodoListResponse response = service.getTodos(USER_ID, BASE_DATE);
 
             assertThat(response.avoidItems().getFirst().status()).isNull();
-            assertThat(response.avoidItems().getFirst().causeLabel()).isEqualTo("장벽 약화의 원인");
+            assertThat(response.avoidItems().getFirst().causeLabel()).isEqualTo("피부 장벽 약화의 원인");
             assertThat(response.avoidItems().getFirst().reason()).isNotBlank();
             assertThat(response.checklistItems().getFirst().status()).isEqualTo(TodoStatus.PENDING);
             assertThat(response.checklistItems().getFirst().causeLabel()).isNull();

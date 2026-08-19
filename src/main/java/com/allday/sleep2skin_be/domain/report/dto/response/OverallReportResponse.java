@@ -86,7 +86,7 @@ public record OverallReportResponse(
             @Schema(description = "혈색 추세")
             MetricTrendResult complexion,
 
-            @Schema(description = "장벽 추세")
+            @Schema(description = "피부 장벽 추세")
             MetricTrendResult barrier
     ) {
     }

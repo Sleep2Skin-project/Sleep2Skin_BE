@@ -28,7 +28,7 @@ public record SkinForecastResponse(
         @Schema(description = "혈색 — 높을수록 생기 있음. 산출하지 못했으면 `null`", nullable = true)
         MetricScore complexion,
 
-        @Schema(description = "장벽 — 높을수록 튼튼함. 산출하지 못했으면 `null`", nullable = true)
+        @Schema(description = "피부 장벽 — 높을수록 튼튼함. 산출하지 못했으면 `null`", nullable = true)
         MetricScore barrier,
 
         @Schema(description = "산출하지 못한 지표와 사유. 전부 산출됐으면 빈 배열")
@@ -86,7 +86,7 @@ public record SkinForecastResponse(
 
                     - `MISSING_FEATURES` — 워치 미착용 (HRV·안정시 심박 없음)
                     - `INSUFFICIENT_HISTORY` — 취침 규칙성 이력 3일 미만
-                    - `NO_SLEEP_STAGES` — 단계 합이 0이라 장벽 산출 불가
+                    - `NO_SLEEP_STAGES` — 단계 합이 0이라 피부 장벽 산출 불가
                     """, example = "MISSING_FEATURES")
             UnavailableReason reason
     ) {
