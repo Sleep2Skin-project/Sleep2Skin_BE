@@ -340,7 +340,7 @@ public interface SkinControllerSpec {
             MultipartFile image);
 
     @Operation(summary = "적중률 · 연속 검증 배너 (HOME-09)", description = """
-            최근 검증 1건 + 누적 적중률 + 연속 검증 횟수.
+            최근 검증 1건 + 직전 검증 1건 + 누적 적중률 + 연속 검증 횟수.
 
             ### 응답
 
@@ -354,6 +354,10 @@ public interface SkinControllerSpec {
                   "hitRate": 58,                // **누적**
                   "verificationCount": 5,
                   "streakCount": 3,
+                  "previous": {                 // 직전 검증 1건. 검증이 1건뿐이면 null
+                    "baseDate": "2026-08-08",
+                    "hitRate": 33               // 그날치
+                  },
                   "latest": {
                     "baseDate": "2026-08-09",
                     "hitRate": 67,              // 그날치
@@ -373,6 +377,22 @@ public interface SkinControllerSpec {
 
             **누적 분모에서도 빈 지표는 빠진다.** 그날 예보가 없던 지표는 판정 자체가 없었으므로
             세지 않는다 — `POST /skin/selfie`와 같은 규칙이다. **검증 일수 × 3이 아니다.**
+
+            ### `previous` — "지난번 대비"의 기준선
+
+            **상승폭은 서버가 내려주지 않는다.** `latest.hitRate − previous.hitRate`를 앱이
+            뺀다 — 같은 응답 안의 두 필드로 나오는 값이라 서버가 함께 담으면 같은 사실을 말하는
+            자리가 둘이 되어 어긋난다.
+
+            **`previous.baseDate`는 전날이 아니라 바로 앞 검증일이다.** 하루 걸러 검증했으면
+            이틀 전일 수 있다.
+
+            **검증이 1건뿐이면 `previous`는 `null`이다** — 비교할 대상이 없다. 첫 검증에
+            `0`을 주면 화면이 없던 상승폭을 그린다. **`null` 분기가 필요하다.**
+
+            ⚠️ **`previous`와의 차이는 그날치끼리의 비교라 크게 요동친다.** 분모가 최대 3이라
+            판정 하나가 뒤집히면 `±33%p`가 움직인다. **"예보가 얼마나 믿을 만한가"는 여전히
+            최상위 `hitRate`(누적)가 말한다** — 둘을 같은 뜻으로 쓰지 말 것.
 
             ### 연속 검증 횟수 — 오늘 미검증이 연속을 끊지 않는다
 
