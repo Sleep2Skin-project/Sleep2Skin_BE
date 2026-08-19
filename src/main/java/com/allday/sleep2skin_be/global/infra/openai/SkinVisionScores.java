@@ -14,10 +14,10 @@ package com.allday.sleep2skin_be.global.infra.openai;
  * Structured Outputs 스키마도 걸러내지 못하고 <b>적중률만 조용히 무너진다.</b> 방어선은
  * {@link SkinVisionPrompt} 의 필드 설명 하나뿐이다.
  *
- * <p><b>{@code pigmentationDetected}·{@code acneScarDetected}·{@code agingDetected}는
- * 예보 지표 3종과 성격이 다르다.</b> 0~100 점수화하지 않는 감지 여부(boolean)뿐이고,
- * 예보-실측 대조(HOME-07)·개인 가중치 학습(HOME-08)에 관여하지 않는다 — 종합 리포트의
- * 클리닉 트리아지(REP-10)에만 쓰인다.
+ * <p><b>{@code pigmentationDetected}·{@code acneScarDetected}·{@code agingDetected}·
+ * {@code blackheadDetected}는 예보 지표 3종과 성격이 다르다.</b> 0~100 점수화하지 않는 감지
+ * 여부(boolean)뿐이고, 예보-실측 대조(HOME-07)·개인 가중치 학습(HOME-08)에 관여하지 않는다 —
+ * 종합 리포트의 클리닉 트리아지(REP-10)에만 쓰인다.
  *
  * @param darkCircle           다크서클 회복 — 100 이면 눈 밑이 맑다
  * @param complexion           혈색 — 100 이면 안색에 생기가 돈다
@@ -25,8 +25,9 @@ package com.allday.sleep2skin_be.global.infra.openai;
  * @param pigmentationDetected 색소침착이 보이는가 (감지 여부만, 심각도 점수 없음)
  * @param acneScarDetected     여드름 흉터가 보이는가 (감지 여부만, 심각도 점수 없음)
  * @param agingDetected        구조적 노화 징후가 보이는가 (감지 여부만, 심각도 점수 없음)
+ * @param blackheadDetected    블랙헤드가 보이는가 (감지 여부만, 심각도 점수 없음)
  */
 public record SkinVisionScores(int darkCircle, int complexion, int barrier,
                                boolean pigmentationDetected, boolean acneScarDetected,
-                               boolean agingDetected) {
+                               boolean agingDetected, boolean blackheadDetected) {
 }

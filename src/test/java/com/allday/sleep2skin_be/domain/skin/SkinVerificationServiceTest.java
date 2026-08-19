@@ -111,13 +111,14 @@ class SkinVerificationServiceTest {
                 .willAnswer(invocation -> invocation.getArgument(0));
 
         skinVerificationService.record(USER_ID, BASE_DATE,
-                new SkinVisionScores(61, 55, 78, true, false, true));
+                new SkinVisionScores(61, 55, 78, true, false, true, false));
 
         ArgumentCaptor<SkinMeasurement> captor = ArgumentCaptor.forClass(SkinMeasurement.class);
         verify(skinMeasurementRepository).save(captor.capture());
         assertThat(captor.getValue().getPigmentationDetected()).isTrue();
         assertThat(captor.getValue().getAcneScarDetected()).isFalse();
         assertThat(captor.getValue().getAgingDetected()).isTrue();
+        assertThat(captor.getValue().getBlackheadDetected()).isFalse();
     }
 
     /**
@@ -360,7 +361,7 @@ class SkinVerificationServiceTest {
 
     private SelfieVerificationResponse analyze(int darkCircle, int complexion, int barrier) {
         return skinVerificationService.record(USER_ID, BASE_DATE,
-                new SkinVisionScores(darkCircle, complexion, barrier, false, false, false));
+                new SkinVisionScores(darkCircle, complexion, barrier, false, false, false, false));
     }
 
     private void forecastIs(int darkCircle, Integer complexion, Integer barrier) {

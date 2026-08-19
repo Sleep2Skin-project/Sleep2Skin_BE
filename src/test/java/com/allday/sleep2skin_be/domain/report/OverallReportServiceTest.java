@@ -228,13 +228,14 @@ class OverallReportServiceTest {
         }
 
         @Test
-        @DisplayName("가장 최근 실측의 감지 플래그를 그대로 옮긴다")
+        @DisplayName("가장 최근 실측의 감지 플래그 4종을 그대로 옮긴다 — 전부 값이 있을 때")
         void 최근_실측의_플래그를_옮긴다() {
             joinedLongAgo();
             SkinMeasurement measurement = SkinMeasurement.builder()
                     .userId(USER_ID).baseDate(BASE_DATE)
                     .darkCircle(60).complexion(60).barrier(60)
                     .pigmentationDetected(true).acneScarDetected(false).agingDetected(true)
+                    .blackheadDetected(true)
                     .analyzedAt(BASE_DATE.atTime(9, 0).atOffset(ZoneOffset.UTC))
                     .build();
             given(skinMeasurementRepository
@@ -246,6 +247,7 @@ class OverallReportServiceTest {
             assertThat(response.clinicNeeded().pigmentationDetected()).isTrue();
             assertThat(response.clinicNeeded().acneScarDetected()).isFalse();
             assertThat(response.clinicNeeded().agingDetected()).isTrue();
+            assertThat(response.clinicNeeded().blackheadDetected()).isTrue();
         }
 
         /**
@@ -261,6 +263,7 @@ class OverallReportServiceTest {
                     .userId(USER_ID).baseDate(BASE_DATE)
                     .darkCircle(60).complexion(60).barrier(60)
                     .pigmentationDetected(true).acneScarDetected(false).agingDetected(true)
+                    .blackheadDetected(true)
                     .analyzedAt(BASE_DATE.atTime(9, 0).atOffset(ZoneOffset.UTC))
                     .build();
             given(skinMeasurementRepository
@@ -286,6 +289,7 @@ class OverallReportServiceTest {
                     .userId(USER_ID).baseDate(BASE_DATE)
                     .darkCircle(60).complexion(60).barrier(60)
                     .pigmentationDetected(null).acneScarDetected(false).agingDetected(true)
+                    .blackheadDetected(true)
                     .analyzedAt(BASE_DATE.atTime(9, 0).atOffset(ZoneOffset.UTC))
                     .build();
             given(skinMeasurementRepository
@@ -297,6 +301,36 @@ class OverallReportServiceTest {
             assertThat(response.clinicNeeded().pigmentationDetected()).isNull();
             assertThat(response.clinicNeeded().acneScarDetected()).isFalse();
             assertThat(response.clinicNeeded().agingDetected()).isTrue();
+            assertThat(response.clinicNeeded().blackheadDetected()).isTrue();
+        }
+
+        /**
+         * 신규 필드({@code blackheadDetected})만 컬럼 도입 이전이라 {@code null}인 실측 행을
+         * 흉내낸다 — 기존 3종은 이 컬럼 도입 이전부터 있었던 값이라 정상적으로 채워져 있는 상태다.
+         * {@code toClinicNeeded}가 필드별로 분기하지 않고 {@code Boolean}을 그대로 옮기므로,
+         * 4번째 필드가 추가돼도 별도 처리 없이 이 케이스가 그대로 통과해야 한다.
+         */
+        @Test
+        @DisplayName("blackheadDetected만 null이면 그 필드만 null로, 나머지 3개는 값 그대로 응답한다")
+        void blackheadDetected만_null이면_그_필드만_null이다() {
+            joinedLongAgo();
+            SkinMeasurement measurement = SkinMeasurement.builder()
+                    .userId(USER_ID).baseDate(BASE_DATE)
+                    .darkCircle(60).complexion(60).barrier(60)
+                    .pigmentationDetected(true).acneScarDetected(false).agingDetected(true)
+                    .blackheadDetected(null)
+                    .analyzedAt(BASE_DATE.atTime(9, 0).atOffset(ZoneOffset.UTC))
+                    .build();
+            given(skinMeasurementRepository
+                    .findFirstByUserIdAndBaseDateLessThanEqualOrderByBaseDateDesc(USER_ID, BASE_DATE))
+                    .willReturn(Optional.of(measurement));
+
+            OverallReportResponse response = service().getOverallReport(USER_ID, BASE_DATE);
+
+            assertThat(response.clinicNeeded().pigmentationDetected()).isTrue();
+            assertThat(response.clinicNeeded().acneScarDetected()).isFalse();
+            assertThat(response.clinicNeeded().agingDetected()).isTrue();
+            assertThat(response.clinicNeeded().blackheadDetected()).isNull();
         }
 
         @Test

@@ -517,7 +517,8 @@ public interface ReportControllerSpec {
                 "clinicNeeded": {
                   "pigmentationDetected": false,
                   "acneScarDetected": false,
-                  "agingDetected": true
+                  "agingDetected": true,
+                  "blackheadDetected": false
                 },
                 "clinicLink": "https://amredclinic.com/ko"
               } }

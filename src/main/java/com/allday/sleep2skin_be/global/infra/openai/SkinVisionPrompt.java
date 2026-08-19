@@ -31,7 +31,7 @@ final class SkinVisionPrompt {
             Rate three metrics. All three use the SAME scale: an integer from 0 to 100 where
             a HIGHER score always means a BETTER (healthier-looking) condition.
 
-            Also flag three additional conditions as true/false only — do NOT rate their
+            Also flag four additional conditions as true/false only — do NOT rate their
             severity, only whether they are visibly present.
 
             This is an observational rating of what is visible in the photo. It is not a
@@ -86,13 +86,17 @@ final class SkinVisionPrompt {
                 Whether visible structural aging signs (wrinkles, fine lines, sagging, loss of \
                 elasticity) are present. true = visibly present. false = not visible or absent. \
                 Presence only — do NOT judge severity."""));
+        properties.put("blackheadDetected", booleanField("""
+                Whether visible blackheads (open comedones, dark dots in pores, typically on nose/\
+                T-zone) are present anywhere on the face. true = visibly present. false = not \
+                visible or absent. Presence only — do NOT judge severity."""));
 
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "object");
         schema.put("properties", properties);
         // strict 모드는 모든 프로퍼티가 required 여야 한다 — 하나라도 빠지면 요청이 거절된다
         schema.put("required", List.of("darkCircle", "complexion", "barrier",
-                "pigmentationDetected", "acneScarDetected", "agingDetected"));
+                "pigmentationDetected", "acneScarDetected", "agingDetected", "blackheadDetected"));
         schema.put("additionalProperties", false);
         return schema;
     }

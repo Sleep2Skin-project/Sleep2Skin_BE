@@ -45,7 +45,7 @@ public record OverallReportResponse(
         @Schema(description = "앱이 관리하는 예보 지표 3종. 점수·등급 없이 고정 목록")
         List<SkinMetric> appManaged,
 
-        @Schema(description = "클리닉이 필요할 수 있는 신호 3종. 실측 이력이 전혀 없으면 `null`",
+        @Schema(description = "클리닉이 필요할 수 있는 신호 4종. 실측 이력이 전혀 없으면 `null`",
                 nullable = true)
         ClinicNeeded clinicNeeded,
 
@@ -133,7 +133,7 @@ public record OverallReportResponse(
      * 필드 하나만 {@code null}이면 그 실측 행이 이 컬럼 도입 이전에 만들어졌다는 뜻이다(미측정).
      * 어느 쪽도 {@code false}(실제 미검출)로 채우지 않는다.
      */
-    @Schema(description = "클리닉이 필요할 수 있는 신호 3종 (가장 최근 실측 기준)")
+    @Schema(description = "클리닉이 필요할 수 있는 신호 4종 (가장 최근 실측 기준)")
     public record ClinicNeeded(
 
             @Schema(description = "색소침착 감지 여부. null이면 이 실측 행이 컬럼 도입 이전 데이터(미측정)",
@@ -146,7 +146,11 @@ public record OverallReportResponse(
 
             @Schema(description = "구조적 노화 징후 감지 여부. null이면 이 실측 행이 컬럼 도입 이전 데이터(미측정)",
                     example = "false", nullable = true)
-            Boolean agingDetected
+            Boolean agingDetected,
+
+            @Schema(description = "블랙헤드 감지 여부. null이면 이 실측 행이 컬럼 도입 이전 데이터(미측정)",
+                    example = "false", nullable = true)
+            Boolean blackheadDetected
     ) {
     }
 
