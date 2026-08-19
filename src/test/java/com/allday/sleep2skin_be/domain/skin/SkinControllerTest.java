@@ -20,6 +20,7 @@ import com.allday.sleep2skin_be.domain.skin.dto.response.SkinForecastResponse.Un
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkippedMetricResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse.LatestVerification;
+import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse.PreviousVerification;
 import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse.Summary;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
 import com.allday.sleep2skin_be.domain.skin.entity.SleepFeature;
@@ -360,6 +361,7 @@ class SkinControllerTest {
         void 누적과_그날치를_모두_준다() throws Exception {
             given(skinVerificationSummaryService.getSummary(USER_ID, BASE_DATE))
                     .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(58, 5, 3,
+                            new PreviousVerification(BASE_DATE.minusDays(2), 33),
                             new LatestVerification(BASE_DATE.minusDays(1), 67,
                                     List.of(MetricVerificationResponse.of(SkinMetric.DARK_CIRCLE, 67, 65)),
                                     List.of()))));
@@ -373,6 +375,44 @@ class SkinControllerTest {
                     .andExpect(jsonPath("$.data.summary.streakCount").value(3))
                     .andExpect(jsonPath("$.data.summary.latest.hitRate").value(67))
                     .andExpect(jsonPath("$.data.summary.latest.baseDate").value("2026-08-06"));
+        }
+
+        /**
+         * 화면이 "지난번 대비 +N%p"를 그린다. <b>상승폭은 서버가 담지 않는다</b> — 같은 사실을
+         * 말하는 자리가 둘이 되면 어긋난다. 옛 필드가 되살아나지 않게 부재까지 단언한다.
+         */
+        @Test
+        @DisplayName("직전 검증 1건이 실리고 상승폭 필드는 없다")
+        void 직전_검증이_실린다() throws Exception {
+            given(skinVerificationSummaryService.getSummary(USER_ID, BASE_DATE))
+                    .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(58, 5, 3,
+                            new PreviousVerification(BASE_DATE.minusDays(2), 33),
+                            new LatestVerification(BASE_DATE.minusDays(1), 67,
+                                    List.of(MetricVerificationResponse.of(SkinMetric.DARK_CIRCLE, 67, 65)),
+                                    List.of()))));
+
+            mockMvc.perform(get(SUMMARY_PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-07"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.summary.previous.hitRate").value(33))
+                    .andExpect(jsonPath("$.data.summary.previous.baseDate").value("2026-08-05"))
+                    .andExpect(jsonPath("$.data.summary.hitRateDelta").doesNotExist());
+        }
+
+        /** 첫 검증에는 비교 대상이 없다. 앱은 `previous == null`이면 상승폭을 그리지 않는다. */
+        @Test
+        @DisplayName("검증이 1건뿐이면 previous가 null이다")
+        void 첫_검증이면_직전이_없다() throws Exception {
+            given(skinVerificationSummaryService.getSummary(USER_ID, BASE_DATE))
+                    .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(67, 1, 1, null,
+                            new LatestVerification(BASE_DATE, 67,
+                                    List.of(MetricVerificationResponse.of(SkinMetric.DARK_CIRCLE, 67, 65)),
+                                    List.of()))));
+
+            mockMvc.perform(get(SUMMARY_PATH).header(USER_ID_HEADER, USER_ID)
+                            .param("baseDate", "2026-08-07"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string(containsString("\"previous\":null")));
         }
 
         @Test

@@ -5,6 +5,7 @@ import com.allday.sleep2skin_be.domain.skin.dto.response.MetricVerificationRespo
 import com.allday.sleep2skin_be.domain.skin.dto.response.SkippedMetricResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse;
 import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse.LatestVerification;
+import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse.PreviousVerification;
 import com.allday.sleep2skin_be.domain.skin.dto.response.VerificationSummaryResponse.Summary;
 import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
 import com.allday.sleep2skin_be.domain.skin.repository.SkinMeasurementRepository;
@@ -33,6 +34,9 @@ import java.util.List;
  * <p>최근 1건만 쓰면 분모가 최대 3이라 숫자가 {@code 0}·{@code 33}·{@code 67}·{@code 100}으로만
  * 튀고 하루마다 요동친다. 배너가 말하려는 것은 <b>"예보가 얼마나 믿을 만한가"</b>이므로 표본이
  * 쌓일수록 안정되는 쪽이 맞다. 그날치는 {@code latest.hitRate}로 따로 준다.
+ *
+ * <p><b>{@code previous}는 화면의 "지난번 대비" 기준선일 뿐이다.</b> 그날치끼리의 비교라 누적과
+ * 성격이 다르며, 상승폭은 서버가 아니라 앱이 뺀다.
  *
  * <p><b>누적 분모에서도 빈 지표는 빠진다.</b> 그날 예보가 없던 지표는 판정 자체가 없었으므로
  * 세지 않는다 — 셀피 응답과 같은 규칙이며, 0점으로 채우면 존재하지 않는 오차가 섞인다.
@@ -70,6 +74,7 @@ public class SkinVerificationSummaryService {
                 skinMeasurementRepository.countByUserId(userId),
                 streakCalculator.calculate(baseDate,
                         verifiedDays.stream().map(VerifiedDay::baseDate).toList()),
+                previous(verifiedDays),
                 latest(userId, verifiedDays.getFirst())));
     }
 
@@ -78,6 +83,27 @@ public class SkinVerificationSummaryService {
         List<MetricVerificationResponse> verifications = verificationsOf(day);
         return new LatestVerification(day.baseDate(), hitRate(verifications),
                 verifications, skippedOf(userId, day));
+    }
+
+    /**
+     * 직전 검증 1건 — 화면의 <b>"지난번 대비"</b> 기준선이다. 최신순 목록의 두 번째 원소이며,
+     * <b>검증이 1건뿐이면 {@code null}</b>이다(비교할 대상이 없다).
+     *
+     * <p><b>이미 읽어 둔 목록에서 꺼낸다 — 조회가 늘지 않는다.</b> 누적 적중률이 어차피 전량을
+     * 훑기 때문이다.
+     *
+     * <p><b>상승폭은 여기서 계산하지 않는다.</b> {@code latest.hitRate − previous.hitRate}는 앱이
+     * 뺀다 — 서버가 함께 담으면 같은 사실을 말하는 자리가 둘이 되어 어긋날 수 있다.
+     *
+     * <p>{@code skipped}를 만들지 않으므로 <b>세션을 읽지 않는다.</b> 제외 사유는 배너에서 최근
+     * 1건에만 나온다.
+     */
+    private PreviousVerification previous(List<VerifiedDay> verifiedDays) {
+        if (verifiedDays.size() < 2) {
+            return null;
+        }
+        VerifiedDay day = verifiedDays.get(1);
+        return new PreviousVerification(day.baseDate(), hitRate(verificationsOf(day)));
     }
 
     /**

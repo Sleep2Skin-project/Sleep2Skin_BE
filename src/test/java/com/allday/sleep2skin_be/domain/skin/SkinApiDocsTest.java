@@ -200,6 +200,24 @@ class SkinApiDocsTest {
     }
 
     /**
+     * 상승폭을 서버가 담지 않기로 한 것과 {@code previous}가 {@code null}일 수 있다는 것이
+     * 문서에서 사라지면, <b>앱이 첫 검증에서 없던 상승폭을 그리거나</b> 있지도 않은 델타 필드를
+     * 기다린다.
+     */
+    @Test
+    @DisplayName("previous가 기준선이고 상승폭은 앱이 계산한다는 것이 문서에 있다")
+    void 직전_검증_규칙이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(SUMMARY_GET + ".description")
+                        .value(containsString("상승폭은 서버가 내려주지 않는다")))
+                .andExpect(jsonPath(SUMMARY_GET + ".description")
+                        .value(containsString("전날이 아니라 바로 앞 검증일이다")))
+                .andExpect(jsonPath(SUMMARY_GET + ".description")
+                        .value(containsString("검증이 1건뿐이면 `previous`는 `null`이다")));
+    }
+
+    /**
      * 연속 규칙이 문서에서 사라지면 앱이 "오늘 안 했으니 0"으로 표시하게 된다 —
      * <b>아직 하지 않은 일로 사용자를 벌주는 것</b>처럼 읽힌다.
      */
