@@ -280,25 +280,59 @@ class ReportApiDocsTest {
                 .andExpect(jsonPath(OVERALL_GET + ".summary").value(containsString("종합 리포트 조회")))
                 .andExpect(jsonPath(OVERALL_GET + ".summary").value(containsString("REP-09~11")))
                 .andExpect(jsonPath(OVERALL_GET + ".description")
-                        .value(containsString("최근 3주 수면 점수 추세와 피부 지표 정체 여부")))
+                        .value(containsString("예보 지표 3종(다크서클·혈색·장벽) 각각의 최근 3주 추세")))
                 .andExpect(jsonPath(OVERALL_GET + ".responses.['200'].content.['application/json'].schema.['$ref']")
                         .value("#/components/schemas/ApiResponseOverallReportResponse"));
     }
 
     /**
-     * <b>이 API의 {@code status}는 주간·월간과 결정 기준 자체가 다르다.</b> 가입일 게이트가
-     * 없다는 것이 문서에서 사라지면, 프론트가 다른 리포트와 같은 규칙(가입 후 며칠)으로
-     * {@code INSUFFICIENT_DATA}를 오해할 수 있다.
+     * <b>발동 조건(트리거) 게이팅이 2026-08-19에 완전히 없어졌다.</b> {@code triage.triggered}가
+     * 문서에 남아 있으면 프론트가 존재하지 않는 필드를 기다리게 된다.
      */
     @Test
-    @DisplayName("status가 수면 추세 하나로만 결정되고 가입일 게이트가 없다는 것이 문서에 있다")
+    @DisplayName("발동 조건이 없고 triggered 필드가 사라졌다는 것이 문서에 있다")
+    void 종합_발동_조건_제거가_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(OVERALL_GET + ".description")
+                        .value(containsString("그 게이팅을 완전히 없앴다")))
+                .andExpect(jsonPath(OVERALL_GET + ".description")
+                        .value(containsString("triage.triggered")))
+                .andExpect(jsonPath(OVERALL_GET + ".description")
+                        .value(containsString("필드도 함께 사라졌다")));
+    }
+
+    /**
+     * <b>이 API의 {@code status}는 이제 REP-06·07과 같은 가입일 기준이다.</b> 그 규칙이
+     * 문서에서 사라지면, 프론트가 예전처럼 수면 점수 표본 수 기준으로 오해할 수 있다.
+     */
+    @Test
+    @DisplayName("status가 가입일 기준으로 결정된다는 것이 문서에 있다")
     void 종합_status_판정_기준이_문서에_있다() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(OVERALL_GET + ".description")
-                        .value(containsString("`sleepTrend`가 `INSUFFICIENT_DATA`일 때만 `status`가 `INSUFFICIENT_DATA`다")))
+                        .value(containsString("가입 당일을 1일차로 세어")))
                 .andExpect(jsonPath(OVERALL_GET + ".description")
-                        .value(containsString("기준 게이트가 없다")));
+                        .value(containsString("21일 미만이면")))
+                .andExpect(jsonPath(OVERALL_GET + ".description")
+                        .value(containsString("리포트 전체를 부족 처리하지 않는다")));
+    }
+
+    /**
+     * <b>{@code clinicNeeded}(REP-10)는 21일 관찰 창과 무관한 별개의 신호다.</b> 이 독립성이
+     * 문서에서 사라지면, 신규 사용자가 실측만 먼저 했을 때 clinicNeeded까지 함께 비어 나간다고
+     * 오해할 수 있다.
+     */
+    @Test
+    @DisplayName("clinicNeeded가 가입일 게이트와 무관하다는 것이 문서에 있다")
+    void 종합_clinicNeeded_독립성이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(OVERALL_GET + ".description")
+                        .value(containsString("clinicNeeded` — 가입일 게이트와 무관하다")))
+                .andExpect(jsonPath(OVERALL_GET + ".description")
+                        .value(containsString("실측 이력이 있으면 그대로 나간다")));
     }
 
     @Test
