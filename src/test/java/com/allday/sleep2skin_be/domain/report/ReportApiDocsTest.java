@@ -280,7 +280,7 @@ class ReportApiDocsTest {
                 .andExpect(jsonPath(OVERALL_GET + ".summary").value(containsString("종합 리포트 조회")))
                 .andExpect(jsonPath(OVERALL_GET + ".summary").value(containsString("REP-09~11")))
                 .andExpect(jsonPath(OVERALL_GET + ".description")
-                        .value(containsString("예보 지표 3종(다크서클·혈색·장벽) 각각의 최근 3주 추세")))
+                        .value(containsString("예보 지표 3종(다크서클·혈색·피부 장벽) 각각의 최근 3주 추세")))
                 .andExpect(jsonPath(OVERALL_GET + ".responses.['200'].content.['application/json'].schema.['$ref']")
                         .value("#/components/schemas/ApiResponseOverallReportResponse"));
     }

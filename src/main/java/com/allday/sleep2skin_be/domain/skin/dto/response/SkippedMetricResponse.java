@@ -32,7 +32,7 @@ public record SkippedMetricResponse(
 
                 - `MISSING_FEATURES` — 워치 미착용 (HRV·안정시 심박 없음)
                 - `INSUFFICIENT_HISTORY` — 취침 규칙성 이력 3일 미만
-                - `NO_SLEEP_STAGES` — 단계 합이 0이라 장벽 산출 불가
+                - `NO_SLEEP_STAGES` — 단계 합이 0이라 피부 장벽 산출 불가
                 """, example = "MISSING_FEATURES")
         UnavailableReason reason
 ) {

@@ -575,8 +575,8 @@ X-User-Id: 1
     "baseDate": "2026-08-13",
     "avoidItems": [                   // 최대 3개
       { "id": 41, "category": "AVOID", "title": "강한 각질 제거",
-        "causeLabel": "장벽 약화의 원인",
-        "reason": "과도한 각질 제거는 피부를 자극하고 장벽을 약하게 만들 수 있어요",
+        "causeLabel": "피부 장벽 약화의 원인",
+        "reason": "과도한 각질 제거는 피부를 자극하고 피부 장벽을 약하게 만들 수 있어요",
         "status": null }
     ],
     "checklistItems": [               // 최대 5개
@@ -594,7 +594,7 @@ X-User-Id: 1
 |---|---|
 | `DARK_CIRCLE` | 다크서클의 원인 |
 | `COMPLEXION` | 혈색 저하의 원인 |
-| `BARRIER` | 장벽 약화의 원인 |
+| `BARRIER` | 피부 장벽 약화의 원인 |
 
 **진행도("n/5")를 서버가 내려주지 않는다.** 클라이언트가 `checklistItems`의 `status`를 세어 계산한다. 서버가 세면 항목 배열과 계산된 숫자 두 곳이 같은 사실을 말하게 되고, 체크 직후 화면에서 둘이 어긋난다.
 
@@ -1047,7 +1047,7 @@ Content-Type: application/json
 
 | # | 내용 | 어기면 |
 |---|---|---|
-| 1 | **`UNSPECIFIED`를 `CORE`로 바꿔 보내지 말 것** | 비율 분모가 오염되어 **장벽 점수만 조용히 틀린다** ([prd.md](prd.md) §10.5) |
+| 1 | **`UNSPECIFIED`를 `CORE`로 바꿔 보내지 말 것** | 비율 분모가 오염되어 **피부 장벽 점수만 조용히 틀린다** ([prd.md](prd.md) §10.5) |
 | 2 | **시각에 오프셋을 반드시 포함할 것** | `sleepDate`가 하루 밀리고 예보·검증 조인이 전부 어긋난다 |
 | 3 | **`inBed`는 보내지 말 것** | 서버가 무시한다. `inBed` 의존 지표는 명세에서 제외됐다 |
 
@@ -1139,7 +1139,7 @@ Content-Type: application/json
 |---|---|
 | `MISSING_FEATURES` | 워치 미착용 — HRV·안정시 심박 없음 |
 | `INSUFFICIENT_HISTORY` | 취침 규칙성 이력 3일 미만 (신규 사용자) |
-| `NO_SLEEP_STAGES` | 단계 합 0 — 장벽 산출 불가 |
+| `NO_SLEEP_STAGES` | 단계 합 0 — 피부 장벽 산출 불가 |
 
 **`null`만 주면 앱이 문구를 고를 수 없어** 이유를 함께 준다. **에러가 아니라 정상 응답이다.**
 

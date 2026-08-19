@@ -59,7 +59,7 @@ public interface SleepControllerSpec {
 
             | # | 내용 | 어기면 |
             |---|---|---|
-            | 1 | **`UNSPECIFIED`를 `CORE`로 바꿔 보내지 말 것** | 비율 분모가 오염되어 **장벽 점수만 조용히 틀린다** |
+            | 1 | **`UNSPECIFIED`를 `CORE`로 바꿔 보내지 말 것** | 비율 분모가 오염되어 **피부 장벽 점수만 조용히 틀린다** |
             | 2 | **시각에 오프셋을 반드시 포함할 것** | 역직렬화가 실패해 `400`이 난다 |
             | 3 | **`inBed`는 보내지 말 것** | 서버가 무시한다 |
 
@@ -168,7 +168,7 @@ public interface SleepControllerSpec {
             | `reason` | 언제 | 앱이 보여줄 것 |
             |---|---|---|
             | `MISSING_FEATURES` | 워치 미착용 — HRV·안정시 심박 없음 | 워치를 착용하고 자면 다음날 산출된다 |
-            | `NO_SLEEP_STAGES` | 단계 합이 0 — 장벽 산출 불가 | 측정하지 못한 것이지 위험한 것이 아니다 |
+            | `NO_SLEEP_STAGES` | 단계 합이 0 — 피부 장벽 산출 불가 | 측정하지 못한 것이지 위험한 것이 아니다 |
             | `INSUFFICIENT_HISTORY` | 취침 규칙성 이력 3일 미만 | 기록이 쌓이면 산출된다 |
 
             **`darkCircle`은 항상 값이 있다.** 나머지 둘만 `null`이 될 수 있다.

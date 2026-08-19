@@ -100,7 +100,7 @@ public interface SkinControllerSpec {
             | `reason` | 언제 | 앱이 보여줄 것 |
             |---|---|---|
             | `MISSING_FEATURES` | 워치 미착용 — HRV·안정시 심박 없음 | 워치를 착용하고 자면 다음날 산출된다 |
-            | `NO_SLEEP_STAGES` | 단계 합이 0 — 장벽 산출 불가 | 측정하지 못한 것이지 위험한 것이 아니다 |
+            | `NO_SLEEP_STAGES` | 단계 합이 0 — 피부 장벽 산출 불가 | 측정하지 못한 것이지 위험한 것이 아니다 |
             | `INSUFFICIENT_HISTORY` | 취침 규칙성 이력 3일 미만 | 기록이 쌓이면 산출된다 |
 
             **`darkCircle`은 항상 값이 있다.** 나머지 둘만 `null`이 될 수 있다.
@@ -265,7 +265,7 @@ public interface SkinControllerSpec {
             ### 대조하지 못한 지표가 있을 수 있다
 
             **실측은 항상 3종이 나온다.** 갈리는 것은 예보 쪽이다 — 워치를 안 찬 밤은 혈색이,
-            단계가 안 잡힌 밤은 장벽이 비어 있다. 그 지표는 `skipped`로 가고 **적중률 분모에서도
+            단계가 안 잡힌 밤은 피부 장벽이 비어 있다. 그 지표는 `skipped`로 가고 **적중률 분모에서도
             빠진다.**
 
             **정확도를 평균낼 분모는 `verifications`의 길이이지 3이 아니다.** `skipped`에도

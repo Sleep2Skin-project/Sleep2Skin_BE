@@ -1,5 +1,5 @@
 -- action_master 시드 (24행)
--- DARK_CIRCLE(다크서클 회복) · COMPLEXION(혈색) · BARRIER(장벽), 각 AVOID 4 + DO 4
+-- DARK_CIRCLE(다크서클 회복) · COMPLEXION(혈색) · BARRIER(피부 장벽), 각 AVOID 4 + DO 4
 -- reason은 "오늘은 피하세요" 카드 롱프레스 노출용. DO 항목엔 사용하지 않는다.
 
 INSERT INTO action_master (category, title, reason, target_metric, threshold, impact_score, active, created_at, updated_at) VALUES
@@ -26,7 +26,7 @@ INSERT INTO action_master (category, title, reason, target_metric, threshold, im
 ('DO', '아침에 가볍게 냉찜질하기', '가벼운 냉찜질은 붓기를 가라앉히고 혈색을 맑아 보이게 할 수 있어요', 'COMPLEXION', 50, 4, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 
 -- BARRIER / AVOID
-('AVOID', '강한 각질 제거', '과도한 각질 제거는 피부를 자극하고 장벽을 약하게 만들 수 있어요', 'BARRIER', 50, 9, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('AVOID', '강한 각질 제거', '과도한 각질 제거는 피부를 자극하고 피부 장벽을 약하게 만들 수 있어요', 'BARRIER', 50, 9, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('AVOID', '뜨거운 물 세안', '뜨거운 물은 피부의 자연적인 유분을 제거해 건조하게 만들 수 있어요.', 'BARRIER', 80, 5, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('AVOID', '새 제품 바로 얼굴 전체에 사용', '맞지 않는 제품은 피부 자극을 유발할 수 있어요', 'BARRIER', 50, 8, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('AVOID', '세안 후 피부 세게 문지르기', '강한 마찰은 피부 장벽에 자극을 줄 수 있어요', 'BARRIER', 90, 5, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
