@@ -245,7 +245,10 @@ class ReportControllerTest {
                                             SkinMetric.DARK_CIRCLE, "다크서클 회복",
                                             CorrelationStrength.VERY_STRONG, 6, false),
                                     new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
-                                            SkinMetric.COMPLEXION, "혈색", null, 2, true)))));
+                                            SkinMetric.COMPLEXION, "혈색", null, 2, true),
+                                    new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
+                                            SkinMetric.BARRIER, "장벽",
+                                            CorrelationStrength.MODERATE, 6, false)))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -262,15 +265,15 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
                     .andExpect(jsonPath("$.data.correlations", hasSize(3)))
                     .andExpect(jsonPath("$.data.correlations[0].skinMetric").value("DARK_CIRCLE"))
-                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].sleepFeature")
+                    .andExpect(jsonPath("$.data.correlations[0].topCorrelation.sleepFeature")
                             .value("AWAKE_COUNT"))
-                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].strength")
+                    .andExpect(jsonPath("$.data.correlations[0].topCorrelation.strength")
                             .value("VERY_STRONG"))
-                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].insufficientSample")
+                    .andExpect(jsonPath("$.data.correlations[0].topCorrelation.insufficientSample")
                             .value(false))
                     .andExpect(jsonPath("$.data.correlations[1].skinMetric").value("COMPLEXION"))
-                    .andExpect(jsonPath("$.data.correlations[1].correlations[0].strength").doesNotExist())
-                    .andExpect(jsonPath("$.data.correlations[1].correlations[0].insufficientSample")
+                    .andExpect(jsonPath("$.data.correlations[1].topCorrelation.strength").doesNotExist())
+                    .andExpect(jsonPath("$.data.correlations[1].topCorrelation.insufficientSample")
                             .value(true));
         }
 
@@ -329,7 +332,13 @@ class ReportControllerTest {
                             CorrelationGroup.groupBySkinMetric(List.of(
                                     new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
                                     SkinMetric.DARK_CIRCLE, "다크서클 회복",
-                                    CorrelationStrength.STRONG, 22, false)))));
+                                    CorrelationStrength.STRONG, 22, false),
+                                    new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
+                                    SkinMetric.COMPLEXION, "혈색",
+                                    CorrelationStrength.WEAK, 22, false),
+                                    new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
+                                    SkinMetric.BARRIER, "장벽",
+                                    CorrelationStrength.MODERATE, 22, false)))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -348,7 +357,7 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
                     .andExpect(jsonPath("$.data.correlations", hasSize(3)))
                     .andExpect(jsonPath("$.data.correlations[0].skinMetric").value("DARK_CIRCLE"))
-                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].sampleSize").value(22));
+                    .andExpect(jsonPath("$.data.correlations[0].topCorrelation.sampleSize").value(22));
         }
 
         @Test

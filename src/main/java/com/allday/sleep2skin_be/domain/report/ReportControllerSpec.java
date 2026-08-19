@@ -209,21 +209,17 @@ public interface ReportControllerSpec {
                 "summary": { "avgSleepScore": 70, "avgDeepSleepMinutes": 126 },
                 "correlations": [
                   { "skinMetric": "DARK_CIRCLE",
-                    "correlations": [
-                      { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-                        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
-                        "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
-                      { "sleepFeature": "TOTAL_SLEEP", "featureLabel": "총 수면 시간",
-                        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
-                        "strength": "MODERATE", "sampleSize": 6, "insufficientSample": false }
-                    ] },
+                    "topCorrelation": { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+                      "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
+                      "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false } },
                   { "skinMetric": "COMPLEXION",
-                    "correlations": [
-                      { "sleepFeature": "HRV", "featureLabel": "심박변이도",
-                        "skinMetric": "COMPLEXION", "metricLabel": "혈색",
-                        "strength": null, "sampleSize": 2, "insufficientSample": true }
-                    ] },
-                  { "skinMetric": "BARRIER", "correlations": [] }
+                    "topCorrelation": { "sleepFeature": "HRV", "featureLabel": "심박변이도",
+                      "skinMetric": "COMPLEXION", "metricLabel": "혈색",
+                      "strength": null, "sampleSize": 2, "insufficientSample": true } },
+                  { "skinMetric": "BARRIER",
+                    "topCorrelation": { "sleepFeature": "DEEP_SLEEP", "featureLabel": "깊은 수면",
+                      "skinMetric": "BARRIER", "metricLabel": "장벽",
+                      "strength": "MODERATE", "sampleSize": 6, "insufficientSample": false } }
                 ]
               } }
             ```
@@ -301,10 +297,14 @@ public interface ReportControllerSpec {
             피처-지표 쌍에는 영향이 없다.
 
             **`correlations`는 `skinMetric` 기준 3그룹(`DARK_CIRCLE`·`COMPLEXION`·`BARRIER`)의
-            배열이다.** 계산 자체는 여전히 7쌍 전부를 낸다 — 표본이 부족해도 빠지지 않고
-            `strength: null`로 포함되며, **각 그룹 안의 정렬은 상관계수 절댓값 내림차순이고
-            표본 부족은 값과 무관하게 그룹 맨 뒤로 간다.** 그룹은 항상 3개 전부 반환하고, 매핑되는
-            피처가 없는 그룹은 `correlations: []`다.
+            배열이고, 그룹마다 대표 상관 1개(`topCorrelation`)만 담는다**(2026-08-19, 프론트
+            요청으로 배열→단일 객체 변경). 계산 자체는 여전히 7쌍 전부를 낸다.
+
+            **정렬은 상관계수 절댓값 내림차순이고 표본 부족은 값과 무관하게 맨 뒤로 가는 규칙
+            그대로다.** 동률이면 `sleepFeature` 선언 순서(위 표 순서)가 기준이고, 대표는 그
+            정렬의 1위다. **표본이 부족해도(`insufficientSample: true`) 대표에서 빠지지
+            않는다** — 그 지표에서 가장 유력한 피처가 무엇인지는 표본 부족과 무관하게 의미가
+            있다. 그룹은 항상 3개 전부 반환한다.
 
             ⚠️ 강도 구간(`VERY_STRONG` 0.7 / `STRONG` 0.4 / `MODERATE` 0.2)과 표본 하한(5개)은
             <b>임시값이다</b> — 통계학에서 흔히 쓰는 구간을 참고해 채택했을 뿐 이 서비스의
@@ -363,13 +363,17 @@ public interface ReportControllerSpec {
                 "summary": { "avgSleepScore": 61, "avgDeepSleepMinutes": 118 },
                 "correlations": [
                   { "skinMetric": "DARK_CIRCLE",
-                    "correlations": [
-                      { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-                        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
-                        "strength": "STRONG", "sampleSize": 22, "insufficientSample": false }
-                    ] },
-                  { "skinMetric": "COMPLEXION", "correlations": [] },
-                  { "skinMetric": "BARRIER", "correlations": [] }
+                    "topCorrelation": { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+                      "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
+                      "strength": "STRONG", "sampleSize": 22, "insufficientSample": false } },
+                  { "skinMetric": "COMPLEXION",
+                    "topCorrelation": { "sleepFeature": "HRV", "featureLabel": "심박변이도",
+                      "skinMetric": "COMPLEXION", "metricLabel": "혈색",
+                      "strength": "WEAK", "sampleSize": 22, "insufficientSample": false } },
+                  { "skinMetric": "BARRIER",
+                    "topCorrelation": { "sleepFeature": "DEEP_SLEEP", "featureLabel": "깊은 수면",
+                      "skinMetric": "BARRIER", "metricLabel": "장벽",
+                      "strength": "MODERATE", "sampleSize": 22, "insufficientSample": false } }
                 ]
               } }
             ```
@@ -443,10 +447,9 @@ public interface ReportControllerSpec {
             | `RESTING_HEART_RATE` | 안정시 심박 | `COMPLEXION` |
 
             표본이 5개 미만이면 `insufficientSample: true`이고 `strength`는 `null`이다.
-            `correlations`는 주간과 같이 `skinMetric` 기준 3그룹의 배열이고, **계산 자체는
-            여전히 7쌍 전부**를 낸다 — 그룹 안의 정렬은 상관계수 절댓값 내림차순이며 표본
-            부족은 그룹 맨 뒤로 간다. 28일 기간이라 주간보다 표본이 커지기 쉬워 계산되는
-            비율이 더 높다.
+            `correlations`는 주간과 같이 `skinMetric` 기준 3그룹의 배열이고, 그룹마다 대표
+            상관 1개(`topCorrelation`)만 담는다 — **계산 자체는 여전히 7쌍 전부**를 낸다.
+            28일 기간이라 주간보다 표본이 커지기 쉬워 계산되는 비율이 더 높다.
 
             ⚠️ 강도 구간과 표본 하한은 **임시값**이다 — 자세한 근거는 `GET /report/weekly`
             문서와 `CorrelationPolicy`를 참고한다.

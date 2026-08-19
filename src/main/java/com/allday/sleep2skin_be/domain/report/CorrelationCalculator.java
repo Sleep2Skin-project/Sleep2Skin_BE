@@ -61,7 +61,9 @@ public class CorrelationCalculator {
      *                 다시 조회하지 않는다
      * @return {@code FEATURE_METRIC_PAIRS} 7개 전부. 표본이 부족해도 빠지지 않고
      *         {@code strength: null}로 포함된다. 상관계수 절댓값 내림차순이며, 표본 부족은
-     *         전부 배열 맨 뒤로 간다
+     *         전부 배열 맨 뒤로 간다. <b>동률이면 {@code SleepFeature} 선언 순서(§10.3)로
+     *         고정한다</b> — {@link CorrelationGroup#groupBySkinMetric}이 그룹당 대표 1개만
+     *         뽑으므로, 동률에서 순서가 흔들리면 같은 데이터로도 호출마다 대표가 바뀔 수 있다
      */
     public List<FeatureCorrelation> calculate(Long userId, LocalDate periodStart, LocalDate baseDate,
                                               Map<LocalDate, SleepSession> sessions) {
@@ -77,7 +79,10 @@ public class CorrelationCalculator {
 
         return FEATURE_METRIC_PAIRS.stream()
                 .map(pair -> correlationFor(pair, userId, pairedDates, sessions, measuredByDate))
-                .sorted(Comparator.comparingDouble(Scored::sortKey).reversed())
+                // 1차: sortKey 내림차순. 2차(동률): SleepFeature 선언 순서 오름차순(§10.3) —
+                // enum 선언 순서가 이미 그 표와 일치해 ordinal() 자연 순서로 충분하다
+                .sorted(Comparator.comparingDouble(Scored::sortKey).reversed()
+                        .thenComparing(scored -> scored.response().sleepFeature()))
                 .map(Scored::response)
                 .toList();
     }

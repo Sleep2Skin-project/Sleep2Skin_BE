@@ -88,6 +88,24 @@ class MonthlyReportServiceTest {
         given(dailySleepScoreCalculator.calculate(anyLong(), any(), isNull())).willReturn(null);
     }
 
+    /**
+     * <b>{@code CorrelationGroup.groupBySkinMetric}은 그룹당 대표가 없으면 예외를 던진다</b>
+     * (§10.3 FEATURE_METRIC_PAIRS 불변식). 언스텁 상태의 목은 빈 리스트를 반환하는데, 이 값을
+     * 그대로 두면 상관 강도를 직접 검증하지 않는 다른 테스트들까지 이 예외로 실패한다 — 그래서
+     * 3개 지표를 전부 채운 기본값을 깔아 둔다. 상관 강도 자체를 검증하는 테스트는 이 스텁을
+     * 재정의(re-stub)해서 쓴다.
+     */
+    @BeforeEach
+    void 상관_강도는_기본적으로_3개_지표를_전부_채운다() {
+        given(correlationCalculator.calculate(anyLong(), any(), any(), any())).willReturn(List.of(
+                new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
+                        SkinMetric.DARK_CIRCLE, "다크서클 회복", CorrelationStrength.WEAK, 22, false),
+                new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
+                        SkinMetric.COMPLEXION, "혈색", CorrelationStrength.WEAK, 22, false),
+                new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
+                        SkinMetric.BARRIER, "장벽", CorrelationStrength.WEAK, 22, false)));
+    }
+
     @Test
     @DisplayName("가입한 지 28일 미만이면 INSUFFICIENT_DATA다")
     void 가입_28일_미만이면_빈_상태다() {
@@ -249,17 +267,24 @@ class MonthlyReportServiceTest {
     /**
      * <b>계산 자체가 아니라 배선(wiring)을 확인한다.</b> 상관계수 계산 로직은
      * {@code CorrelationCalculatorTest}가 검증하고, 여기서는 서비스가 그 결과를
-     * {@code skinMetric} 기준 3그룹으로만 묶어 응답에 싣는지 본다.
+     * {@code skinMetric} 기준 대표 1개씩으로만 묶어 응답에 싣는지 본다.
+     *
+     * <p>{@code CorrelationGroup.groupBySkinMetric}이 그룹당 대표가 없으면 예외를 던지므로
+     * (§10.3 FEATURE_METRIC_PAIRS 불변식), 스텁도 3개 지표 전부에 최소 1개씩 채워 넣는다.
      */
     @Test
-    @DisplayName("CorrelationCalculator의 결과를 skinMetric 기준 3그룹으로 묶어 싣는다")
+    @DisplayName("CorrelationCalculator의 결과를 skinMetric 기준 대표 1개씩으로 묶어 싣는다")
     void 상관_강도를_그룹으로_묶어_싣는다() {
         joinedLongAgo();
         noSessions();
-        FeatureCorrelation correlation = new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
+        FeatureCorrelation darkCircleCorrelation = new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
                 SkinMetric.DARK_CIRCLE, "다크서클 회복", CorrelationStrength.STRONG, 22, false);
+        FeatureCorrelation complexionCorrelation = new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
+                SkinMetric.COMPLEXION, "혈색", CorrelationStrength.WEAK, 22, false);
+        FeatureCorrelation barrierCorrelation = new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
+                SkinMetric.BARRIER, "장벽", CorrelationStrength.MODERATE, 22, false);
         given(correlationCalculator.calculate(eq(USER_ID), eq(PERIOD_START), eq(BASE_DATE), any()))
-                .willReturn(List.of(correlation));
+                .willReturn(List.of(darkCircleCorrelation, complexionCorrelation, barrierCorrelation));
 
         MonthlyReportResponse response = service().getMonthlyReport(USER_ID, BASE_DATE);
 
@@ -268,7 +293,7 @@ class MonthlyReportServiceTest {
                 .containsExactly(SkinMetric.DARK_CIRCLE, SkinMetric.COMPLEXION, SkinMetric.BARRIER);
         CorrelationGroup darkCircleGroup = response.correlations().stream()
                 .filter(group -> group.skinMetric() == SkinMetric.DARK_CIRCLE).findFirst().orElseThrow();
-        assertThat(darkCircleGroup.correlations()).containsExactly(correlation);
+        assertThat(darkCircleGroup.topCorrelation()).isEqualTo(darkCircleCorrelation);
     }
 
     @Test
