@@ -169,6 +169,57 @@ class ScoringPolicyTest {
     }
 
     @Nested
+    @DisplayName("적중률 곡선 (2026-08-19 — §10에 없는 임시값)")
+    class Accuracy {
+
+        /**
+         * <b>기대값을 {@code ScoringPolicy.accuracy()}로 만들지 않는다.</b> 곡선이 바뀌어도 항상
+         * 통과해서 아무것도 지키지 못한다. 손으로 계산한 상수를 박는다.
+         */
+        @ParameterizedTest(name = "오차 {0} → 정확도 {1}")
+        @CsvSource({
+                "0, 100",    // 정확히 맞아야만 100이다
+                "3, 90",
+                "5, 85",     // §10.2 적중 경계
+                "10, 75",
+                "15, 68",    // §10.2 근접 경계
+                "20, 61",
+                "30, 52",
+                "50, 39",
+                "100, 20"    // 바닥 — 완전히 빗나가도 0이 되지 않는다
+        })
+        @DisplayName("로그 곡선이라 초반이 가파르고 뒤로 갈수록 완만하다")
+        void 정확도_곡선(int difference, int expected) {
+            assertThat(ScoringPolicy.accuracy(70 + difference, 70)).isEqualTo(expected, within(0.5));
+        }
+
+        @Test
+        @DisplayName("부호를 보지 않는다 — 과소·과대는 verdict가 말한다")
+        void 부호를_보지_않는다() {
+            assertThat(ScoringPolicy.accuracy(80, 70)).isEqualTo(ScoringPolicy.accuracy(60, 70));
+        }
+
+        @Test
+        @DisplayName("오차가 커질수록 단조감소하고 바닥 아래로 내려가지 않는다")
+        void 단조감소하고_바닥이_있다() {
+            double previous = ScoringPolicy.accuracy(0, 0);
+            for (int difference = 1; difference <= 100; difference++) {
+                double current = ScoringPolicy.accuracy(difference, 0);
+                assertThat(current).isLessThan(previous)
+                        .isGreaterThanOrEqualTo(ScoringPolicy.ACCURACY_FLOOR);
+                previous = current;
+            }
+        }
+
+        @Test
+        @DisplayName("적중(±5)이어도 100이 아니다 — 판정 라벨과 다른 축이다")
+        void 적중이어도_100이_아니다() {
+            assertThat(ScoringPolicy.verdict(75, 70)).isEqualTo(VerificationVerdict.HIT);
+            assertThat(ScoringPolicy.accuracy(75, 70)).isLessThan(90.0);
+        }
+    }
+
+    @Nested
     @DisplayName("개인 가중치 보정 (§10.7)")
     class WeightLearning {
 

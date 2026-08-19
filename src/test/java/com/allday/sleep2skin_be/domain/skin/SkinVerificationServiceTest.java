@@ -65,11 +65,15 @@ class SkinVerificationServiceTest {
     @Spy
     private VerificationStreakCalculator streakCalculator = new VerificationStreakCalculator();
 
+    /** 적중률도 진짜 곡선을 쓴다 — 스텁으로 두면 판정과 숫자가 갈려도 테스트가 못 잡는다. */
+    @Spy
+    private HitRateCalculator hitRateCalculator = new HitRateCalculator();
+
     @InjectMocks
     private SkinVerificationService skinVerificationService;
 
     @Test
-    @DisplayName("지표별로 판정하고 적중률은 적중 개수의 비율이다")
+    @DisplayName("지표별로 판정하고 적중률은 지표별 정확도의 평균이다")
     void 지표별로_판정한다() {
         forecastIs(67, 62, 81);
         watchWorn();
@@ -88,7 +92,8 @@ class SkinVerificationServiceTest {
                         tuple(SkinMetric.BARRIER, 3, VerificationVerdict.HIT));
 
         assertThat(response.skipped()).isEmpty();
-        assertThat(response.hitRate()).isEqualTo(33);            // 3개 중 1개
+        // 정확도 82.80 · 80.68 · 90.21 → 평균 84.56. 개수 비율이던 시절에는 33이었다
+        assertThat(response.hitRate()).isEqualTo(85);
         assertThat(response.baseDate()).isEqualTo(BASE_DATE);
         assertThat(response.analyzedAt()).isNotNull();
     }
@@ -130,7 +135,8 @@ class SkinVerificationServiceTest {
 
         assertThat(response.verifications()).extracting(MetricVerificationResponse::metric)
                 .containsExactly(SkinMetric.DARK_CIRCLE, SkinMetric.BARRIER);
-        assertThat(response.hitRate()).isEqualTo(50);            // 2개 중 1개 — 3이 분모가 아니다
+        // 정확도 82.80 · 90.21 → 평균 86.51. 3으로 나눴다면 58이 된다
+        assertThat(response.hitRate()).isEqualTo(87);
     }
 
     /**
