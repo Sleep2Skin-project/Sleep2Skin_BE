@@ -167,12 +167,16 @@ public class CorrelationCalculator {
      * 점수가 "심한 정도"가 아니라 <b>"회복된 정도"</b>라 높을수록 좋은데, "다크서클"이라고만
      * 쓰면 높은 점수가 "다크서클이 심하다"로 읽힌다 — 값 범위는 정상이라 아무 제약에도 걸리지
      * 않고 화면에서 뜻만 뒤집힌다.
+     *
+     * <p><b>{@code BARRIER}는 "장벽"이 아니라 "피부 장벽"이다.</b> "장벽"만 쓰면 무엇의 장벽인지
+     * 드러나지 않고, 수면 통역 카드({@code SleepInterpretationPolicy})는 이미 "피부 장벽"이라
+     * 부른다 — 같은 지표가 화면마다 다른 이름으로 나가면 사용자가 둘을 다른 것으로 읽는다.
      */
     private String metricLabel(SkinMetric metric) {
         return switch (metric) {
             case DARK_CIRCLE -> "다크서클 회복";
             case COMPLEXION -> "혈색";
-            case BARRIER -> "장벽";
+            case BARRIER -> "피부 장벽";
         };
     }
 

@@ -570,7 +570,25 @@ docker run -i --rm mysql:8 mysql --default-character-set=utf8mb4 \
 SELECT MIN(threshold), MAX(threshold) FROM action_master;   -- 50, 90 이어야 한다
 ```
 
-**세 파일 모두 `src/main/resources/db/seed/`에 있고 Git에 커밋돼 있다** — `action_master.sql`(신규 구축) · `action_master_fix_encoding.sql`(인코딩 복구) · `action_master_raise_threshold.sql`(임계값 상향).
+#### ⚠️ 아직 실행하지 않은 것 — `BARRIER` 문구 통일 (2026-08-20)
+
+**`reason` 안의 "장벽"을 "피부 장벽"으로 바꿨다** (이슈 #114). 응답에서 `BARRIER` 지표를 부르는 이름을 한 가지로 맞추는 작업이고, DB에 사는 문구는 코드 배포로 따라오지 않는다.
+
+**대상은 `id = 17` 한 행뿐이다.** 나머지 `BARRIER` 행(`id` 20·24)의 `reason`은 이미 "피부 장벽"이다.
+
+```bash
+docker run -i --rm mysql:8 mysql --default-character-set=utf8mb4   -h "$RDS" -u sleep2skin -p sleep2skin < action_master_barrier_label.sql
+```
+
+- **DELETE 후 재INSERT가 아니다.** 앞의 두 파일과 같은 이유, 같은 방식이다
+- **`reason`만 바꾸므로 멱등하다.** 두 번 실행해도 결과가 같다
+- **로컬은 `docker compose down -v` 후 시드를 다시 넣으면 이미 새 문구라 이 파일이 필요 없다.** 운영에만 해당한다
+
+```sql
+SELECT reason FROM action_master WHERE id = 17;   -- '...피부를 자극하고 피부 장벽을...' 이어야 한다
+```
+
+**네 파일 모두 `src/main/resources/db/seed/`에 있고 Git에 커밋돼 있다** — `action_master.sql`(신규 구축) · `action_master_fix_encoding.sql`(인코딩 복구) · `action_master_raise_threshold.sql`(임계값 상향) · `action_master_barrier_label.sql`(`BARRIER` 문구 통일).
 
 **멱등하지 않다.** `INSERT`에 조건이 없어 두 번 실행하면 24행이 더 생기고, `action_master`에는 유니크 제약이 없어 DB가 막지 않는다. 추천 결과에 같은 항목이 중복으로 뜬다.
 

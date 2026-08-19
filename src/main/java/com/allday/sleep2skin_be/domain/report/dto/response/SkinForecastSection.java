@@ -30,7 +30,7 @@ public record SkinForecastSection(
         @Schema(description = "혈색 — 오늘 값과 전일 대비. 그날 산출 못 했으면 `today`가 `null`")
         MetricDiff complexion,
 
-        @Schema(description = "장벽 — 오늘 값과 전일 대비. 그날 산출 못 했으면 `today`가 `null`")
+        @Schema(description = "피부 장벽 — 오늘 값과 전일 대비. 그날 산출 못 했으면 `today`가 `null`")
         MetricDiff barrier
 ) {
 

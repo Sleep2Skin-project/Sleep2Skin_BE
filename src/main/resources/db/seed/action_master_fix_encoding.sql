@@ -15,10 +15,10 @@ UPDATE action_master SET title='충분한 수분 섭취', reason='충분한 수�
 UPDATE action_master SET title='아침에 가볍게 스트레칭하기', reason='가벼운 스트레칭은 몸을 움직이고 활기 있는 하루를 시작하는 데 도움을 줘요' WHERE id=14;
 UPDATE action_master SET title='단백질 포함한 식사 챙기기', reason='단백질을 포함해 다양한 영양소를 섭취하면 건강한 컨디션을 유지하는 데 도움을 줘요' WHERE id=15;
 UPDATE action_master SET title='가벼운 유산소 운동 15분', reason='가벼운 유산소 운동은 혈액순환을 돕고 생기 있는 컨디션을 유지하는 데 도움을 줘요' WHERE id=16;
-UPDATE action_master SET title='강한 각질 제거', reason='과도한 각질 제거는 피부를 자극하고 장벽을 약하게 만들 수 있어요' WHERE id=17;
+UPDATE action_master SET title='강한 각질 제거', reason='과도한 각질 제거는 피부를 자극하고 피부 장벽을 약하게 만들 수 있어요' WHERE id=17;
 UPDATE action_master SET title='뜨거운 물 세안', reason='뜨거운 물은 피부의 자연적인 유분을 제거해 건조함을 악화시킬 수 있어요' WHERE id=18;
 UPDATE action_master SET title='새 제품 바로 얼굴 전체에 사용', reason='새 제품이 피부에 맞지 않을 경우 자극이 생길 수 있어요' WHERE id=19;
-UPDATE action_master SET title='세안 후 피부 세게 문지르기', reason='세안 후 피부를 세게 문지르면 자극이 쌓여 장벽이 약해질 수 있어요' WHERE id=20;
+UPDATE action_master SET title='세안 후 피부 세게 문지르기', reason='세안 후 피부를 세게 문지르면 자극이 쌓여 피부 장벽이 약해질 수 있어요' WHERE id=20;
 UPDATE action_master SET title='수분 세럼 바르기', reason='수분 세럼을 사용해 피부에 수분을 공급해 주세요' WHERE id=21;
 UPDATE action_master SET title='보습 크림 바르기', reason='보습 크림은 피부의 수분 손실을 줄이고 촉촉함을 유지하는 데 도움을 줘요' WHERE id=22;
 UPDATE action_master SET title='SPF50 자외선 차단제 도포', reason='자외선 차단제를 사용해 자외선으로 인한 피부 손상을 예방해 주세요' WHERE id=23;

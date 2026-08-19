@@ -17,7 +17,7 @@ public final class CauseLabelMapper {
         return switch (metric) {
             case DARK_CIRCLE -> "다크서클의 원인";
             case COMPLEXION -> "혈색 저하의 원인";
-            case BARRIER -> "장벽 약화의 원인";
+            case BARRIER -> "피부 장벽 약화의 원인";
         };
     }
 

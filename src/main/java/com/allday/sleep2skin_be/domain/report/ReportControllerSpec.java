@@ -218,7 +218,7 @@ public interface ReportControllerSpec {
                       "strength": null, "sampleSize": 2, "insufficientSample": true } },
                   { "skinMetric": "BARRIER",
                     "topCorrelation": { "sleepFeature": "DEEP_SLEEP", "featureLabel": "깊은 수면",
-                      "skinMetric": "BARRIER", "metricLabel": "장벽",
+                      "skinMetric": "BARRIER", "metricLabel": "피부 장벽",
                       "strength": "MODERATE", "sampleSize": 6, "insufficientSample": false } }
                 ]
               } }
@@ -372,7 +372,7 @@ public interface ReportControllerSpec {
                       "strength": "WEAK", "sampleSize": 22, "insufficientSample": false } },
                   { "skinMetric": "BARRIER",
                     "topCorrelation": { "sleepFeature": "DEEP_SLEEP", "featureLabel": "깊은 수면",
-                      "skinMetric": "BARRIER", "metricLabel": "장벽",
+                      "skinMetric": "BARRIER", "metricLabel": "피부 장벽",
                       "strength": "MODERATE", "sampleSize": 22, "insufficientSample": false } }
                 ]
               } }
@@ -483,7 +483,7 @@ public interface ReportControllerSpec {
             LocalDate baseDate);
 
     @Operation(summary = "종합 리포트 조회 (REP-09~11)", description = """
-            예보 지표 3종(다크서클·혈색·장벽) 각각의 최근 3주 추세와, 클리닉이 필요할 수 있는
+            예보 지표 3종(다크서클·혈색·피부 장벽) 각각의 최근 3주 추세와, 클리닉이 필요할 수 있는
             신호를 함께 보여준다.
 
             ### 요청
@@ -533,7 +533,7 @@ public interface ReportControllerSpec {
 
             이전에는 "수면 점수 추세가 STABLE·RISING이고 정체 지표가 있을 때만" `triage`를
             노출하는 발동(트리거) 구조였다. **그 게이팅을 완전히 없앴다** — `triage.triggered`
-            필드도 함께 사라졌다. 이제 `status`가 `FULL`인 한 `trends`는 항상 다크서클·혈색·장벽
+            필드도 함께 사라졌다. 이제 `status`가 `FULL`인 한 `trends`는 항상 다크서클·혈색·피부 장벽
             셋 다 채워진다.
 
             ### 관찰 창 — W1/W2/W3 각 7일

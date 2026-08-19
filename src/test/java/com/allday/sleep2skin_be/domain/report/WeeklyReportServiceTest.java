@@ -101,7 +101,7 @@ class WeeklyReportServiceTest {
                 new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
                         SkinMetric.COMPLEXION, "혈색", CorrelationStrength.WEAK, 6, false),
                 new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
-                        SkinMetric.BARRIER, "장벽", CorrelationStrength.WEAK, 6, false)));
+                        SkinMetric.BARRIER, "피부 장벽", CorrelationStrength.WEAK, 6, false)));
     }
 
     @Test
@@ -224,7 +224,7 @@ class WeeklyReportServiceTest {
         FeatureCorrelation complexionCorrelation = new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
                 SkinMetric.COMPLEXION, "혈색", null, 2, true);
         FeatureCorrelation barrierCorrelation = new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
-                SkinMetric.BARRIER, "장벽", CorrelationStrength.MODERATE, 6, false);
+                SkinMetric.BARRIER, "피부 장벽", CorrelationStrength.MODERATE, 6, false);
         given(correlationCalculator.calculate(eq(USER_ID), eq(PERIOD_START), eq(BASE_DATE), any()))
                 .willReturn(List.of(darkCircleCorrelation, complexionCorrelation, barrierCorrelation));
 
