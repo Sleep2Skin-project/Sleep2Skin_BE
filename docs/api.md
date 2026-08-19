@@ -6,7 +6,7 @@
 
 > **작성 기준일** 2026-08-07 · **도메인 API 19개 + 헬스체크 1개** — **19개 전부 구현 완료** (§2.5)
 >
-> **최종 갱신** 2026-08-19 — **`hitRate`가 판정 개수 비율에서 오차 기반 정확도 평균으로 바뀌었다** (§2.3 2~3번). `0`·`33`·`67`·`100`의 계단이 사라졌고 **응답 모양·필드명·`verdict`는 그대로다** — 앱은 숫자 범위만 다시 본다
+> **최종 갱신** 2026-08-19 — **응답 구조 변경 2건 포함** (§4 "2026-08-19에 바뀐 것"). ⚠️ **`correlations`가 그룹당 대표 1개(`topCorrelation`)로**, **종합 리포트의 `triage`가 지표별 `trends`로 교체**됐다 — 둘 다 기존 필드를 없앤 파괴적 변경이라 **앱 배포와 순서를 맞춰야 한다.** `hitRate`는 **판정 개수 비율에서 오차 기반 정확도 평균으로** 바뀌었으나 응답 모양·필드명·`verdict`는 그대로다(숫자 범위만 달라진다)
 >
 > **이전 갱신** 2026-08-18 — **종합 리포트(REP-09~11) 구현 반영** (§2.5 5번) — 보류가 풀렸다(§7 L6·L9 해소, 근거는 `sub-docs/report-overall.md`) · 일간 `sleepSummary`에 **REM·HRV·안정시 심박** 추가 · 주간·월간 `correlations`가 **지표별 3그룹 구조로 교체**됐다 (§2.5 3~4번)
 >
@@ -721,7 +721,7 @@ X-User-Id: 1
 | 2 | 수면 단계 타임라인 | `GET` | `/api/v1/report/daily/timeline?baseDate=` | 완료 |
 | 3 | 주간 리포트 | `GET` | `/api/v1/report/weekly?baseDate=` | 완료 |
 | 4 | 월간 리포트 | `GET` | `/api/v1/report/monthly?baseDate=` | 완료 |
-| 5 | 종합 리포트 (트리아지) | `GET` | `/api/v1/report/overall?baseDate=` | 완료 |
+| 5 | 종합 리포트 (지표별 추세 + 클리닉 신호) | `GET` | `/api/v1/report/overall?baseDate=` | 완료 |
 
 **다섯 개 전부 구현 완료다** (1~4는 2026-08-15, 5는 2026-08-16). **전부 `baseDate` 하나만 받는다** — 월간도 `yearMonth`가 아니다(아래 4번).
 
@@ -868,25 +868,27 @@ GET /api/v1/report/monthly?baseDate=2026-08-14
 
 **주간·월간이 같은 배열을 공유한다.** 계산은 `CorrelationCalculator` 한 곳이 하고 두 서비스가 결과를 그대로 싣는다.
 
-**⚠️ 2026-08-17에 구조가 바뀌었다 — flat 7개 배열에서 지표별 3그룹으로 교체했다** (`sub-docs/report-todo-tuning.md`). 화면이 7줄 나열이라 **다크서클·장벽·혈색 3개 카드로 묶어 달라는 프론트 요청**이었다. **필드를 병행하지 않고 타입을 바꿨다** — 소비자가 프론트 하나뿐이라 하위호환을 유지할 이유가 없었다.
+**⚠️ 두 번 바뀌었다.** 2026-08-17에 flat 7개 배열 → 지표별 3그룹(그룹당 2~3개)으로, **2026-08-19에 다시 그룹당 대표 1개(`topCorrelation`)로 교체**했다 (`sub-docs/report-representative-factor.md`). 화면이 그룹당 한 줄만 표시한다는 프론트 요청이다. **두 번 다 필드를 병행하지 않고 타입을 바꿨다** — 소비자가 프론트 하나뿐이라 하위호환을 유지할 이유가 없었다.
 
 ```jsonc
 "correlations": [
   { "skinMetric": "DARK_CIRCLE",
-    "correlations": [
-      { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
-        "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
-      { "sleepFeature": "TOTAL_SLEEP", "featureLabel": "총 수면 시간", "...": "..." }
-    ] },
-  { "skinMetric": "COMPLEXION", "correlations": [ /* 3개 */ ] },
-  { "skinMetric": "BARRIER",    "correlations": [ /* 2개 */ ] }
+    "topCorrelation": {
+      "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+      "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
+      "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false
+    } },
+  { "skinMetric": "COMPLEXION", "topCorrelation": { /* 1개 */ } },
+  { "skinMetric": "BARRIER",    "topCorrelation": { /* 1개 */ } }
 ]
 ```
 
-- **`FULL`이면 그룹은 항상 3개다** — `SkinMetric.values()` 순서(`DARK_CIRCLE`·`COMPLEXION`·`BARRIER`)이고, 매핑된 피처가 없어도 빈 배열로 포함된다. 안쪽 항목 수는 7쌍 매핑 그대로 **2·3·2**다. **`INSUFFICIENT_DATA`면 그룹 자체가 없다**(빈 배열) — 3개의 빈 그룹이 아니다
-- **`FeatureCorrelation`의 필드는 그대로다.** 그룹 안에도 `skinMetric`·`metricLabel`이 남아 있다 — 항목 하나만 떼어 봐도 어느 지표인지 알 수 있게 한 것이고, 바깥 `skinMetric`과 항상 같은 값이다
-- **묶는 것은 응답 조립 단계뿐이다.** `CorrelationCalculator`는 여전히 flat 7개를 내고 `CorrelationGroup.groupBySkinMetric()`이 재배열한다 — **상관계수 계산·정렬 로직은 건드리지 않았다.** 그래서 원래 정렬(절댓값 내림차순, 표본 부족은 뒤로)이 **그룹 안에서 그대로 유지된다**
+- **`FULL`이면 그룹은 항상 3개이고, 그룹마다 `topCorrelation` 하나다** — `SkinMetric.values()` 순서(`DARK_CIRCLE`·`COMPLEXION`·`BARRIER`) 고정. **`INSUFFICIENT_DATA`면 그룹 자체가 없다**(빈 배열) — 3개의 빈 그룹이 아니다
+- **대표는 그 그룹에서 정렬 순서상 맨 앞이다** — 상관계수 절댓값이 가장 크고, 동률이면 `SleepFeature` 선언 순서가 앞선 것. **나머지 피처는 응답에서 사라진다**(계산은 그대로 7쌍 전부 돈다)
+- **표본이 부족한 그룹도 대표를 낸다.** `insufficientSample: true` + `strength: null`인 항목이 그대로 실린다 — 숨기면 프론트가 그 지표를 **응답에 아예 없는 것**으로 다뤄야 하고, 표본이 부족해도 "그 지표에서 가장 유력한 피처가 무엇인지"는 의미가 있다
+- **`topCorrelation`은 객체이고 `null`이 되지 않는다.** 7쌍 매핑(§10.3)이 고정이라 지표마다 최소 2개 피처가 있어 대표가 반드시 존재한다 — 비면 매핑이 깨진 것이라 서버가 `IllegalStateException`으로 막는다
+- **`FeatureCorrelation`의 필드는 그대로다.** 안쪽에도 `skinMetric`·`metricLabel`이 남아 있고 바깥 `skinMetric`과 항상 같은 값이다
+- **묶고 고르는 것은 응답 조립 단계뿐이다.** `CorrelationCalculator`는 여전히 flat 7개를 내고 `CorrelationGroup.groupBySkinMetric()`이 재배열·선별한다 — **상관계수 계산·정렬 로직은 건드리지 않았다**
 
 **예보값이 아니라 실측값(셀피 검증)과 비교한다.** 예보값은 애초에 이 피처들로 계산한 값이라, 예보와 상관을 내면 **수면으로 만든 값이 수면과 관련 있다는 것을 다시 확인하는 순환 논증**이 된다. 그래서 기간 안에서 **수면 세션과 셀피 검증이 둘 다 있는 날짜만** 짝으로 삼는다 — 검증하지 않은 날은 표본에서 빠진다.
 
@@ -906,8 +908,8 @@ GET /api/v1/report/monthly?baseDate=2026-08-14
 - **비율의 분모는 여기서도 `deep + rem + core`다**(§10.5와 같은 이유). 단계 합이 `0`인 밤은 비율이 성립하지 않아 그 쌍의 표본에서 빠진다
 - **그 피처만 결측인 날은 그 쌍의 계산에서만 빠진다** — 워치 미착용의 HRV·안정시 심박, 이력 3일 미만의 취침 규칙성. 같은 날짜의 다른 쌍은 그대로 쓴다. 그래서 `sampleSize`가 쌍마다 다르다
 - **표본이 5개 미만이면 `insufficientSample: true` + `strength: null`이다.** 극단값 하나에 크게 흔들리는 표본으로 "강한 상관"이라고 말하지 않기 위해서다
-- **7개를 항상 전부 반환한다** — 표본이 부족해도 빠지지 않는다. 프론트에서 항목 수가 달라지지 않게 한 것이며, **그룹으로 묶은 뒤에도 그대로다**(3그룹 안에 2·3·2)
-- **정렬은 상관계수 절댓값 내림차순이고, 표본 부족은 값과 무관하게 맨 뒤로 간다** — **그룹 안에서 유지된다**(그룹 사이에는 정렬이 없다. `SkinMetric` 선언 순서 고정)
+- **계산은 7쌍 전부 돌지만 응답에는 지표당 1개만 나간다** — 표본이 부족해도 그 지표가 빠지지는 않는다(대표 자리는 채워진다). 프론트에서 **항목 수가 항상 3개로 고정**된다
+- **정렬은 상관계수 절댓값 내림차순이고, 표본 부족은 값과 무관하게 맨 뒤로 간다** — 이 정렬이 곧 **대표 선정 기준**이다(맨 앞을 고른다). 그래서 표본이 충분한 피처가 하나라도 있으면 그쪽이 대표가 되고, 전부 부족할 때만 부족한 항목이 대표로 나간다. 그룹 사이에는 정렬이 없다(`SkinMetric` 선언 순서 고정)
 - **`strength`는 절댓값으로만 판정한다.** 부호(방향)는 **응답에 없다** — 계수 자체를 내보내지 않는다
 
 ```
@@ -921,7 +923,9 @@ GET /api/v1/report/monthly?baseDate=2026-08-14
 
 #### 5. 종합 리포트 (REP-09/10/11)
 
-**2026-08-16에 구현됐다.** 오래 막고 있던 둘이 함께 풀렸다 — 발동 조건의 수면 쪽 항을 **수면 점수 추세**로 대체했고(§7 L6), "클리닉 필요" 3종을 **셀피 실측 전용 boolean 플래그**로 추가했다(§7 L9). 결정 근거는 `sub-docs/report-overall.md`, 정책값은 [prd.md](prd.md) §10.10이다.
+**2026-08-16에 구현됐고 2026-08-19에 구조가 크게 바뀌었다.** 처음에는 "발동 조건"(수면 점수 추세 + 피부 지표 정체)을 만족할 때만 트리아지를 노출하는 구조였는데, **그 발동 개념 자체를 없애고** 예보 지표 3종의 최근 3주 추세를 **항상** 보여주는 구조로 교체했다. "클리닉 필요" 3종(셀피 실측 전용 boolean 플래그)은 그대로다.
+
+근거는 `sub-docs/report-overall.md`(최초 설계) · `sub-docs/report-overall-update.md`(2026-08-19 교체)이며, **[prd.md](prd.md) §10.10은 아직 옛 트리아지 판정값을 담고 있다** — 규격은 이 문서를 본다.
 
 ```jsonc
 GET /api/v1/report/overall?baseDate=2026-08-14
@@ -930,12 +934,16 @@ X-User-Id: 1
 { "success": true,
   "data": {
     "status": "FULL",                  // FULL | INSUFFICIENT_DATA
+    "message": null,                   // 빈 상태일 때만 안내 문구
     "periodStart": "2026-07-25",       // baseDate − 20 (21일)
     "periodEnd": "2026-08-14",
-    "triage": {
-      "triggered": true,
-      "sleepTrend": "RISING",          // STABLE | RISING | FALLING | VOLATILE | INSUFFICIENT_DATA
-      "stagnantMetrics": ["COMPLEXION"]
+    "trends": {                        // INSUFFICIENT_DATA면 null
+      "darkCircle": { "trend": "IMPROVED", "volatileDirection": null,
+                      "w1Average": 48, "w3Average": 79 },
+      "complexion": { "trend": "VOLATILE", "volatileDirection": "RISE_THEN_FALL",
+                      "w1Average": 61, "w3Average": 58 },
+      "barrier":    { "trend": "INSUFFICIENT_SAMPLE", "volatileDirection": null,
+                      "w1Average": null, "w3Average": 65 }
     },
     "appManaged": ["DARK_CIRCLE", "COMPLEXION", "BARRIER"],
     "clinicNeeded": {                  // 실측 이력이 전혀 없으면 null
@@ -949,19 +957,34 @@ X-User-Id: 1
 
 **기간은 `baseDate − 20 ~ baseDate`(21일)로, 주간·월간과 다른 세 번째 창이다.** 역산 방식은 같다 — 여기서도 `baseDate`가 **모든 조회의 상한**이고 "오늘"이나 "전체 최신"을 쓰는 곳이 없다.
 
-**발동 조건은 두 절반의 AND다.**
+##### `trends` — 지표 3종의 최근 3주 추세 (REP-09)
 
-```
-triggered = (sleepTrend ∈ {STABLE, RISING}) AND (stagnantMetrics 가 1개 이상)
-```
+**⚠️ 2026-08-19에 "발동 조건"(트리아지 트리거) 개념이 완전히 사라졌다** (`sub-docs/report-overall-update.md`). `triage.triggered`·`sleepTrend`·`stagnantMetrics`가 **삭제**되고, 예보 지표 3종 각각의 추세를 **조건 없이 항상** 내려주는 `trends`로 교체됐다. **필드를 병행하지 않았다** — `triggered`로 노출을 게이팅하던 분기는 앱에서 제거해야 한다.
 
-- **수면 쪽 절반이 없으면 안 되는 이유는 그대로다.** "수면으로는 잡히지 않는 신호"라고 말하려면 **수면은 괜찮았다는 근거**가 있어야 한다. 목표 달성 판정(B6)이 사라진 자리를 **추세**가 대신한다 — 잘 자고 있는데(`STABLE`·`RISING`) 특정 지표만 정체일 때만 발동한다. `FALLING`·`VOLATILE`이면 **정체 지표가 있어도 발동하지 않는다**: 그건 수면으로 설명되는 신호다
-- **`stagnantMetrics`는 배열이다.** 3종이 동시에 정체일 수 있다. **표본이 부족한 지표는 여기 담기지 않는다** — 판정 불가와 "정체 아님"을 이 배열에서는 구분하지 않는다
-- **문장은 서버가 만들지 않는다.** 판정 라벨과 근거 데이터만 나가고 "수면은 좋아졌는데 혈색이 정체됐어요"는 클라이언트가 조립한다 — REP-02와 같은 원칙이다([prd.md](prd.md) §4.4 ⑧)
+관찰 창 21일을 겹치지 않는 세 구간으로 나눈다 — **W1(가장 과거 7일) · W2(중간 7일) · W3(`baseDate`로 끝나는 최근 7일)**. 각 구간의 **예보 점수 평균**을 비교한다.
 
-**`status`는 수면 추세 하나로만 갈린다.** `sleepTrend`가 `INSUFFICIENT_DATA`일 때만 전체가 `INSUFFICIENT_DATA`이고, **피부 지표 쪽 표본 부족은 그 지표를 `stagnantMetrics`에서 빼기만 한다.**
+| `trend` | 조건 |
+|---|---|
+| `IMPROVED` | `W3 − W1 > 0` |
+| `WORSENED` | `W3 − W1 < 0` |
+| `MAINTAINED` | `W3 − W1 = 0` |
+| `VOLATILE` | `W1→W2`와 `W2→W3`의 방향이 **정확히 반대** (총 변화보다 우선) |
+| `INSUFFICIENT_SAMPLE` | W1 또는 W3 구간 7일이 **전부** 결측 |
 
-> **⚠️ 주간·월간과 달리 가입일을 보지 않는다.** 그쪽 `INSUFFICIENT_DATA`는 "가입한 지 7일/28일이 지났는가"지만, 여기는 **실제로 쌓인 유효 표본 수**로만 결정된다 — 가입한 지 오래됐어도 최근 3주에 잔 날이 5일 미만이면 같은 판정을 받는다. **같은 이름의 상태가 두 가지 다른 기준에서 나온다는 것을 기억할 것.** (`ReportPeriodStatus`가 아니라 `OverallReportStatus`인 이유이기도 하다.)
+- **`volatileDirection`은 `VOLATILE`일 때만 값이 있다** — `RISE_THEN_FALL`(오르다 내림) · `FALL_THEN_RISE`(내리다 오름). 그 외 추세에서는 항상 `null`
+- **`w2Average`는 응답에 없다.** W2는 방향 일관성 판정에만 쓴다. 응답에 나가는 것은 `w1Average`·`w3Average` 둘뿐이며, 그 구간이 전부 결측이면 `null`이다
+- **한쪽 다리가 `0`이면 `VOLATILE`이 아니다.** 정확히 반대 부호(한쪽 양수·한쪽 음수)일 때만이고, 그 외에는 총 변화로 판정한다
+- **W2가 결측이어도 총 변화는 판정한다** — `VOLATILE`만 건너뛴다. 중간 구간이 없으면 "오르다 내렸다"를 말할 수 없기 때문이다
+- **지표 3종은 항상 셋 다 채워진다.** 표본이 부족한 지표는 배열에서 빠지는 게 아니라 `trend: "INSUFFICIENT_SAMPLE"`로 표시된다
+- **문장은 서버가 만들지 않는다.** 판정 라벨과 구간 평균만 나가고 "혈색이 오르다 다시 내렸어요"는 클라이언트가 조립한다 — REP-02와 같은 원칙이다([prd.md](prd.md) §4.4 ⑧)
+
+**`status`는 가입일로만 갈린다.** 가입 당일을 1일차로 세어 **21일 미만이면 `INSUFFICIENT_DATA`**이고, 이때 `trends`는 `null` + `message`에 안내 문구가 담긴다.
+
+> **⚠️ 2026-08-19에 기준이 바뀌었다.** 이전에는 **최근 3주에 실제로 쌓인 유효 표본 수**로 결정했지만, 지금은 **주간·월간(REP-06·08)과 같은 가입일 게이트**를 쓴다. 셋의 판정 방식이 통일된 것이다.
+>
+> **가입일을 넘겼는데 특정 지표의 표본만 부족한 경우는 `status`에 영향을 주지 않는다** — 그 지표의 `trend`만 `INSUFFICIENT_SAMPLE`이 된다. (enum이 여전히 `ReportPeriodStatus`가 아니라 `OverallReportStatus`인 것은 값 집합만 같은 별개 타입이기 때문이다.)
+>
+> **`clinicNeeded`는 이 게이트와 무관하다.** `INSUFFICIENT_DATA`여도 실측 이력이 있으면 그대로 계산되어 나간다.
 
 **`appManaged`는 계산하지 않는다.** `SkinMetric` 선언 순서를 그대로 쓰는 **고정 라벨 배열**이고, 지표별 개선 여부에 따라 달라지지 않는다.
 
@@ -1193,6 +1216,22 @@ Content-Type: application/json
 **응답 스키마는 바뀌지 않았다** — 배열 길이만 달라진다. 임계값을 만족하는 후보가 모자라면 미만족 후보가 우선순위순으로 뒤를 채운다.
 
 **`threshold` 상향(2026-08-17)의 후속이다.** `+20`으로도 컨디션이 좋은 날엔 후보가 5개에 못 미쳤다 — **값을 더 올리는 대신 매칭 방식을 바꿨다.** 값을 계속 올리면 결국 전 행이 `100`이 되어 임계값 컬럼이 무의미해지는데, 정렬 1순위로 남기면 "지금 급한 것부터"라는 의미는 그대로 유지된다. **`action_master_raise_threshold.sql` 실행은 여전히 필요하다** — 임계값이 순서를 정하기 때문이다.
+
+### 2026-08-19에 바뀐 것 — 응답 구조 변경 2건 포함 ⚠️
+
+| 무엇 | 어디 | 앱 영향 |
+|---|---|---|
+| `hitRate`가 **판정 개수 비율 → 오차 기반 정확도 평균** | §2.3 2~3번 | 🟡 응답 모양 그대로, **숫자 범위만** |
+| `correlations` 그룹당 **배열 → 대표 1개(`topCorrelation`)** | §2.5 3~4번 | 🔴 **구조 변경** |
+| 종합 리포트 `triage`(`triggered`·`sleepTrend`·`stagnantMetrics`) **삭제 → `trends` 신설** | §2.5 5번 | 🔴 **구조 변경** |
+
+**셋 중 둘이 파괴적 변경이다** — 필드를 병행하지 않고 없앴다. 소비자가 프론트 하나뿐이라 합의된 교체이며, **앱 배포와 순서를 맞춰야 한다.**
+
+- **종합 리포트의 `status` 판정 기준도 함께 바뀌었다** — "최근 3주 유효 표본 수"에서 **주간·월간과 같은 가입일 기준 21일 게이트**로. 세 리포트의 `INSUFFICIENT_DATA`가 이제 같은 뜻이다
+- **`hitRate`는 파싱이 깨지지 않지만 숫자 감각이 달라진다.** `previous`와의 차이가 예전엔 판정 하나에 `±33%p`였고 지금은 한 지표 10점 차이에 `5%p` 안팎이다 — **상승폭을 크게 그리는 화면은 스케일을 다시 봐야 한다**
+- **`verdict`(`HIT`/`CLOSE`/`UNDERESTIMATED`/`OVERESTIMATED`)와 판정 경계 ±5·±15는 그대로다.** 라벨과 적중률이 다른 축이 되어 **"적중인데 85%"가 함께 뜰 수 있다**
+
+> ⚠️ **[prd.md](prd.md) §10.10과 [CLAUDE.md](../CLAUDE.md)는 아직 옛 트리아지 구조를 담고 있다.** 종합 리포트 규격은 이 문서(§2.5 5번)를 본다.
 
 ---
 
