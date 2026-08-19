@@ -31,14 +31,17 @@ import java.util.List;
  *
  * <h2>적중률은 누적이다</h2>
  *
- * <p>최근 1건만 쓰면 분모가 최대 3이라 숫자가 {@code 0}·{@code 33}·{@code 67}·{@code 100}으로만
- * 튀고 하루마다 요동친다. 배너가 말하려는 것은 <b>"예보가 얼마나 믿을 만한가"</b>이므로 표본이
- * 쌓일수록 안정되는 쪽이 맞다. 그날치는 {@code latest.hitRate}로 따로 준다.
+ * <p>최근 1건만 쓰면 표본이 최대 3이라 하루마다 요동친다. 배너가 말하려는 것은 <b>"예보가 얼마나
+ * 믿을 만한가"</b>이므로 표본이 쌓일수록 안정되는 쪽이 맞다. 그날치는 {@code latest.hitRate}로
+ * 따로 준다.
+ *
+ * <p><b>누적은 판정 하나가 한 표다</b> — 날짜별 적중률을 다시 평균내지 않는다. 그러면 지표가
+ * 2개뿐이던 날이 3개인 날과 같은 무게를 갖는다. 계산은 {@link HitRateCalculator} 한 곳이다.
  *
  * <p><b>{@code previous}는 화면의 "지난번 대비" 기준선일 뿐이다.</b> 그날치끼리의 비교라 누적과
  * 성격이 다르며, 상승폭은 서버가 아니라 앱이 뺀다.
  *
- * <p><b>누적 분모에서도 빈 지표는 빠진다.</b> 그날 예보가 없던 지표는 판정 자체가 없었으므로
+ * <p><b>평균낼 분모에서도 빈 지표는 빠진다.</b> 그날 예보가 없던 지표는 판정 자체가 없었으므로
  * 세지 않는다 — 셀피 응답과 같은 규칙이며, 0점으로 채우면 존재하지 않는 오차가 섞인다.
  */
 @Slf4j
@@ -51,6 +54,7 @@ public class SkinVerificationSummaryService {
     private final SkinMeasurementRepository skinMeasurementRepository;
     private final SleepSessionRepository sleepSessionRepository;
     private final VerificationStreakCalculator streakCalculator;
+    private final HitRateCalculator hitRateCalculator;
 
     public VerificationSummaryResponse getSummary(Long userId, LocalDate baseDate) {
         if (!userRepository.existsById(userId)) {
@@ -70,7 +74,7 @@ public class SkinVerificationSummaryService {
                 .toList();
 
         return VerificationSummaryResponse.of(baseDate, new Summary(
-                hitRate(all),
+                hitRateCalculator.calculate(all),
                 skinMeasurementRepository.countByUserId(userId),
                 streakCalculator.calculate(baseDate,
                         verifiedDays.stream().map(VerifiedDay::baseDate).toList()),
@@ -81,7 +85,7 @@ public class SkinVerificationSummaryService {
     /** 조회는 최신순이라 첫 원소가 가장 최근 검증이다. */
     private LatestVerification latest(Long userId, VerifiedDay day) {
         List<MetricVerificationResponse> verifications = verificationsOf(day);
-        return new LatestVerification(day.baseDate(), hitRate(verifications),
+        return new LatestVerification(day.baseDate(), hitRateCalculator.calculate(verifications),
                 verifications, skippedOf(userId, day));
     }
 
@@ -103,7 +107,8 @@ public class SkinVerificationSummaryService {
             return null;
         }
         VerifiedDay day = verifiedDays.get(1);
-        return new PreviousVerification(day.baseDate(), hitRate(verificationsOf(day)));
+        return new PreviousVerification(day.baseDate(),
+                hitRateCalculator.calculate(verificationsOf(day)));
     }
 
     /**
@@ -153,12 +158,6 @@ public class SkinVerificationSummaryService {
                     SkinMetric.BARRIER, day.measuredBarrier(), watchDataMissing));
         }
         return List.copyOf(skipped);
-    }
-
-    /** <b>분모는 판정한 지표 수다 — 검증 일수 × 3이 아니다.</b> */
-    private int hitRate(List<MetricVerificationResponse> verifications) {
-        long hits = verifications.stream().filter(MetricVerificationResponse::isHit).count();
-        return (int) Math.round(hits * 100.0 / verifications.size());
     }
 
 }

@@ -78,6 +78,7 @@ public class SkinVerificationService {
     private final SleepSessionRepository sleepSessionRepository;
     private final SkinModelService skinModelService;
     private final VerificationStreakCalculator streakCalculator;
+    private final HitRateCalculator hitRateCalculator;
     private final ExpService expService;
 
     /**
@@ -109,13 +110,14 @@ public class SkinVerificationService {
         collect(SkinMetric.BARRIER, forecast.getBarrier(), measurement.getBarrier(),
                 watchDataMissing, verifications, skipped);
 
+        int hitRate = hitRateCalculator.calculate(verifications);
         log.info("셀피 검증 완료 userId={} baseDate={} 적중률={}% 대조={} 제외={}",
-                userId, baseDate, hitRate(verifications), verifications.size(), skipped.size());
+                userId, baseDate, hitRate, verifications.size(), skipped.size());
 
         int streakCount = streakCount(userId, baseDate);
 
         return new SelfieVerificationResponse(baseDate, measurement.getAnalyzedAt(),
-                List.copyOf(verifications), List.copyOf(skipped), hitRate(verifications),
+                List.copyOf(verifications), List.copyOf(skipped), hitRate,
                 learn(userId, session, verifications),
                 streakCount, grantStreakExp(userId, baseDate, streakCount));
     }
@@ -194,14 +196,6 @@ public class SkinVerificationService {
             return;
         }
         verifications.add(MetricVerificationResponse.of(metric, forecast, measured));
-    }
-
-    /**
-     * <b>분모는 대조한 지표 수다 — 3이 아니다.</b> 비지 않는 것은 다크서클이 항상 판정되기 때문이다.
-     */
-    private int hitRate(List<MetricVerificationResponse> verifications) {
-        long hits = verifications.stream().filter(MetricVerificationResponse::isHit).count();
-        return (int) Math.round(hits * 100.0 / verifications.size());
     }
 
     /**

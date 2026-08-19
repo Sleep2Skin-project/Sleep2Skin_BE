@@ -7,7 +7,12 @@ import com.allday.sleep2skin_be.domain.skin.entity.SkinMetric;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * 지표 하나의 검증 결과 (HOME-07). <b>지표별로 따로 판정하고 적중률은 그 결과를 센다</b>(§10.2).
+ * 지표 하나의 검증 결과 (HOME-07). <b>지표별로 따로 판정한다</b>(§10.2).
+ *
+ * <p><b>적중률은 이 판정 라벨을 세지 않는다</b>(2026-08-19 교체). {@code difference}를 로그 곡선에
+ * 태운 정확도를 평균낸다 — {@code HitRateCalculator} 참고. 라벨과 숫자가 다른 축이라 한쪽만 바꾸면
+ * 조용히 어긋난다. <b>{@code isHit()}는 그때 함께 지웠다</b> — 남겨 두면 적중률을 개수로 다시
+ * 세는 코드가 생긴다.
  *
  * @param difference {@code 예보 − 실측}. <b>부호가 뒤집히면 과소·과대가 서로 바뀐다</b> —
  *                   판정 구간이 이 방향으로 정의돼 있다
@@ -51,10 +56,6 @@ public record MetricVerificationResponse(
                 MetricScore.of(measured),
                 forecast - measured,
                 ScoringPolicy.verdict(forecast, measured));   // 확정값 (PRD §10.2)
-    }
-
-    public boolean isHit() {
-        return verdict == VerificationVerdict.HIT;
     }
 
 }

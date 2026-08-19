@@ -41,10 +41,11 @@ public record VerificationSummaryResponse(
     }
 
     /**
-     * @param hitRate           <b>누적 적중률</b>(%) — 지금까지 모든 판정 중 {@code HIT} 비율.
-     *                          최근 1건만 쓰면 분모가 최대 3이라 {@code 0}·{@code 33}·{@code 67}·
-     *                          {@code 100}으로만 튀고 하루마다 요동친다. 배너가 말하려는 것은
-     *                          "예보가 얼마나 믿을 만한가"라 표본이 쌓일수록 안정돼야 한다
+     * @param hitRate           <b>누적 적중률</b>(%) — 지금까지 모든 판정의 정확도 평균.
+     *                          최근 1건만 쓰면 표본이 최대 3이라 하루마다 요동친다. 배너가
+     *                          말하려는 것은 "예보가 얼마나 믿을 만한가"라 표본이 쌓일수록
+     *                          안정돼야 한다. <b>판정 하나가 한 표이므로 지표가 2개뿐이던 날은
+     *                          자동으로 가벼워진다</b>
      * @param verificationCount 누적 검증 횟수. <b>MY-01·REP-12가 같은 숫자를 쓴다</b>
      * @param streakCount       연속 검증 횟수 (§4.2)
      * @param previous          <b>직전</b> 검증 1건. 화면의 "지난번 대비" 기준선이며, 검증이
@@ -54,7 +55,7 @@ public record VerificationSummaryResponse(
     @Schema(description = "배너 요약")
     public record Summary(
 
-            @Schema(description = "**누적** 적중률(%). 그날치가 아니라 지금까지 전체다", example = "58")
+            @Schema(description = "**누적** 적중률(%). 그날치가 아니라 지금까지 전체다", example = "72")
             int hitRate,
 
             @Schema(description = "누적 검증 횟수", example = "5")
@@ -81,9 +82,9 @@ public record VerificationSummaryResponse(
      * <p><b>{@code latest}와 달리 판정 목록을 싣지 않는다.</b> 기준선으로 쓸 숫자만 필요하고,
      * 지난 검증의 지표별 내역은 배너에 나오지 않는다.
      *
-     * <p>⚠️ <b>그날치 적중률은 분모가 최대 3이라 {@code 0}·{@code 33}·{@code 67}·{@code 100}으로만
-     * 튄다.</b> 여기서 나오는 차이도 같은 이유로 크게 요동친다 — 최상위 {@code hitRate}(누적)와
-     * 성격이 다른 숫자이며, "예보가 얼마나 믿을 만한가"는 여전히 누적 쪽이 말한다.
+     * <p>⚠️ <b>그날치 적중률은 표본이 최대 3이라 요동친다.</b> 한 지표가 10점 더 빗나가는 것만으로
+     * {@code 5%p} 안팎이 움직인다 — 최상위 {@code hitRate}(누적)와 성격이 다른 숫자이며,
+     * "예보가 얼마나 믿을 만한가"는 여전히 누적 쪽이 말한다.
      *
      * @param baseDate 그 검증의 기준일. <b>{@code latest.baseDate}의 바로 앞 검증일이지 전날이
      *                 아니다</b> — 하루 걸러 검증했으면 이틀 전일 수 있다
@@ -96,7 +97,7 @@ public record VerificationSummaryResponse(
                     example = "2026-08-08")
             LocalDate baseDate,
 
-            @Schema(description = "**그날치** 적중률(%)", example = "33")
+            @Schema(description = "**그날치** 적중률(%)", example = "63")
             int hitRate
     ) {
     }
@@ -113,7 +114,7 @@ public record VerificationSummaryResponse(
             @Schema(description = "그 검증의 기준일", example = "2026-08-09")
             LocalDate baseDate,
 
-            @Schema(description = "**그날치** 적중률(%)", example = "67")
+            @Schema(description = "**그날치** 적중률(%)", example = "94")
             int hitRate,
 
             @Schema(description = "예보와 대조한 지표")
