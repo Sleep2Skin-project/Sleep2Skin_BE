@@ -194,6 +194,44 @@ class CorrelationCalculatorTest {
     }
 
     /**
+     * <b>sortKey가 동률이면 정렬이 불안정해진다</b> — 그룹당 대표 1개만 뽑는 지금 구조에서는
+     * 동률에서 순서가 흔들리면 같은 데이터로도 호출마다 대표가 바뀔 수 있다. AWAKE_COUNT와
+     * TOTAL_SLEEP이 둘 다 완전 상관(|r|=1)이 되도록 만들어 동률을 인위적으로 재현하고,
+     * {@code SleepFeature} 선언 순서(§10.3)상 앞선 AWAKE_COUNT가 먼저 나오는지 본다.
+     */
+    @Test
+    @DisplayName("sortKey가 동률이면 SleepFeature 선언 순서로 고정된다")
+    void 동률이면_선언_순서로_고정된다() {
+        Map<LocalDate, SleepSession> sessions = new LinkedHashMap<>();
+        List<VerifiedDay> verifiedDays = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            LocalDate date = PERIOD_START.plusDays(i);
+            // 각성 횟수는 증가, 총 수면은 증가, 다크서클 실측은 감소 — 둘 다 완전한 음의
+            // 선형 관계라 |r|=1로 동률이다. 나머지 피처는 전부 값이 고정돼 있어 분산이 0이므로
+            // WEAK(0)이거나(취침 규칙성은 결측이라 표본 부족) 동률 후보에 끼지 않는다
+            sessions.put(date, SleepSession.builder()
+                    .userId(USER_ID).sleepDate(date)
+                    .sleepOnsetTime(date.atTime(23, 40).atOffset(ZoneOffset.UTC))
+                    .wakeTime(date.plusDays(1).atTime(7, 10).atOffset(ZoneOffset.UTC))
+                    .totalSleepMinutes(400 + i * 10).deepSleepMinutes(126)
+                    .remSleepMinutes(36).coreSleepMinutes(270)
+                    .awakeCount(i).awakeMinutes(7)
+                    .hrv(new BigDecimal("42.00")).restingHeartRate(55)
+                    .payloadHash("a".repeat(64))
+                    .build());
+            verifiedDays.add(verifiedDay(date, 100 - i * 10, 60, 80));
+        }
+        given(skinMeasurementRepository.findVerifiedDays(USER_ID, BASE_DATE)).willReturn(verifiedDays);
+
+        List<FeatureCorrelation> results = calculator().calculate(USER_ID, PERIOD_START, BASE_DATE, sessions);
+
+        assertThat(results.get(0).sleepFeature()).isEqualTo(SleepFeature.AWAKE_COUNT);
+        assertThat(results.get(0).strength()).isEqualTo(CorrelationStrength.VERY_STRONG);
+        assertThat(results.get(1).sleepFeature()).isEqualTo(SleepFeature.TOTAL_SLEEP);
+        assertThat(results.get(1).strength()).isEqualTo(CorrelationStrength.VERY_STRONG);
+    }
+
+    /**
      * 워치를 착용하지 않아 HRV·안정시 심박이 결측인 날은 <b>그 피처의 계산에서만</b> 빠진다 —
      * 각성 횟수처럼 항상 있는 피처는 영향을 받지 않는다.
      */
