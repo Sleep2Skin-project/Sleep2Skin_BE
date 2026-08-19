@@ -53,17 +53,18 @@ class SkinVerificationSummaryServiceTest {
     private SkinVerificationSummaryService service() {
         // 연속 계산은 진짜를 쓴다 — 스텁으로 두면 검증하려는 규칙을 테스트가 직접 정하게 된다
         return new SkinVerificationSummaryService(userRepository, skinMeasurementRepository,
-                sleepSessionRepository, new VerificationStreakCalculator());
+                sleepSessionRepository, new VerificationStreakCalculator(), new HitRateCalculator());
     }
 
     /**
      * <b>누적 적중률의 분모는 판정한 지표 수다 — 검증 일수 × 3이 아니다.</b>
      */
     @Test
-    @DisplayName("적중률은 모든 검증의 판정을 모아 낸 비율이다")
+    @DisplayName("적중률은 모든 검증의 판정을 모아 낸 정확도 평균이다")
     void 적중률은_누적이다() {
         userExists();
-        // 8/10: 3개 중 2개 적중 · 8/9: 3개 중 0개 적중 → 6개 중 2개 = 33%
+        // 8/10 그날치 82 · 8/9 그날치 50 — 누적은 판정 6개를 한 번에 평균낸 66이다.
+        // 판정 하나가 한 표이므로 지표가 2개뿐이던 날은 자동으로 가벼워진다
         verifiedDays(
                 day(BASE_DATE, 67, 62, 81, 65, 60, 60),               // 적중 · 적중 · 과대
                 day(BASE_DATE.minusDays(1), 67, 62, 81, 40, 30, 40)); // 전부 과대
@@ -72,7 +73,7 @@ class SkinVerificationSummaryServiceTest {
         VerificationSummaryResponse response = service().getSummary(USER_ID, BASE_DATE);
 
         assertThat(response.status()).isEqualTo(QueryStatus.AVAILABLE);
-        assertThat(response.summary().hitRate()).isEqualTo(33);
+        assertThat(response.summary().hitRate()).isEqualTo(66);
         assertThat(response.summary().verificationCount()).isEqualTo(2);
     }
 
@@ -85,14 +86,14 @@ class SkinVerificationSummaryServiceTest {
     void 최근_1건의_적중률은_따로다() {
         userExists();
         verifiedDays(
-                day(BASE_DATE, 67, 62, 81, 65, 60, 80),               // 3개 전부 적중 = 100%
-                day(BASE_DATE.minusDays(1), 67, 62, 81, 40, 30, 40)); // 3개 전부 과대 = 0%
+                day(BASE_DATE, 67, 62, 81, 65, 60, 80),               // 오차 2·2·1 → 94
+                day(BASE_DATE.minusDays(1), 67, 62, 81, 40, 30, 40)); // 오차 27·32·41 → 50
         given(skinMeasurementRepository.countByUserId(USER_ID)).willReturn(2L);
 
         VerificationSummaryResponse response = service().getSummary(USER_ID, BASE_DATE);
 
-        assertThat(response.summary().hitRate()).isEqualTo(50);              // 누적
-        assertThat(response.summary().latest().hitRate()).isEqualTo(100);    // 그날치
+        assertThat(response.summary().hitRate()).isEqualTo(72);              // 누적
+        assertThat(response.summary().latest().hitRate()).isEqualTo(94);     // 그날치
         assertThat(response.summary().latest().baseDate()).isEqualTo(BASE_DATE);
     }
 
@@ -105,15 +106,15 @@ class SkinVerificationSummaryServiceTest {
     void 직전_검증의_적중률이_나온다() {
         userExists();
         verifiedDays(
-                day(BASE_DATE, 67, 62, 81, 65, 60, 80),               // 3개 전부 적중 = 100%
-                day(BASE_DATE.minusDays(2), 67, 62, 81, 65, 30, 40)); // 1개만 적중 = 33%
+                day(BASE_DATE, 67, 62, 81, 65, 60, 80),               // 오차 2·2·1 → 94
+                day(BASE_DATE.minusDays(2), 67, 62, 81, 65, 30, 40)); // 오차 2·32·41 → 63
         given(skinMeasurementRepository.countByUserId(USER_ID)).willReturn(2L);
 
         VerificationSummaryResponse response = service().getSummary(USER_ID, BASE_DATE);
 
-        assertThat(response.summary().previous().hitRate()).isEqualTo(33);
+        assertThat(response.summary().previous().hitRate()).isEqualTo(63);
         assertThat(response.summary().previous().baseDate()).isEqualTo(BASE_DATE.minusDays(2));
-        assertThat(response.summary().latest().hitRate()).isEqualTo(100);
+        assertThat(response.summary().latest().hitRate()).isEqualTo(94);
     }
 
     /** 비교할 대상이 없다. 첫 검증에서 {@code 0}을 주면 화면이 없던 상승폭을 그린다. */
@@ -127,7 +128,7 @@ class SkinVerificationSummaryServiceTest {
         VerificationSummaryResponse response = service().getSummary(USER_ID, BASE_DATE);
 
         assertThat(response.summary().previous()).isNull();
-        assertThat(response.summary().latest().hitRate()).isEqualTo(100);
+        assertThat(response.summary().latest().hitRate()).isEqualTo(94);
     }
 
     /**
@@ -138,13 +139,13 @@ class SkinVerificationSummaryServiceTest {
     void 직전_검증은_세션을_안_읽는다() {
         userExists();
         verifiedDays(
-                day(BASE_DATE, 67, 62, 81, 65, 60, 80),               // 전부 대조 = 100%
-                day(BASE_DATE.minusDays(1), 67, null, 81, 65, 55, 40)); // 혈색 예보 없음 → 2개 중 1개
+                day(BASE_DATE, 67, 62, 81, 65, 60, 80),               // 전부 대조
+                day(BASE_DATE.minusDays(1), 67, null, 81, 65, 55, 40)); // 혈색 예보 없음 → 판정 2개
         given(skinMeasurementRepository.countByUserId(USER_ID)).willReturn(2L);
 
         VerificationSummaryResponse response = service().getSummary(USER_ID, BASE_DATE);
 
-        assertThat(response.summary().previous().hitRate()).isEqualTo(50);   // 3이 분모였다면 33이다
+        assertThat(response.summary().previous().hitRate()).isEqualTo(69);   // 3이 분모였다면 46이다
         verify(sleepSessionRepository, never()).findByUserIdAndSleepDate(anyLong(), any());
     }
 
@@ -155,14 +156,14 @@ class SkinVerificationSummaryServiceTest {
     @DisplayName("예보가 빈 지표는 누적 분모에서도 빠진다")
     void 빈_지표는_분모에서_빠진다() {
         userExists();
-        // 혈색 예보가 없던 날 — 판정은 2개뿐이고 둘 다 적중이다
+        // 혈색 예보가 없던 날 — 판정은 2개뿐이다(오차 2·1)
         verifiedDays(day(BASE_DATE, 67, null, 81, 65, 55, 80));
         given(skinMeasurementRepository.countByUserId(USER_ID)).willReturn(1L);
         watchNotWorn();
 
         VerificationSummaryResponse response = service().getSummary(USER_ID, BASE_DATE);
 
-        assertThat(response.summary().hitRate()).isEqualTo(100);      // 3이 분모였다면 67이다
+        assertThat(response.summary().hitRate()).isEqualTo(95);       // 3이 분모였다면 63이다
         assertThat(response.summary().latest().verifications())
                 .extracting(MetricVerificationResponse::metric)
                 .containsExactly(SkinMetric.DARK_CIRCLE, SkinMetric.BARRIER);

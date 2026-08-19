@@ -1,7 +1,8 @@
 package com.allday.sleep2skin_be.domain.report;
 
 import com.allday.sleep2skin_be.domain.report.dto.CorrelationStrength;
-import com.allday.sleep2skin_be.domain.report.dto.SleepTrend;
+import com.allday.sleep2skin_be.domain.report.dto.MetricTrend;
+import com.allday.sleep2skin_be.domain.report.dto.VolatileDirection;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.DailyTimelineResponse.SegmentResponse;
@@ -11,7 +12,8 @@ import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse
 import com.allday.sleep2skin_be.domain.report.dto.response.MonthlyReportResponse.WeekScore;
 import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse;
 import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse.ClinicNeeded;
-import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse.Triage;
+import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse.MetricTrendResult;
+import com.allday.sleep2skin_be.domain.report.dto.response.OverallReportResponse.Trends;
 import com.allday.sleep2skin_be.domain.report.dto.response.SkinForecastSection;
 import com.allday.sleep2skin_be.domain.report.dto.response.SkinForecastSection.MetricDiff;
 import com.allday.sleep2skin_be.domain.report.dto.response.SleepSummarySection;
@@ -245,7 +247,10 @@ class ReportControllerTest {
                                             SkinMetric.DARK_CIRCLE, "다크서클 회복",
                                             CorrelationStrength.VERY_STRONG, 6, false),
                                     new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
-                                            SkinMetric.COMPLEXION, "혈색", null, 2, true)))));
+                                            SkinMetric.COMPLEXION, "혈색", null, 2, true),
+                                    new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
+                                            SkinMetric.BARRIER, "장벽",
+                                            CorrelationStrength.MODERATE, 6, false)))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -262,15 +267,15 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
                     .andExpect(jsonPath("$.data.correlations", hasSize(3)))
                     .andExpect(jsonPath("$.data.correlations[0].skinMetric").value("DARK_CIRCLE"))
-                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].sleepFeature")
+                    .andExpect(jsonPath("$.data.correlations[0].topCorrelation.sleepFeature")
                             .value("AWAKE_COUNT"))
-                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].strength")
+                    .andExpect(jsonPath("$.data.correlations[0].topCorrelation.strength")
                             .value("VERY_STRONG"))
-                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].insufficientSample")
+                    .andExpect(jsonPath("$.data.correlations[0].topCorrelation.insufficientSample")
                             .value(false))
                     .andExpect(jsonPath("$.data.correlations[1].skinMetric").value("COMPLEXION"))
-                    .andExpect(jsonPath("$.data.correlations[1].correlations[0].strength").doesNotExist())
-                    .andExpect(jsonPath("$.data.correlations[1].correlations[0].insufficientSample")
+                    .andExpect(jsonPath("$.data.correlations[1].topCorrelation.strength").doesNotExist())
+                    .andExpect(jsonPath("$.data.correlations[1].topCorrelation.insufficientSample")
                             .value(true));
         }
 
@@ -329,7 +334,13 @@ class ReportControllerTest {
                             CorrelationGroup.groupBySkinMetric(List.of(
                                     new FeatureCorrelation(SleepFeature.AWAKE_COUNT, "야간 각성",
                                     SkinMetric.DARK_CIRCLE, "다크서클 회복",
-                                    CorrelationStrength.STRONG, 22, false)))));
+                                    CorrelationStrength.STRONG, 22, false),
+                                    new FeatureCorrelation(SleepFeature.HRV, "심박변이도",
+                                    SkinMetric.COMPLEXION, "혈색",
+                                    CorrelationStrength.WEAK, 22, false),
+                                    new FeatureCorrelation(SleepFeature.DEEP_SLEEP, "깊은 수면",
+                                    SkinMetric.BARRIER, "장벽",
+                                    CorrelationStrength.MODERATE, 22, false)))));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -348,7 +359,7 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.summary.verifiedDays").doesNotExist())
                     .andExpect(jsonPath("$.data.correlations", hasSize(3)))
                     .andExpect(jsonPath("$.data.correlations[0].skinMetric").value("DARK_CIRCLE"))
-                    .andExpect(jsonPath("$.data.correlations[0].correlations[0].sampleSize").value(22));
+                    .andExpect(jsonPath("$.data.correlations[0].topCorrelation.sampleSize").value(22));
         }
 
         @Test
@@ -396,11 +407,15 @@ class ReportControllerTest {
         private static final String PATH = "/api/v1/report/overall";
 
         @Test
-        @DisplayName("트리아지·appManaged·clinicNeeded·clinicLink을 반환한다")
+        @DisplayName("trends·appManaged·clinicNeeded·clinicLink을 반환한다")
         void 종합_리포트를_반환한다() throws Exception {
             given(overallReportService.getOverallReport(USER_ID, BASE_DATE)).willReturn(
                     OverallReportResponse.of(BASE_DATE.minusDays(20), BASE_DATE,
-                            new Triage(true, SleepTrend.RISING, List.of(SkinMetric.COMPLEXION)),
+                            new Trends(
+                                    new MetricTrendResult(MetricTrend.IMPROVED, null, 48, 79),
+                                    new MetricTrendResult(MetricTrend.VOLATILE,
+                                            VolatileDirection.RISE_THEN_FALL, 61, 58),
+                                    new MetricTrendResult(MetricTrend.INSUFFICIENT_SAMPLE, null, null, 65)),
                             List.of(SkinMetric.DARK_CIRCLE, SkinMetric.COMPLEXION, SkinMetric.BARRIER),
                             new ClinicNeeded(false, false, true)));
 
@@ -408,11 +423,16 @@ class ReportControllerTest {
                             .param("baseDate", "2026-08-14"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("FULL"))
+                    .andExpect(jsonPath("$.data.message").doesNotExist())
                     .andExpect(jsonPath("$.data.periodStart").value("2026-07-25"))
                     .andExpect(jsonPath("$.data.periodEnd").value("2026-08-14"))
-                    .andExpect(jsonPath("$.data.triage.triggered").value(true))
-                    .andExpect(jsonPath("$.data.triage.sleepTrend").value("RISING"))
-                    .andExpect(jsonPath("$.data.triage.stagnantMetrics[0]").value("COMPLEXION"))
+                    .andExpect(jsonPath("$.data.trends.darkCircle.trend").value("IMPROVED"))
+                    .andExpect(jsonPath("$.data.trends.darkCircle.w1Average").value(48))
+                    .andExpect(jsonPath("$.data.trends.darkCircle.w3Average").value(79))
+                    .andExpect(jsonPath("$.data.trends.complexion.trend").value("VOLATILE"))
+                    .andExpect(jsonPath("$.data.trends.complexion.volatileDirection").value("RISE_THEN_FALL"))
+                    .andExpect(jsonPath("$.data.trends.barrier.trend").value("INSUFFICIENT_SAMPLE"))
+                    .andExpect(jsonPath("$.data.trends.barrier.w1Average").doesNotExist())
                     .andExpect(jsonPath("$.data.appManaged[0]").value("DARK_CIRCLE"))
                     .andExpect(jsonPath("$.data.appManaged[1]").value("COMPLEXION"))
                     .andExpect(jsonPath("$.data.appManaged[2]").value("BARRIER"))
@@ -422,19 +442,18 @@ class ReportControllerTest {
         }
 
         @Test
-        @DisplayName("수면 추세 표본이 부족하면 INSUFFICIENT_DATA다")
-        void 표본이_부족하면_INSUFFICIENT_DATA다() throws Exception {
+        @DisplayName("가입한 지 21일 미만이면 INSUFFICIENT_DATA이고 trends는 없다")
+        void 가입_21일_미만이면_INSUFFICIENT_DATA다() throws Exception {
             given(overallReportService.getOverallReport(USER_ID, BASE_DATE)).willReturn(
-                    OverallReportResponse.of(BASE_DATE.minusDays(20), BASE_DATE,
-                            new Triage(false, SleepTrend.INSUFFICIENT_DATA, List.of()),
-                            List.of(SkinMetric.DARK_CIRCLE, SkinMetric.COMPLEXION, SkinMetric.BARRIER),
-                            null));
+                    OverallReportResponse.insufficientData(BASE_DATE.minusDays(20), BASE_DATE,
+                            List.of(SkinMetric.DARK_CIRCLE, SkinMetric.COMPLEXION, SkinMetric.BARRIER), null));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("INSUFFICIENT_DATA"))
-                    .andExpect(jsonPath("$.data.triage.triggered").value(false))
+                    .andExpect(jsonPath("$.data.message").isNotEmpty())
+                    .andExpect(content().string(containsString("\"trends\":null")))
                     .andExpect(content().string(containsString("\"clinicNeeded\":null")));
         }
 

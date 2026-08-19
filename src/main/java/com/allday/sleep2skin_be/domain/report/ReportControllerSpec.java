@@ -209,21 +209,17 @@ public interface ReportControllerSpec {
                 "summary": { "avgSleepScore": 70, "avgDeepSleepMinutes": 126 },
                 "correlations": [
                   { "skinMetric": "DARK_CIRCLE",
-                    "correlations": [
-                      { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-                        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
-                        "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false },
-                      { "sleepFeature": "TOTAL_SLEEP", "featureLabel": "총 수면 시간",
-                        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
-                        "strength": "MODERATE", "sampleSize": 6, "insufficientSample": false }
-                    ] },
+                    "topCorrelation": { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+                      "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
+                      "strength": "VERY_STRONG", "sampleSize": 6, "insufficientSample": false } },
                   { "skinMetric": "COMPLEXION",
-                    "correlations": [
-                      { "sleepFeature": "HRV", "featureLabel": "심박변이도",
-                        "skinMetric": "COMPLEXION", "metricLabel": "혈색",
-                        "strength": null, "sampleSize": 2, "insufficientSample": true }
-                    ] },
-                  { "skinMetric": "BARRIER", "correlations": [] }
+                    "topCorrelation": { "sleepFeature": "HRV", "featureLabel": "심박변이도",
+                      "skinMetric": "COMPLEXION", "metricLabel": "혈색",
+                      "strength": null, "sampleSize": 2, "insufficientSample": true } },
+                  { "skinMetric": "BARRIER",
+                    "topCorrelation": { "sleepFeature": "DEEP_SLEEP", "featureLabel": "깊은 수면",
+                      "skinMetric": "BARRIER", "metricLabel": "장벽",
+                      "strength": "MODERATE", "sampleSize": 6, "insufficientSample": false } }
                 ]
               } }
             ```
@@ -301,10 +297,14 @@ public interface ReportControllerSpec {
             피처-지표 쌍에는 영향이 없다.
 
             **`correlations`는 `skinMetric` 기준 3그룹(`DARK_CIRCLE`·`COMPLEXION`·`BARRIER`)의
-            배열이다.** 계산 자체는 여전히 7쌍 전부를 낸다 — 표본이 부족해도 빠지지 않고
-            `strength: null`로 포함되며, **각 그룹 안의 정렬은 상관계수 절댓값 내림차순이고
-            표본 부족은 값과 무관하게 그룹 맨 뒤로 간다.** 그룹은 항상 3개 전부 반환하고, 매핑되는
-            피처가 없는 그룹은 `correlations: []`다.
+            배열이고, 그룹마다 대표 상관 1개(`topCorrelation`)만 담는다**(2026-08-19, 프론트
+            요청으로 배열→단일 객체 변경). 계산 자체는 여전히 7쌍 전부를 낸다.
+
+            **정렬은 상관계수 절댓값 내림차순이고 표본 부족은 값과 무관하게 맨 뒤로 가는 규칙
+            그대로다.** 동률이면 `sleepFeature` 선언 순서(위 표 순서)가 기준이고, 대표는 그
+            정렬의 1위다. **표본이 부족해도(`insufficientSample: true`) 대표에서 빠지지
+            않는다** — 그 지표에서 가장 유력한 피처가 무엇인지는 표본 부족과 무관하게 의미가
+            있다. 그룹은 항상 3개 전부 반환한다.
 
             ⚠️ 강도 구간(`VERY_STRONG` 0.7 / `STRONG` 0.4 / `MODERATE` 0.2)과 표본 하한(5개)은
             <b>임시값이다</b> — 통계학에서 흔히 쓰는 구간을 참고해 채택했을 뿐 이 서비스의
@@ -363,13 +363,17 @@ public interface ReportControllerSpec {
                 "summary": { "avgSleepScore": 61, "avgDeepSleepMinutes": 118 },
                 "correlations": [
                   { "skinMetric": "DARK_CIRCLE",
-                    "correlations": [
-                      { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
-                        "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
-                        "strength": "STRONG", "sampleSize": 22, "insufficientSample": false }
-                    ] },
-                  { "skinMetric": "COMPLEXION", "correlations": [] },
-                  { "skinMetric": "BARRIER", "correlations": [] }
+                    "topCorrelation": { "sleepFeature": "AWAKE_COUNT", "featureLabel": "야간 각성",
+                      "skinMetric": "DARK_CIRCLE", "metricLabel": "다크서클 회복",
+                      "strength": "STRONG", "sampleSize": 22, "insufficientSample": false } },
+                  { "skinMetric": "COMPLEXION",
+                    "topCorrelation": { "sleepFeature": "HRV", "featureLabel": "심박변이도",
+                      "skinMetric": "COMPLEXION", "metricLabel": "혈색",
+                      "strength": "WEAK", "sampleSize": 22, "insufficientSample": false } },
+                  { "skinMetric": "BARRIER",
+                    "topCorrelation": { "sleepFeature": "DEEP_SLEEP", "featureLabel": "깊은 수면",
+                      "skinMetric": "BARRIER", "metricLabel": "장벽",
+                      "strength": "MODERATE", "sampleSize": 22, "insufficientSample": false } }
                 ]
               } }
             ```
@@ -443,10 +447,9 @@ public interface ReportControllerSpec {
             | `RESTING_HEART_RATE` | 안정시 심박 | `COMPLEXION` |
 
             표본이 5개 미만이면 `insufficientSample: true`이고 `strength`는 `null`이다.
-            `correlations`는 주간과 같이 `skinMetric` 기준 3그룹의 배열이고, **계산 자체는
-            여전히 7쌍 전부**를 낸다 — 그룹 안의 정렬은 상관계수 절댓값 내림차순이며 표본
-            부족은 그룹 맨 뒤로 간다. 28일 기간이라 주간보다 표본이 커지기 쉬워 계산되는
-            비율이 더 높다.
+            `correlations`는 주간과 같이 `skinMetric` 기준 3그룹의 배열이고, 그룹마다 대표
+            상관 1개(`topCorrelation`)만 담는다 — **계산 자체는 여전히 7쌍 전부**를 낸다.
+            28일 기간이라 주간보다 표본이 커지기 쉬워 계산되는 비율이 더 높다.
 
             ⚠️ 강도 구간과 표본 하한은 **임시값**이다 — 자세한 근거는 `GET /report/weekly`
             문서와 `CorrelationPolicy`를 참고한다.
@@ -480,8 +483,8 @@ public interface ReportControllerSpec {
             LocalDate baseDate);
 
     @Operation(summary = "종합 리포트 조회 (REP-09~11)", description = """
-            최근 3주 수면 점수 추세와 피부 지표 정체 여부로 클리닉 트리아지를 판정하고, 앱이 관리하는
-            지표 목록과 클리닉이 필요할 수 있는 신호를 함께 보여준다.
+            예보 지표 3종(다크서클·혈색·장벽) 각각의 최근 3주 추세와, 클리닉이 필요할 수 있는
+            신호를 함께 보여준다.
 
             ### 요청
 
@@ -493,12 +496,22 @@ public interface ReportControllerSpec {
             { "success": true,
               "data": {
                 "status": "FULL",
+                "message": null,
                 "periodStart": "2026-07-25",
                 "periodEnd": "2026-08-14",
-                "triage": {
-                  "triggered": true,
-                  "sleepTrend": "RISING",
-                  "stagnantMetrics": ["COMPLEXION"]
+                "trends": {
+                  "darkCircle": {
+                    "trend": "IMPROVED", "volatileDirection": null,
+                    "w1Average": 48, "w3Average": 79
+                  },
+                  "complexion": {
+                    "trend": "VOLATILE", "volatileDirection": "RISE_THEN_FALL",
+                    "w1Average": 61, "w3Average": 58
+                  },
+                  "barrier": {
+                    "trend": "INSUFFICIENT_SAMPLE", "volatileDirection": null,
+                    "w1Average": null, "w3Average": 65
+                  }
                 },
                 "appManaged": ["DARK_CIRCLE", "COMPLEXION", "BARRIER"],
                 "clinicNeeded": {
@@ -512,77 +525,83 @@ public interface ReportControllerSpec {
 
             ### 문장을 만들지 않는다
 
-            `triage`는 판정 결과(추세 값·정체 지표 목록·발동 여부)만 담는다. "수면은 좋아졌지만
-            혈색이 정체됐어요" 같은 안내 문구는 서버가 만들지 않는다 — 프론트가 판정값을 보고
-            문구를 구성한다.
+            `trends`는 판정 결과(추세 값·변동 방향·구간 평균)만 담는다. "혈색이 오르다 다시
+            내렸어요" 같은 안내 문구는 서버가 만들지 않는다 — 프론트가 판정값을 보고 문구를
+            구성한다.
 
-            ### 수면 목표 대신 최근 3주 추세를 쓴다
+            ### 발동 조건이 없다 — 항상 지표 3종 전부를 보여준다(2026-08-19)
 
-            이 서비스에는 수면 목표값(B6, MVP에서 제외)이 없다. 트리아지 발동 조건의 절반("수면
-            목표는 달성했는데 특정 피부 지표만 정체")에서 "수면 목표 달성"을 대신할 신호로
-            **최근 3주(21일) 수면 점수 추세**를 쓴다.
+            이전에는 "수면 점수 추세가 STABLE·RISING이고 정체 지표가 있을 때만" `triage`를
+            노출하는 발동(트리거) 구조였다. **그 게이팅을 완전히 없앴다** — `triage.triggered`
+            필드도 함께 사라졌다. 이제 `status`가 `FULL`인 한 `trends`는 항상 다크서클·혈색·장벽
+            셋 다 채워진다.
 
-            기간을 전반부 10일(가장 과거)·후반부 10일(`baseDate`로 끝난다)로 나누고 가운데
-            1일(11일차)은 비교에서 뺀다. 세션이 없는 날은 결측으로 제외한다.
+            ### 관찰 창 — W1/W2/W3 각 7일
 
-            | `sleepTrend` | 조건 |
+            21일(`baseDate`로 끝난다)을 겹치지 않는 세 구간으로 나눈다.
+
+            | 구간 | 범위 |
             |---|---|
-            | `INSUFFICIENT_DATA` | 유효 표본이 5개 미만이거나, 전반부·후반부 중 한쪽이 통째로 결측 |
-            | `VOLATILE` | 유효 표본(전반부+후반부)의 표준편차 ≥ 15 |
-            | `RISING` | 후반부 평균 − 전반부 평균 ≥ +5 |
-            | `FALLING` | 후반부 평균 − 전반부 평균 ≤ −5 |
-            | `STABLE` | 위 어느 조건에도 안 걸림 |
+            | `W1` | `baseDate-20` ~ `baseDate-14` (가장 과거) |
+            | `W2` | `baseDate-13` ~ `baseDate-7` (중간 — 방향 일관성 체크에만 쓰고 응답에는 안 실린다) |
+            | `W3` | `baseDate-6` ~ `baseDate` (가장 최근) |
 
-            판정 순서가 결과를 가른다 — 표본 부족을 먼저 걸러낸 뒤에만 변동성·추세를 본다.
+            각 구간의 평균은 그 지표의 예보 점수 평균이다 — 그날 예보가 없으면(그 지표가 빈
+            상태였던 날 포함) 분모에서 뺀다. 구간 7일이 전부 결측이면 그 구간 평균은 `null`이다.
 
-            ### `status`는 수면 추세 하나로만 결정된다
+            ### `trend` 판정 기준
 
-            `sleepTrend`가 `INSUFFICIENT_DATA`일 때만 `status`가 `INSUFFICIENT_DATA`다. **가입일
-            기준 게이트가 없다** — 주간·월간 리포트(REP-06·07)와 달리, 신규 사용자든 오래된
-            사용자든 최근 3주 유효 표본 수로만 판정한다.
+            | `trend` | 조건 |
+            |---|---|
+            | `INSUFFICIENT_SAMPLE` | `w1Average` 또는 `w3Average`가 `null`(그 구간 7일 전부 결측) |
+            | `VOLATILE` | W1→W2, W2→W3의 방향이 정확히 반대(한쪽 양수·한쪽 음수) — `volatileDirection`이 어느 쪽인지 함께 나간다 |
+            | `IMPROVED` | 위에 안 걸리고 `w3Average − w1Average` > 0 |
+            | `WORSENED` | 위에 안 걸리고 `w3Average − w1Average` < 0 |
+            | `MAINTAINED` | 위에 안 걸리고 `w3Average − w1Average` = 0 |
 
-            `stagnantMetrics`의 표본 부족은 그 지표만 배열에서 빼고 `status`에는 영향을 주지
-            않는다 — `appManaged`·`clinicNeeded`도 `status`와 무관하게 항상 계산된다.
+            **W1↔W2, W2↔W3 둘 중 하나라도 변화가 정확히 0이면 `VOLATILE`로 보지 않는다** —
+            "정확히 반대 방향"이어야 변동성으로 판정한다. **W2 평균이 결측이면 `VOLATILE` 판정
+            자체를 생략하고 `w3Average − w1Average`만으로 나머지 셋 중 하나를 정한다** — 중간
+            구간이 없으면 "오르다 내렸다"를 말할 근거가 없다.
 
-            ### 피부 지표 정체 판정 (`stagnantMetrics`)
+            `volatileDirection`은 `trend`가 `VOLATILE`일 때만 값이 있다. 그 외에는 항상 `null`이다.
 
-            예보 지표 3종 각각에 대해 최근 3주 예보 점수(유효 표본, `baseDate` 이하)를 본다.
+            ### `status`는 가입일 기준이다 — REP-06·07과 같은 규칙
 
-            - 유효 표본이 5개 미만이면 판정 불가 — 정체 아님으로 취급해 배열에 담지 않는다
-            - 평균 점수가 50점 이상이면 정체 아님(점수가 좋으면 변동폭만으로 정체로 보지 않는다)
-            - 평균 점수가 50점 미만이고 (최댓값 − 최솟값)이 5점 이하면 정체로 판정한다
+            가입 당일을 1일차로 세어(`가입일부터 baseDate까지의 일수 + 1`) **21일 미만이면
+            `status: INSUFFICIENT_DATA`이고 `trends`가 `null`이다.** 21일 이상이면 항상
+            `FULL`이며, 특정 지표만 표본이 부족한 경우는 그 지표의 `trend`만
+            `INSUFFICIENT_SAMPLE`로 표시한다 — **리포트 전체를 부족 처리하지 않는다.**
 
-            `stagnantMetrics`는 배열이다 — 3종 중 여럿이 동시에 정체일 수 있다.
-
-            ### `triage.triggered`
-
-            `sleepTrend`가 `STABLE` 또는 `RISING`이고 `stagnantMetrics`가 1개 이상일 때만
-            `true`다. 하락·변동성이 큰 추세는 "정체"가 아니라 다른 문제라 트리아지 대상이 아니다.
+            ```jsonc
+            { "success": true,
+              "data": {
+                "status": "INSUFFICIENT_DATA",
+                "message": "아직 종합 리포트를 만들기에 기록이 부족합니다.",
+                "periodStart": "2026-07-25", "periodEnd": "2026-08-14",
+                "trends": null,
+                "appManaged": ["DARK_CIRCLE", "COMPLEXION", "BARRIER"],
+                "clinicNeeded": null,
+                "clinicLink": "https://amredclinic.com/ko"
+              } }
+            ```
 
             ### `appManaged`
 
             앱이 관리하는 예보 지표 3종의 고정 목록이다. 점수·등급 없이 이름만 나간다.
 
-            ### `clinicNeeded`
+            ### `clinicNeeded` — 가입일 게이트와 무관하다
 
             `baseDate` 이하 범위에서 **가장 최근 실측 1건**의 감지 플래그 3종을 그대로 옮긴다 —
             비교·트렌드는 없다. 셀피 검증 이력이 전혀 없으면 `clinicNeeded` 전체가 `null`이다
-            (감지되지 않음과 측정한 적이 없음을 구분한다).
+            (감지되지 않음과 측정한 적이 없음을 구분한다). **`status`가 `INSUFFICIENT_DATA`여도
+            실측 이력이 있으면 그대로 나간다** — 실측 이력 유무로만 결정되는 별개의 신호라
+            21일 관찰 창(`trends`가 필요로 하는 조건)과 무관하다.
 
             **실측 행은 있는데 필드 하나만 `null`인 경우도 있다** — 그 실측 행이 이 컬럼 도입
             이전에 만들어졌다는 뜻이다. 그 필드만 `null`이고 나머지 필드는 실제 값이 그대로
             나간다. 이때도 `false`(실제 미검출)로 채우지 않는다 — 컬럼이 없던 시절의 데이터와
             "셋 다 감지 안 됨"을 구분해야 하기 때문이다.
-
-            ### 판정 기준값
-
-            관찰 창(3주)·정체 판정 점수 기준(50점)·변동폭(5점)·표준편차 임계값(15)·추세
-            임계값(5점)은 **확정값**이다(`TriagePolicy` · prd.md §10.10). 문헌 근거가 아니라
-            실무 판단이지만, **대부분 이미 확정된 기준을 재사용**한 값이다 — 50점은 등급
-            컷오프(§10.1)의 위험/주의 경계, 5점은 판정 오차 구간(§10.2)의 ±5 적중 폭이다.
-
-            표본 하한(5)만은 `CorrelationPolicy.MIN_SAMPLE_SIZE`를 참조하며 **그쪽은 여전히
-            임시값이다**(prd.md §9.2 L7) — 재확정되면 이 API의 판정도 함께 움직인다.
 
             ### 예외
 
@@ -594,7 +613,7 @@ public interface ReportControllerSpec {
             """)
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "200",
-            description = "조회 성공. **유효 표본이 부족하면 `status: INSUFFICIENT_DATA`로 여기에 해당한다**")
+            description = "조회 성공. **가입한 지 21일 미만이면 `status: INSUFFICIENT_DATA`로 여기에 해당한다**")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "400", description = "`INVALID_INPUT` — `baseDate` 누락 또는 형식 오류",
             content = @Content(mediaType = "application/json", examples = @ExampleObject(

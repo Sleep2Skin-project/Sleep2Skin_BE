@@ -222,7 +222,7 @@ class SkinControllerTest {
                     .andExpect(jsonPath("$.data.verifications[0].verdict").value("CLOSE"))
                     .andExpect(jsonPath("$.data.skipped[0].metric").value("COMPLEXION"))
                     .andExpect(jsonPath("$.data.skipped[0].measured.score").value(55))
-                    .andExpect(jsonPath("$.data.hitRate").value(50))
+                    .andExpect(jsonPath("$.data.hitRate").value(87))
                     .andExpect(jsonPath("$.data.model.updated").value(true))
                     .andExpect(jsonPath("$.data.model.changes[0].feature").value("AWAKE_COUNT"))
                     .andExpect(jsonPath("$.data.model.changes[0].metric").value("DARK_CIRCLE"))
@@ -325,7 +325,7 @@ class SkinControllerTest {
                     "셀피".getBytes(StandardCharsets.UTF_8));
         }
 
-        /** 혈색 예보가 없던 날 — 대조 2건, 제외 1건이라 적중률 분모가 2다. */
+        /** 혈색 예보가 없던 날 — 대조 2건, 제외 1건이라 적중률 분모가 2다. 오차 6·3 → 87. */
         private SelfieVerificationResponse verified() {
             return new SelfieVerificationResponse(BASE_DATE,
                     OffsetDateTime.parse("2026-08-07T12:33:12Z"),
@@ -333,7 +333,7 @@ class SkinControllerTest {
                             MetricVerificationResponse.of(SkinMetric.DARK_CIRCLE, 67, 61),
                             MetricVerificationResponse.of(SkinMetric.BARRIER, 81, 78)),
                     List.of(SkippedMetricResponse.of(SkinMetric.COMPLEXION, 55, true)),
-                    50,
+                    87,
                     new PersonalModelUpdateResponse(true,
                             "야간 각성을(를) 조금 더 중요하게 보도록 학습했어요.",
                             List.of(new WeightChangeResponse(SleepFeature.AWAKE_COUNT,
@@ -360,9 +360,9 @@ class SkinControllerTest {
         @DisplayName("누적 적중률과 최근 1건의 적중률을 따로 내보낸다")
         void 누적과_그날치를_모두_준다() throws Exception {
             given(skinVerificationSummaryService.getSummary(USER_ID, BASE_DATE))
-                    .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(58, 5, 3,
-                            new PreviousVerification(BASE_DATE.minusDays(2), 33),
-                            new LatestVerification(BASE_DATE.minusDays(1), 67,
+                    .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(72, 5, 3,
+                            new PreviousVerification(BASE_DATE.minusDays(2), 63),
+                            new LatestVerification(BASE_DATE.minusDays(1), 94,
                                     List.of(MetricVerificationResponse.of(SkinMetric.DARK_CIRCLE, 67, 65)),
                                     List.of()))));
 
@@ -370,10 +370,10 @@ class SkinControllerTest {
                             .param("baseDate", "2026-08-07"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("AVAILABLE"))
-                    .andExpect(jsonPath("$.data.summary.hitRate").value(58))
+                    .andExpect(jsonPath("$.data.summary.hitRate").value(72))
                     .andExpect(jsonPath("$.data.summary.verificationCount").value(5))
                     .andExpect(jsonPath("$.data.summary.streakCount").value(3))
-                    .andExpect(jsonPath("$.data.summary.latest.hitRate").value(67))
+                    .andExpect(jsonPath("$.data.summary.latest.hitRate").value(94))
                     .andExpect(jsonPath("$.data.summary.latest.baseDate").value("2026-08-06"));
         }
 
@@ -385,16 +385,16 @@ class SkinControllerTest {
         @DisplayName("직전 검증 1건이 실리고 상승폭 필드는 없다")
         void 직전_검증이_실린다() throws Exception {
             given(skinVerificationSummaryService.getSummary(USER_ID, BASE_DATE))
-                    .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(58, 5, 3,
-                            new PreviousVerification(BASE_DATE.minusDays(2), 33),
-                            new LatestVerification(BASE_DATE.minusDays(1), 67,
+                    .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(72, 5, 3,
+                            new PreviousVerification(BASE_DATE.minusDays(2), 63),
+                            new LatestVerification(BASE_DATE.minusDays(1), 94,
                                     List.of(MetricVerificationResponse.of(SkinMetric.DARK_CIRCLE, 67, 65)),
                                     List.of()))));
 
             mockMvc.perform(get(SUMMARY_PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-07"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.summary.previous.hitRate").value(33))
+                    .andExpect(jsonPath("$.data.summary.previous.hitRate").value(63))
                     .andExpect(jsonPath("$.data.summary.previous.baseDate").value("2026-08-05"))
                     .andExpect(jsonPath("$.data.summary.hitRateDelta").doesNotExist());
         }
@@ -404,8 +404,8 @@ class SkinControllerTest {
         @DisplayName("검증이 1건뿐이면 previous가 null이다")
         void 첫_검증이면_직전이_없다() throws Exception {
             given(skinVerificationSummaryService.getSummary(USER_ID, BASE_DATE))
-                    .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(67, 1, 1, null,
-                            new LatestVerification(BASE_DATE, 67,
+                    .willReturn(VerificationSummaryResponse.of(BASE_DATE, new Summary(94, 1, 1, null,
+                            new LatestVerification(BASE_DATE, 94,
                                     List.of(MetricVerificationResponse.of(SkinMetric.DARK_CIRCLE, 67, 65)),
                                     List.of()))));
 

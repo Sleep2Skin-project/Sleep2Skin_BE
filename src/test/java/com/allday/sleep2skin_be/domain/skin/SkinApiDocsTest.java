@@ -142,6 +142,8 @@ class SkinApiDocsTest {
                 .andExpect(jsonPath(SELFIE_POST + ".description")
                         .value(containsString("분모는 `verifications`의 길이이지 3이 아니다")))
                 .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("판정 개수가 아니라 정확도 평균이다")))
+                .andExpect(jsonPath(SELFIE_POST + ".description")
                         .value(containsString("실측은 항상 3종이 나온다")));
     }
 
@@ -181,6 +183,24 @@ class SkinApiDocsTest {
     }
 
     /**
+     * <b>적중률이 판정 개수 비율이라고 읽히면 앱이 "3개 중 2개 적중" 같은 문구를 붙인다.</b>
+     * 숫자는 그럴듯하게 나오고 값 범위도 정상이라 어디에도 안 걸린다.
+     */
+    @Test
+    @DisplayName("적중률이 개수 비율이 아니라 정확도 평균이라는 것과 그 상·하한이 문서에 있다")
+    void 적중률_곡선이_문서에_있다() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("적중(`HIT`)이어도 `100`이 아니다")))
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("`20` 밑으로는")))
+                // 개수 비율이던 시절의 계단을 되살리지 못하게 근거를 남겨 둔다
+                .andExpect(jsonPath(SELFIE_POST + ".description")
+                        .value(containsString("`0`·`33`·`67`·`100`만 나왔다")));
+    }
+
+    /**
      * <b>앱이 두 숫자를 바꿔 쓰면 화면이 다른 뜻을 말한다.</b> 최상위는 "예보가 얼마나 믿을
      * 만한가", {@code latest}는 "어제 예보가 얼마나 맞았나"다. 문서가 이 구분을 잃으면 프론트가
      * 알아낼 방법이 없다.
@@ -196,7 +216,9 @@ class SkinApiDocsTest {
                 .andExpect(jsonPath(SUMMARY_GET + ".description")
                         .value(containsString("latest.hitRate")))
                 .andExpect(jsonPath(SUMMARY_GET + ".description")
-                        .value(containsString("검증 일수 × 3이 아니다")));
+                        .value(containsString("검증 일수 × 3이 아니다")))
+                .andExpect(jsonPath(SUMMARY_GET + ".description")
+                        .value(containsString("모든 판정의 정확도 평균이다")));
     }
 
     /**

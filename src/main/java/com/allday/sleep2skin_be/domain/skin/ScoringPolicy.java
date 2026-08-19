@@ -188,6 +188,52 @@ public final class ScoringPolicy {
         return difference < 0 ? VerificationVerdict.UNDERESTIMATED : VerificationVerdict.OVERESTIMATED;
     }
 
+    // ===== 적중률 곡선 (2026-08-19) — ⚠️ §10에 없는 임시값이다 =====
+
+    /**
+     * 오차가 이론상 최대일 때의 정확도. <b>완전히 빗나가도 0이 되지 않는다</b> — 적중률은 화면에서
+     * "예보를 얼마나 믿을 만한가"를 말하는 숫자라, 하루 크게 어긋났다고 0%가 나가면 그 뒤로 쌓이는
+     * 표본이 눌린다.
+     */
+    public static final double ACCURACY_FLOOR = 20.0;   // 임시값 (PRD §9.2)
+
+    /**
+     * 로그 곡선의 완만함. <b>작을수록 오차 초반이 가파르다.</b> {@code 8}에서 §10.2의 두 경계가
+     * 각각 {@code 85}(±5 적중)·{@code 68}(±15 근접)에 놓인다.
+     */
+    public static final double ACCURACY_SCALE = 8.0;    // 임시값 (PRD §9.2)
+
+    /** 오차의 이론상 최대 — 지표 점수가 {@code 0~100}이라 {@code 100}이다. */
+    private static final int MAX_DIFFERENCE = 100;
+
+    /** 오차 {@code 0}일 때의 정확도. */
+    private static final double ACCURACY_MAX = 100.0;
+
+    /**
+     * 지표 하나의 <b>예보 정확도</b>(0~100). 적중률({@code hitRate})은 그날 판정된 지표들의 이 값을
+     * 평균낸 것이다.
+     *
+     * <p><b>{@link #verdict}와 다른 축이다.</b> 판정은 ±5·±15로 잘린 라벨이고 여기는 연속값이다.
+     * 예전에는 적중률이 {@code HIT} 개수 ÷ 판정 수여서 세 지표면 {@code 0·33·67·100}만 나왔고,
+     * <b>오차 6점과 오차 60점이 똑같이 "적중 아님"으로 뭉개졌다.</b> 한쪽 상수만 만지면 라벨과
+     * 숫자가 조용히 어긋나므로 둘을 함께 본다.
+     *
+     * <p>로그 곡선이라 <b>초반이 가파르고 뒤로 갈수록 완만하다</b> — {@code 100}은 세 지표가 전부
+     * 정확히 맞아야 나오고, 크게 빗나간 구간에서는 더 빗나가도 조금씩만 깎인다.
+     *
+     * <p><b>부호를 보지 않는다.</b> 과소·과대는 {@code verdict}가 말하고 여기는 얼마나 빗나갔는지만
+     * 말한다.
+     *
+     * <p><b>반올림하지 않고 {@code double}로 낸다.</b> 지표마다 반올림하면 평균에 세 번의 오차가
+     * 누적된다 — 반올림은 평균을 낸 뒤 한 번만 한다.
+     */
+    public static double accuracy(int forecast, int measured) {
+        int magnitude = Math.abs(forecast - measured);
+        double ratio = Math.log1p(magnitude / ACCURACY_SCALE)
+                / Math.log1p(MAX_DIFFERENCE / ACCURACY_SCALE);
+        return ACCURACY_MAX - (ACCURACY_MAX - ACCURACY_FLOOR) * ratio;
+    }
+
     /** 개인 가중치가 없는 사용자(첫 검증 전)의 배수. 이때 {@code w'}는 일반 가중치와 같다. */
     public static final BigDecimal DEFAULT_PERSONAL_WEIGHT = BigDecimal.ONE;
 

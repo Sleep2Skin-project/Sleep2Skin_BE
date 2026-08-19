@@ -21,7 +21,7 @@ import java.util.List;
  * @param verifications 예보와 대조한 지표. <b>비지 않는다</b> — {@code DARK_CIRCLE}은 예보가 빈
  *                      상태가 될 수 없다(erd.md §3.5)
  * @param skipped       예보가 없어 대조하지 못한 지표. <b>실측값은 여기에도 있다</b>
- * @param hitRate       대조한 지표 중 {@code HIT} 비율(%)
+ * @param hitRate       대조한 지표들의 <b>예보 정확도 평균</b>(%). {@code HIT} 개수 비율이 아니다
  * @param model         개인 가중치 학습 결과 (HOME-08)
  * @param streakCount   <b>이번 검증을 포함한</b> 연속 검증 횟수. 팝업 문구("3일 연속!")와 지급액이
  *                      같은 숫자에서 나와야 한다 — 검증 전 값을 쓰면 화면과 보상이 하루씩 어긋난다
@@ -49,10 +49,14 @@ public record SelfieVerificationResponse(
         List<SkippedMetricResponse> skipped,
 
         @Schema(description = """
-                적중률(%). **분모는 `verifications`의 길이이고 3이 아니다.**
+                적중률(%) — **대조한 지표들의 예보 정확도 평균이다.** `HIT` 개수 비율이 아니다.
 
-                빈 지표를 0점으로 취급하면 존재하지 않는 오차가 적중률에 섞인다.
-                """, example = "50")
+                지표마다 `|예보 − 실측|`을 로그 곡선에 태워 0~100으로 바꾸고 평균낸다.
+                **적중(`HIT`)이어도 `100`이 아니고, 완전히 빗나가도 `20` 밑으로 내려가지 않는다.**
+
+                **평균낼 분모는 `verifications`의 길이이고 3이 아니다.** 빈 지표를 0점으로
+                취급하면 존재하지 않는 오차가 적중률에 섞인다.
+                """, example = "87")
         int hitRate,
 
         @Schema(description = "개인 가중치 학습 결과 (HOME-08)")
