@@ -97,6 +97,58 @@ class SkinVerificationSummaryServiceTest {
     }
 
     /**
+     * 화면이 "지난번 대비 +N%p"를 그린다. <b>목록의 두 번째 원소이지 전날이 아니다</b> — 하루
+     * 걸러 검증했으면 이틀 전이 직전이다.
+     */
+    @Test
+    @DisplayName("직전 검증 1건의 적중률이 함께 나온다")
+    void 직전_검증의_적중률이_나온다() {
+        userExists();
+        verifiedDays(
+                day(BASE_DATE, 67, 62, 81, 65, 60, 80),               // 3개 전부 적중 = 100%
+                day(BASE_DATE.minusDays(2), 67, 62, 81, 65, 30, 40)); // 1개만 적중 = 33%
+        given(skinMeasurementRepository.countByUserId(USER_ID)).willReturn(2L);
+
+        VerificationSummaryResponse response = service().getSummary(USER_ID, BASE_DATE);
+
+        assertThat(response.summary().previous().hitRate()).isEqualTo(33);
+        assertThat(response.summary().previous().baseDate()).isEqualTo(BASE_DATE.minusDays(2));
+        assertThat(response.summary().latest().hitRate()).isEqualTo(100);
+    }
+
+    /** 비교할 대상이 없다. 첫 검증에서 {@code 0}을 주면 화면이 없던 상승폭을 그린다. */
+    @Test
+    @DisplayName("검증이 1건뿐이면 직전은 null이다")
+    void 첫_검증이면_직전이_없다() {
+        userExists();
+        verifiedDays(day(BASE_DATE, 67, 62, 81, 65, 60, 80));
+        given(skinMeasurementRepository.countByUserId(USER_ID)).willReturn(1L);
+
+        VerificationSummaryResponse response = service().getSummary(USER_ID, BASE_DATE);
+
+        assertThat(response.summary().previous()).isNull();
+        assertThat(response.summary().latest().hitRate()).isEqualTo(100);
+    }
+
+    /**
+     * {@code skipped}를 만들지 않으므로 세션을 읽을 이유가 없다. 최근 1건만 사유를 가린다.
+     */
+    @Test
+    @DisplayName("직전 검증에 빈 지표가 있어도 세션을 읽지 않는다")
+    void 직전_검증은_세션을_안_읽는다() {
+        userExists();
+        verifiedDays(
+                day(BASE_DATE, 67, 62, 81, 65, 60, 80),               // 전부 대조 = 100%
+                day(BASE_DATE.minusDays(1), 67, null, 81, 65, 55, 40)); // 혈색 예보 없음 → 2개 중 1개
+        given(skinMeasurementRepository.countByUserId(USER_ID)).willReturn(2L);
+
+        VerificationSummaryResponse response = service().getSummary(USER_ID, BASE_DATE);
+
+        assertThat(response.summary().previous().hitRate()).isEqualTo(50);   // 3이 분모였다면 33이다
+        verify(sleepSessionRepository, never()).findByUserIdAndSleepDate(anyLong(), any());
+    }
+
+    /**
      * 0점으로 채워 세면 <b>존재하지 않는 오차가 적중률에 섞인다</b> — 셀피 응답과 같은 규칙이다.
      */
     @Test

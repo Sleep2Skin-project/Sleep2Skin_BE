@@ -47,6 +47,8 @@ public record VerificationSummaryResponse(
      *                          "예보가 얼마나 믿을 만한가"라 표본이 쌓일수록 안정돼야 한다
      * @param verificationCount 누적 검증 횟수. <b>MY-01·REP-12가 같은 숫자를 쓴다</b>
      * @param streakCount       연속 검증 횟수 (§4.2)
+     * @param previous          <b>직전</b> 검증 1건. 화면의 "지난번 대비" 기준선이며, 검증이
+     *                          1건뿐이면 {@code null}이다 — 비교할 대상이 없다
      * @param latest            최근 검증 1건. <b>그날치 적중률은 여기 있다</b>
      */
     @Schema(description = "배너 요약")
@@ -61,8 +63,41 @@ public record VerificationSummaryResponse(
             @Schema(description = "연속 검증 횟수. **오늘 미검증이 연속을 끊지 않는다**", example = "3")
             int streakCount,
 
+            @Schema(description = "직전 검증 1건. 검증이 1건뿐이면 `null`", nullable = true)
+            PreviousVerification previous,
+
             @Schema(description = "최근 검증 1건")
             LatestVerification latest
+    ) {
+    }
+
+    /**
+     * 직전 검증 1건 — 화면의 <b>"지난번 대비 +N%p"</b> 기준선이다.
+     *
+     * <p><b>상승폭을 서버가 내려주지 않는다.</b> {@code latest.hitRate − previous.hitRate}는
+     * 같은 응답 안의 두 필드로 나오는 값이라, 서버가 따로 담으면 같은 사실을 말하는 자리가
+     * 둘이 되어 어긋날 수 있다. 앱이 뺄셈한다.
+     *
+     * <p><b>{@code latest}와 달리 판정 목록을 싣지 않는다.</b> 기준선으로 쓸 숫자만 필요하고,
+     * 지난 검증의 지표별 내역은 배너에 나오지 않는다.
+     *
+     * <p>⚠️ <b>그날치 적중률은 분모가 최대 3이라 {@code 0}·{@code 33}·{@code 67}·{@code 100}으로만
+     * 튄다.</b> 여기서 나오는 차이도 같은 이유로 크게 요동친다 — 최상위 {@code hitRate}(누적)와
+     * 성격이 다른 숫자이며, "예보가 얼마나 믿을 만한가"는 여전히 누적 쪽이 말한다.
+     *
+     * @param baseDate 그 검증의 기준일. <b>{@code latest.baseDate}의 바로 앞 검증일이지 전날이
+     *                 아니다</b> — 하루 걸러 검증했으면 이틀 전일 수 있다
+     * @param hitRate  그날치 적중률(%). 분모는 {@code latest}와 같은 규칙이다(예보가 있던 지표만)
+     */
+    @Schema(description = "직전 검증 1건")
+    public record PreviousVerification(
+
+            @Schema(description = "그 검증의 기준일. **전날이 아니라 바로 앞 검증일이다**",
+                    example = "2026-08-08")
+            LocalDate baseDate,
+
+            @Schema(description = "**그날치** 적중률(%)", example = "33")
+            int hitRate
     ) {
     }
 
