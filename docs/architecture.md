@@ -255,8 +255,8 @@ POST /api/v1/skin/selfie
    │
    ├─ SelfieAnalysisService                 (multipart/form-data)
    │     ├─ MultipartFile → byte[]          메모리에서만 다룬다. 디스크·버킷에 쓰지 않는다
-   │     ├─ OpenAI Vision 호출 (Structured Outputs — 지표 3종 + 감지 플래그 3종 강제)
-   │     ├─ 0~100 정규화 → SkinMeasurement 저장 (RDS — 숫자 3개 + boolean 3개)
+   │     ├─ OpenAI Vision 호출 (Structured Outputs — 지표 3종 + 감지 플래그 4종 강제)
+   │     ├─ 0~100 정규화 → SkinMeasurement 저장 (RDS — 숫자 3개 + boolean 4개)
    │     │                                        플래그는 저장만 하고 아래 검증에 넣지 않는다
    │     └─ 바이트 참조 해제                  ← 메서드를 벗어나면 남는 참조가 없다
    │
@@ -350,7 +350,7 @@ TriagePolicy.classifySleepTrend(...)               ← 표본 부족 → 변동�
         ↓
 지표 3종 각각 정체 판정 (같은 기간 skin_forecast)   ← 예보 점수를 본다 (실측이 아니다)
         ↓
-clinicNeeded = baseDate 이하 최신 skin_measurement 1건의 플래그 3종
+clinicNeeded = baseDate 이하 최신 skin_measurement 1건의 플래그 4종
 ```
 
 - **가입일을 보지 않는다.** 주간·월간의 `INSUFFICIENT_DATA`는 "가입한 지 기간만큼 지났는가"지만, 여기는 **실제 유효 표본 수**로만 결정된다. 그래서 서비스가 `stagnantMetrics`·`clinicNeeded`·`appManaged`를 상태와 무관하게 항상 계산한다 — 각 판정 함수가 표본 부족을 스스로 걸러낸다
@@ -497,7 +497,7 @@ public SkinForecastResponse getForecast(Long userId, LocalDate date)
 | 모델 | `gpt-5.6-terra` (기본값) |
 | API | Responses API + `input_image` |
 | 이미지 전달 | 요청 본문에 **base64 인라인**. URL을 넘기지 않는다(넘길 URL이 없다 — §5) |
-| 출력 강제 | Structured Outputs — **지표 3종 정수 + 감지 플래그 3종 boolean** 스키마 |
+| 출력 강제 | Structured Outputs — **지표 3종 정수 + 감지 플래그 4종 boolean** 스키마 |
 | 대체 모델 | `gpt-5.6-luna` (비용 문제 시) |
 
 모델 ID는 `application.yml`에 프로퍼티로 둬서 코드 수정 없이 교체할 수 있게 한다.
@@ -533,24 +533,26 @@ Structured Outputs로 응답 스키마를 강제하면 파싱 실패가 사라�
 >
 > ✅ **2026-08-10에 실호출로 확인했다.** 다크서클이 뚜렷한 사진과 눈 밑이 맑은 사진을 각각 `POST /skin/selfie`에 넣어 대조했고, **맑은 쪽이 더 높은 `darkCircle`**이 나왔다 — 정의(`회복된 정도`)와 같은 방향이다. **`SkinVisionPrompt`를 고쳤다면 이 확인을 다시 해야 한다.**
 
-#### 감지 플래그 3종도 같은 호출에서 받는다 (2026-08-16 추가)
+#### 감지 플래그 4종도 같은 호출에서 받는다 (2026-08-16 추가 · 2026-08-20 4종)
 
-종합 리포트(REP-10)의 "클리닉 필요" 항목을 위해 **`pigmentationDetected`·`acneScarDetected`·`agingDetected`**를 같은 스키마에 넣었다. **호출을 늘리지 않았다** — 사진 한 장에 요청 하나다.
+종합 리포트(REP-10)의 "클리닉 필요" 항목을 위해 **`pigmentationDetected`·`acneScarDetected`·`agingDetected`·`blackheadDetected`**를 같은 스키마에 넣었다. **호출을 늘리지 않았다** — 사진 한 장에 요청 하나다. 플래그를 하나 더 늘린 2026-08-20에도 호출 수는 그대로였다.
 
 | 필드 | `true` | `false` |
 |---|---|---|
 | `pigmentationDetected` | 색소침착(잡티·기미·불균일한 착색)이 보인다 | 안 보이거나 없다 |
 | `acneScarDetected` | 여드름 흉터(패임·착색된 흉터 조직)가 보인다 | 안 보이거나 없다 |
 | `agingDetected` | 구조적 노화(주름·잔주름·처짐·탄력 저하)가 보인다 | 안 보이거나 없다 |
+| `blackheadDetected` | 블랙헤드(열린 면포·모공 속 검은 점, 주로 코·T존)가 보인다 | 안 보이거나 없다 |
 
 - **심각도를 묻지 않는다 — 존재 여부만이다.** 프롬프트에 `Presence only — do NOT judge severity`를 명시한다. 점수 3종과 성격이 다른 값이 같은 응답에 섞이므로 **여기서 척도가 흐려지면 지표 쪽 방향까지 흔들린다**
 - **판단이 어려우면 `false`다.** 점수 쪽은 "중간값으로 답하라"이지만 플래그는 **모르면 감지되지 않은 것으로** 답하게 한다 — 애매한 사진에서 클리닉을 권하지 않기 위해서다
-- **strict 모드라 셋 다 `required`다.** 그래서 새 실측 행의 세 컬럼은 항상 채워지고, `NULL`은 컬럼 도입 이전 행에만 남는다([erd.md](erd.md) §3.6)
-- **이 셋은 검증(HOME-07)에도 개인 가중치 학습(HOME-08)에도 들어가지 않는다.** 대응하는 예보값이 없다
+- **strict 모드라 넷 다 `required`다.** 그래서 새 실측 행의 네 컬럼은 항상 채워지고, `NULL`은 **그 컬럼이 도입되기 이전** 행에만 남는다 — 도입 시점이 필드마다 달라 **행 하나 안에서 일부만 `NULL`일 수 있다**([erd.md](erd.md) §3.6)
+- **이 넷은 검증(HOME-07)에도 개인 가중치 학습(HOME-08)에도 들어가지 않는다.** 대응하는 예보값이 없다
+- **플래그는 늘릴 수 있고 실제로 늘었다.** 점수 3종과 달리 예보와 짝을 이룰 필요가 없어 **추가 비용이 스키마 필드 하나뿐**이다. 다만 **`SkinVisionScores`가 record라 필드를 늘리면 생성자 호출부가 전부 컴파일 에러로 드러난다** — 조용히 빠뜨릴 자리가 없다는 뜻이라 이대로 둔다
 
 **인터페이스로 감싼다** — 제공자를 바꿀 가능성이 있으므로 `SkinVisionClient` 인터페이스를 두고 `OpenAiSkinVisionClient`로 구현한다. **인터페이스는 `byte[]`(또는 `MultipartFile`)를 받는다 — 스토리지 키를 받지 않는다.** 테스트에서는 고정값을 반환하는 스텁으로 대체한다.
 
-**반환 타입은 `SkinVisionScores`(점수 3개 + 플래그 3개)이고 `SkinMetric`을 쓰지 않는다.** 이 패키지는 `global`이라 `domain`을 참조할 수 없다(§2). 지표가 3종 고정이라 필드로 펴도 늘어날 일이 없다.
+**반환 타입은 `SkinVisionScores`(점수 3개 + 플래그 4개)이고 `SkinMetric`을 쓰지 않는다.** 이 패키지는 `global`이라 `domain`을 참조할 수 없다(§2). 지표가 3종 고정이라 필드로 펴도 늘어날 일이 없다.
 
 **범위를 벗어난 점수는 자르지 않고 실패시킨다.** strict 스키마가 `minimum`/`maximum`을 지원하지 않아(넣으면 요청이 400이다) 0~100은 코드가 지켜야 하는데, 클램프하면 **모델이 다른 척도로 답했다는 사실이 숨는다** — 101을 100으로 만들면 저장은 되고 적중률만 틀린다. 실패하면 앱이 재시도하고 행은 생기지 않는다([erd.md](erd.md) §3.6).
 
