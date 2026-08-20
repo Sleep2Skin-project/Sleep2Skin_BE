@@ -36,12 +36,25 @@ final class SkinVisionPrompt {
      * 어긋나도 값은 0~100이라 아무 데도 안 걸리고, 모델이 매긴 "보통"과 화면에 나가는 등급 라벨만
      * 조용히 달라진다.
      *
-     * <h2>후하게 주는 것을 막는 문장이 이 지시의 절반이다</h2>
+     * <h2>⚠️ 양쪽으로 치우칠 수 있다 — 한쪽만 막으면 반대쪽으로 넘어간다</h2>
      *
-     * <p>양 끝만 정의하면 모델은 사람 얼굴을 낮게 매기기를 꺼려 70~85 에 몰아넣는다. 그러면 실측이
-     * 늘 예보보다 높게 나와 {@code UNDERESTIMATED} 가 쏟아지는데, <b>개인 가중치 학습은 계통
-     * 편차를 잡지 못한다</b>(절편 항을 두지 않기로 했다 — prd.md §10.7). 척도가 치우치면 학습으로
-     * 회복되지 않으므로 여기서 잡아야 한다.
+     * <p>척도가 어느 방향으로 치우치든 실측이 예보와 계통적으로 어긋나는데, <b>개인 가중치 학습은
+     * 계통 편차를 잡지 못한다</b>(절편 항을 두지 않기로 했다 — prd.md §10.7). 학습으로 회복되지
+     * 않으므로 여기서 잡아야 한다.
+     *
+     * <p><b>둘 다 실제로 한 번씩 일어났다.</b>
+     *
+     * <ul>
+     *   <li><b>위로 치우침</b> — 양 끝만 정의하니 모델이 사람 얼굴을 낮게 매기기를 꺼려 70~85 에
+     *       몰았다. 트러블이 뚜렷한 사진도 70점대였다</li>
+     *   <li><b>아래로 치우침</b>(그 보정 직후) — "76~100 은 정말 좋은 피부에만" 이라고 적었더니
+     *       <b>지적할 문제가 없는 깨끗한 피부까지 60점대</b>가 됐다. 예보 90 에 실측 60 이 대조됐다</li>
+     * </ul>
+     *
+     * <p><b>그래서 구간을 "얼마나 인상적인가"가 아니라 "보이는 문제가 있는가"로 정의한다.</b>
+     * 지적할 문제가 없으면 {@code 76} 이상이고 한눈에 보이면 {@code 50} 미만이다 — <b>두 규칙이
+     * 대칭이라야 한쪽을 조여도 반대쪽으로 넘어가지 않는다.</b> 지시문과 지표별
+     * {@code description} 양쪽에 두 방향이 모두 적혀 있어야 한다.
      */
     static final String INSTRUCTIONS = """
             You rate the visible skin condition in a selfie for a sleep-and-skin tracking app.
@@ -49,23 +62,32 @@ final class SkinVisionPrompt {
             Rate three metrics. All three use the SAME scale: an integer from 0 to 100 where
             a HIGHER score always means a BETTER (healthier-looking) condition.
 
-            CALIBRATION — what each band means. The app maps these bands to fixed grade
-            labels, so a score in the wrong band is wrong even when the ordering is right:
-              0-25    poor — the problem is obvious at a glance
-              26-50   below average — clearly visible, anyone would notice it
-              51-75   average — mild or unremarkable, typical everyday skin
-              76-100  excellent — genuinely clear skin that stands out as good
+            CALIBRATION — the bands are defined by HOW VISIBLE THE PROBLEM IS, not by how
+            impressive the skin is. The app maps these bands to fixed grade labels, so a
+            score in the wrong band is wrong even when the ordering is right:
+              0-25    severe — the problem dominates; obvious at a glance
+              26-50   clear problem — plainly visible, anyone would notice it
+              51-75   mild — something is visible, but you have to look to see it
+              76-100  clean — nothing visible for this metric
 
-            Anchor to that scale, not to politeness. The most common failure is rating a
-            tired, broken-out or dull face in the 70s because the person looks fine overall.
-            A face with obvious dark circles, visible breakouts or a dull tone is a 30-50
-            face on that metric, not a 70 face. Reserve 76-100 for skin that genuinely looks
-            great, not merely acceptable.
+            Both ends of that scale are reachable and both get used. Two failures are
+            equally wrong, and you must avoid both:
 
-            These scores are never shown to the user as a compliment or as feedback on their
-            appearance. They are measurements compared against a prediction made from that
-            night of sleep. Scoring generously spares nobody's feelings; it only makes the
-            comparison meaningless.
+            Scoring too high. A face with obvious dark circles, visible breakouts or a dull
+            tone is a 30-50 face on that metric, not a 70 face — do not soften it because
+            the person looks fine overall. These scores are never shown to the user as a
+            compliment or as feedback on their appearance; they are measurements compared
+            against a prediction made from that night of sleep, and scoring generously
+            spares nobody's feelings.
+
+            Scoring too low. The top band is NOT reserved for exceptional or professionally
+            photographed skin — it is simply where skin with no visible problem belongs. If
+            you cannot name what is wrong with a metric, that metric is above 75. Do not
+            settle at 60-70 out of caution, and do not deduct points for an ordinary selfie
+            being an ordinary selfie.
+
+            Do not compress everything toward the middle. Rating every photo into 40-70 is
+            exactly as wrong as rating every photo into the 80s.
 
             Rate each metric independently. A face can be excellent on one metric and poor on
             another — do not let a single overall impression pull all three to the same
@@ -76,9 +98,14 @@ final class SkinVisionPrompt {
 
             If lighting, angle or resolution make a metric hard to judge, give your best
             estimate near the middle of the range rather than an extreme value. That rule is
-            for photos you cannot read — it does not apply when a condition described at the
-            0 end of a metric is plainly visible. If you can see it without looking for it,
-            the score belongs below 50.
+            only for photos you cannot read. It does not apply in either direction once you
+            can see the skin:
+              - if a condition described at the 0 end is visible without looking for it,
+                the score belongs below 50
+              - if nothing described at the 0 end is present, the score belongs above 75
+
+            A clear, well-lit selfie of clean skin is a readable photo, not an uncertain
+            one — it does not get pulled toward the middle.
 
             Also flag four additional conditions as true/false only — do NOT rate their
             severity, only whether they are visibly present. Answer false when you cannot
@@ -114,16 +141,22 @@ final class SkinVisionPrompt {
                 25 = dark circles obvious at a glance.
                 50 = clearly visible shadowing that anyone would notice.
                 75 = a faint shadow only, easy to miss.
+                90 = no shadow worth noting under ordinary lighting.
                 100 = the under-eye area looks clear and bright, with no visible shadow.
                 Note the direction: a HIGH score means dark circles are ABSENT. If you can see
-                under-eye darkness without looking for it, the score is below 50."""));
+                under-eye darkness without looking for it, the score is below 50 — and if you
+                cannot point at any under-eye darkness, the score is above 75."""));
         properties.put("complexion", integerField("""
                 Complexion vitality.
                 0 = pale, dull, sallow, grey or lifeless tone; uneven and washed out.
                 25 = clearly dull or sallow at a glance.
                 50 = flat, tired-looking tone with little vitality.
                 75 = mostly even with some healthy color.
+                90 = even and healthy-looking, with nothing dull or sallow to point at.
                 100 = even, rosy, radiant-looking skin tone.
+                If you cannot point at dullness, sallowness or unevenness, the score is above
+                75 — a healthy everyday complexion does not have to look radiant to clear that
+                line.
                 Judge tone and vitality, NOT skin color itself — every skin tone has a healthy
                 and an unhealthy-looking version, and a darker or lighter complexion is not by
                 itself a lower score."""));
@@ -134,8 +167,12 @@ final class SkinVisionPrompt {
                 25 = irritation, roughness or active acne obvious at a glance.
                 50 = some visible redness, rough texture, or a few active blemishes.
                 75 = mostly calm with only minor texture.
+                90 = calm and even, with no redness, flaking or active breakout to point at.
                 100 = smooth, calm and well-hydrated-looking, with no redness, flaking or
                 active breakouts.
+                If there is no redness, flaking, roughness or active breakout you can point
+                at, the score is above 75. Normal visible pores and ordinary skin texture are
+                not barrier damage — do not deduct for them.
                 Active inflamed acne belongs in THIS score — it is visible barrier irritation.
                 Healed acne scarring does not; report that with acneScarDetected instead."""));
         properties.put("pigmentationDetected", booleanField("""
