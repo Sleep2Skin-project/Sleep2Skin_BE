@@ -1,0 +1,58 @@
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :resolveMainClassName UP-TO-DATE
+
+> Task :bootRun
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.0)
+
+2026-08-19T16:15:00.281+09:00  INFO 1876 --- [sleep2skin_be] [           main] c.a.s.Sleep2skinBeApplication            : Starting Sleep2skinBeApplication using Java 21.0.10 with PID 1876 (C:\Users\peace\IdeaProjects\Sleep2Skin_BE\build\classes\java\main started by peace in C:\Users\peace\IdeaProjects\Sleep2Skin_BE)
+2026-08-19T16:15:00.289+09:00  INFO 1876 --- [sleep2skin_be] [           main] c.a.s.Sleep2skinBeApplication            : No active profile set, falling back to 1 default profile: "default"
+2026-08-19T16:15:01.292+09:00  INFO 1876 --- [sleep2skin_be] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-08-19T16:15:01.391+09:00  INFO 1876 --- [sleep2skin_be] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 89 ms. Found 10 JPA repository interfaces.
+2026-08-19T16:15:02.095+09:00  INFO 1876 --- [sleep2skin_be] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat initialized with port 8080 (http)
+2026-08-19T16:15:02.112+09:00  INFO 1876 --- [sleep2skin_be] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-08-19T16:15:02.112+09:00  INFO 1876 --- [sleep2skin_be] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/11.0.22]
+2026-08-19T16:15:02.178+09:00  INFO 1876 --- [sleep2skin_be] [           main] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 1840 ms
+2026-08-19T16:15:02.386+09:00  INFO 1876 --- [sleep2skin_be] [           main] org.hibernate.orm.jpa                    : HHH008540: Processing PersistenceUnitInfo [name: default]
+2026-08-19T16:15:02.493+09:00  INFO 1876 --- [sleep2skin_be] [           main] org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.4.1.Final
+2026-08-19T16:15:02.971+09:00  INFO 1876 --- [sleep2skin_be] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-08-19T16:15:03.008+09:00  INFO 1876 --- [sleep2skin_be] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-08-19T16:15:03.289+09:00  INFO 1876 --- [sleep2skin_be] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@42ebece0
+2026-08-19T16:15:03.293+09:00  INFO 1876 --- [sleep2skin_be] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-08-19T16:15:03.406+09:00  INFO 1876 --- [sleep2skin_be] [           main] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [jdbc:mysql://localhost:3307/sleep2skin?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC]
+	Database driver: MySQL Connector/J
+	Database dialect: MySQLDialect
+	Database version: 8.0.46
+	Default catalog/schema: sleep2skin/undefined
+	Autocommit mode: undefined/unknown
+	Isolation level: REPEATABLE_READ [default REPEATABLE_READ]
+	JDBC fetch size: none
+	Pool: DataSourceConnectionProvider
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-08-19T16:15:04.659+09:00  INFO 1876 --- [sleep2skin_be] [           main] org.hibernate.orm.core                   : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-08-19T16:15:04.980+09:00  INFO 1876 --- [sleep2skin_be] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-08-19T16:15:05.072+09:00  INFO 1876 --- [sleep2skin_be] [           main] o.s.d.j.r.query.QueryEnhancerFactories   : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-08-19T16:15:06.236+09:00  WARN 1876 --- [sleep2skin_be] [           main] c.a.s.global.config.OpenAiConfig         : OPENAI_API_KEY 가 비어 있다 — 셀피 분석 API 만 502 로 실패한다
+2026-08-19T16:15:06.594+09:00  WARN 1876 --- [sleep2skin_be] [           main] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-08-19T16:15:06.999+09:00  INFO 1876 --- [sleep2skin_be] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8080 (http) with context path '/'
+2026-08-19T16:15:07.006+09:00  INFO 1876 --- [sleep2skin_be] [           main] c.a.s.Sleep2skinBeApplication            : Started Sleep2skinBeApplication in 7.242 seconds (process running for 7.673)
+2026-08-19T16:15:07.152+09:00  INFO 1876 --- [sleep2skin_be] [           main] c.a.s.domain.user.TestUserSeeder         : 테스트 유저가 이미 있어 시딩을 건너뛴다
+2026-08-19T16:15:07.157+09:00  WARN 1876 --- [sleep2skin_be] [           main] o.s.core.events.SpringDocAppInitializer  : SpringDoc /v3/api-docs endpoint is enabled by default. To disable it in production, set the property 'springdoc.api-docs.enabled=false'
+2026-08-19T16:15:07.157+09:00  WARN 1876 --- [sleep2skin_be] [           main] o.s.core.events.SpringDocAppInitializer  : SpringDoc /swagger-ui.html endpoint is enabled by default. To disable it in production, set the property 'springdoc.swagger-ui.enabled=false'
+2026-08-19T16:17:45.317+09:00  INFO 1876 --- [sleep2skin_be] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-08-19T16:17:45.320+09:00  INFO 1876 --- [sleep2skin_be] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-08-19T16:17:45.324+09:00  INFO 1876 --- [sleep2skin_be] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 4 ms
+2026-08-19T16:17:49.047+09:00  INFO 1876 --- [sleep2skin_be] [io-8080-exec-10] o.springdoc.api.AbstractOpenApiResource  : Init duration for springdoc-openapi is: 3010 ms
+2026-08-19T16:34:18.165+09:00  WARN 1876 --- [sleep2skin_be] [l-1:housekeeper] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Thread starvation or clock leap detected (housekeeper delta=7m14s578ms734µs200ns).
+2026-08-19T17:10:06.678+09:00  WARN 1876 --- [sleep2skin_be] [l-1:housekeeper] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Thread starvation or clock leap detected (housekeeper delta=47s971ms148µs300ns).

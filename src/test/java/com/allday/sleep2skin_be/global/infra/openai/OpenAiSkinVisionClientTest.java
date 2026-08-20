@@ -58,12 +58,12 @@ class OpenAiSkinVisionClientTest {
 
     /** Responses API 성공 응답. {@code output} 배열에 메시지가 아닌 항목이 섞인 실제 모양이다. */
     private String responseWith(int darkCircle, int complexion, int barrier) {
-        return responseWith(darkCircle, complexion, barrier, false, false, false);
+        return responseWith(darkCircle, complexion, barrier, false, false, false, false);
     }
 
     private String responseWith(int darkCircle, int complexion, int barrier,
                                 boolean pigmentationDetected, boolean acneScarDetected,
-                                boolean agingDetected) {
+                                boolean agingDetected, boolean blackheadDetected) {
         return """
                 {
                   "id": "resp_1",
@@ -73,12 +73,12 @@ class OpenAiSkinVisionClientTest {
                     { "type": "message", "id": "msg_1", "role": "assistant",
                       "content": [
                         { "type": "output_text",
-                          "text": "{\\"darkCircle\\":%d,\\"complexion\\":%d,\\"barrier\\":%d,\\"pigmentationDetected\\":%b,\\"acneScarDetected\\":%b,\\"agingDetected\\":%b}" }
+                          "text": "{\\"darkCircle\\":%d,\\"complexion\\":%d,\\"barrier\\":%d,\\"pigmentationDetected\\":%b,\\"acneScarDetected\\":%b,\\"agingDetected\\":%b,\\"blackheadDetected\\":%b}" }
                       ] }
                   ]
                 }
                 """.formatted(darkCircle, complexion, barrier,
-                pigmentationDetected, acneScarDetected, agingDetected);
+                pigmentationDetected, acneScarDetected, agingDetected, blackheadDetected);
     }
 
     @Nested
@@ -109,7 +109,7 @@ class OpenAiSkinVisionClientTest {
                     .andExpect(jsonPath("$.text.format.type").value("json_schema"))
                     .andExpect(jsonPath("$.text.format.strict").value(true))
                     .andExpect(jsonPath("$.text.format.schema.additionalProperties").value(false))
-                    .andExpect(jsonPath("$.text.format.schema.required.length()").value(6))
+                    .andExpect(jsonPath("$.text.format.schema.required.length()").value(7))
                     .andRespond(withSuccess(responseWith(61, 55, 78), MediaType.APPLICATION_JSON));
 
             client.analyze(IMAGE, "image/jpeg");
@@ -140,18 +140,18 @@ class OpenAiSkinVisionClientTest {
                     .andRespond(withSuccess(responseWith(61, 55, 78), MediaType.APPLICATION_JSON));
 
             assertThat(client.analyze(IMAGE, "image/jpeg"))
-                    .isEqualTo(new SkinVisionScores(61, 55, 78, false, false, false));
+                    .isEqualTo(new SkinVisionScores(61, 55, 78, false, false, false, false));
         }
 
         @Test
-        @DisplayName("클리닉 트리아지 플래그 3종도 함께 파싱한다")
+        @DisplayName("클리닉 트리아지 플래그 4종도 함께 파싱한다")
         void 트리아지_플래그를_파싱한다() {
             server.expect(requestTo(BASE_URL + "/v1/responses"))
                     .andRespond(withSuccess(
-                            responseWith(61, 55, 78, true, false, true), MediaType.APPLICATION_JSON));
+                            responseWith(61, 55, 78, true, false, true, true), MediaType.APPLICATION_JSON));
 
             assertThat(client.analyze(IMAGE, "image/jpeg"))
-                    .isEqualTo(new SkinVisionScores(61, 55, 78, true, false, true));
+                    .isEqualTo(new SkinVisionScores(61, 55, 78, true, false, true, true));
         }
 
         @Test

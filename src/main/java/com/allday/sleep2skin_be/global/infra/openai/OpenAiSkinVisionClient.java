@@ -161,7 +161,8 @@ public class OpenAiSkinVisionClient implements SkinVisionClient {
                     requireScore(scores, "barrier"),
                     requireBoolean(scores, "pigmentationDetected"),
                     requireBoolean(scores, "acneScarDetected"),
-                    requireBoolean(scores, "agingDetected"));
+                    requireBoolean(scores, "agingDetected"),
+                    requireBoolean(scores, "blackheadDetected"));
 
         } catch (BusinessException e) {
             throw e;
@@ -200,7 +201,7 @@ public class OpenAiSkinVisionClient implements SkinVisionClient {
         return value.asInt();
     }
 
-    /** 감지 플래그 3종. strict 스키마의 {@code required}에 있어 항상 존재하지만, 타입만 확인한다. */
+    /** 감지 플래그 4종. strict 스키마의 {@code required}에 있어 항상 존재하지만, 타입만 확인한다. */
     private boolean requireBoolean(JsonNode scores, String field) {
         JsonNode value = scores.path(field);
         if (!value.isBoolean()) {
