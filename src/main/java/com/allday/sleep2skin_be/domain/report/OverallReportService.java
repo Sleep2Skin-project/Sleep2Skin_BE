@@ -163,7 +163,7 @@ public class OverallReportService {
      */
     private ClinicNeeded toClinicNeeded(SkinMeasurement measurement) {
         return new ClinicNeeded(measurement.getPigmentationDetected(), measurement.getAcneScarDetected(),
-                measurement.getAgingDetected());
+                measurement.getAgingDetected(), measurement.getBlackheadDetected());
     }
 
 }

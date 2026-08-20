@@ -176,6 +176,7 @@ public class SkinVerificationService {
                     .pigmentationDetected(scores.pigmentationDetected())
                     .acneScarDetected(scores.acneScarDetected())
                     .agingDetected(scores.agingDetected())
+                    .blackheadDetected(scores.blackheadDetected())
                     .analyzedAt(OffsetDateTime.now())
                     .build());
 

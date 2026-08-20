@@ -417,7 +417,7 @@ class ReportControllerTest {
                                             VolatileDirection.RISE_THEN_FALL, 61, 58),
                                     new MetricTrendResult(MetricTrend.INSUFFICIENT_SAMPLE, null, null, 65)),
                             List.of(SkinMetric.DARK_CIRCLE, SkinMetric.COMPLEXION, SkinMetric.BARRIER),
-                            new ClinicNeeded(false, false, true)));
+                            new ClinicNeeded(false, false, true, false)));
 
             mockMvc.perform(get(PATH).header(USER_ID_HEADER, USER_ID)
                             .param("baseDate", "2026-08-14"))
@@ -438,6 +438,7 @@ class ReportControllerTest {
                     .andExpect(jsonPath("$.data.appManaged[2]").value("BARRIER"))
                     .andExpect(jsonPath("$.data.clinicNeeded.pigmentationDetected").value(false))
                     .andExpect(jsonPath("$.data.clinicNeeded.agingDetected").value(true))
+                    .andExpect(jsonPath("$.data.clinicNeeded.blackheadDetected").value(false))
                     .andExpect(jsonPath("$.data.clinicLink").value("https://amredclinic.com/ko"));
         }
 
