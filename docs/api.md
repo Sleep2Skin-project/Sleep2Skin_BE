@@ -430,7 +430,7 @@ image: (파일)
 
 **`difference`는 `예보 − 실측`이다.** 판정 구간(§10.2)이 이 방향으로 정의돼 있다. `verdict`는 `HIT`(±5) · `CLOSE`(±6~15) · `UNDERESTIMATED`(−16 이하) · `OVERESTIMATED`(+16 이상)이며, **`UNDERESTIMATED`는 점수를 낮게 예측한 것 = 피부 위험을 과대평가한 것**이다. 두 축이 반대라 문구에서 뒤집히기 쉽다.
 
-**⚠️ LLM은 지표 3종 외에 감지 플래그 3종도 함께 산출하지만 이 응답에는 담지 않는다** (2026-08-16 추가). `pigmentationDetected`·`acneScarDetected`·`agingDetected`는 `skin_measurement`에 **저장만 되고** 종합 리포트(`GET /report/overall`)에서만 읽힌다(§2.5 5번). **검증(HOME-07)에도 개인 가중치 학습(HOME-08)에도 관여하지 않는다** — 대조할 예보값이 없기 때문이다. 화면이 이 셋을 요구하는 자리가 종합 리포트뿐이라 검증 응답에 실을 이유가 없다.
+**⚠️ LLM은 지표 3종 외에 감지 플래그 4종도 함께 산출하지만 이 응답에는 담지 않는다** (2026-08-16 추가 · 2026-08-20 `blackheadDetected` 추가로 4종). `pigmentationDetected`·`acneScarDetected`·`agingDetected`·`blackheadDetected`는 `skin_measurement`에 **저장만 되고** 종합 리포트(`GET /report/overall`)에서만 읽힌다(§2.5 5번). **검증(HOME-07)에도 개인 가중치 학습(HOME-08)에도 관여하지 않는다** — 대조할 예보값이 없기 때문이다. 화면이 이 넷을 요구하는 자리가 종합 리포트뿐이라 검증 응답에 실을 이유가 없다.
 
 **실측 3종은 항상 나온다.** LLM은 예보와 무관하게 셋을 모두 산출하고 `skin_measurement`도 셋 다 `NOT NULL`이다. **갈리는 것은 실측이 아니라 대조 가능 여부**이며, 그래서 `skipped`에도 `measured`가 실린다 — 예보가 없어 판정만 못 한 것이지 사진을 못 읽은 것이 아니다.
 
@@ -949,7 +949,8 @@ X-User-Id: 1
     "clinicNeeded": {                  // 실측 이력이 전혀 없으면 null
       "pigmentationDetected": false,
       "acneScarDetected": false,
-      "agingDetected": true
+      "agingDetected": true,
+      "blackheadDetected": false
     },
     "clinicLink": "https://amredclinic.com/ko"
   } }
@@ -988,14 +989,23 @@ X-User-Id: 1
 
 **`appManaged`는 계산하지 않는다.** `SkinMetric` 선언 순서를 그대로 쓰는 **고정 라벨 배열**이고, 지표별 개선 여부에 따라 달라지지 않는다.
 
-##### `clinicNeeded` — 셀피 실측 전용 감지 플래그 3종
+##### `clinicNeeded` — 셀피 실측 전용 감지 플래그 4종
 
 **`baseDate` 이하에서 가장 최근 실측 1건**의 플래그를 그대로 옮긴다. 추세·비교가 없다 — "지금 클리닉이 필요해 보이는가"만 보여준다.
 
+| 필드 | `true`일 때 |
+|---|---|
+| `pigmentationDetected` | 색소침착(잡티·기미·불균일한 착색)이 보인다 |
+| `acneScarDetected` | 여드름 흉터(패임·착색된 흉터 조직)가 보인다 |
+| `agingDetected` | 구조적 노화(주름·잔주름·처짐·탄력 저하)가 보인다 |
+| `blackheadDetected` | 블랙헤드(열린 면포·모공 속 검은 점, 주로 코·T존)가 보인다 **(2026-08-20 추가)** |
+
 - **점수화하지 않는다.** 0~100이 아니라 감지 여부(boolean)뿐이다. 심각도를 셀피 한 장으로 판정할 근거가 없다
-- **예보 3종과 분리돼 있다.** 대응하는 예보값이 없어 **HOME-07 대조에도 HOME-08 개인 가중치 학습에도 관여하지 않는다** — "예보와 실측은 같은 세트"라는 원칙은 그 세트(`darkCircle`·`complexion`·`barrier`) 안에서 그대로다. **이 셋을 예보 3종에 섞으면 그때가 원칙 위반이다**
-- **`clinicNeeded` 전체가 `null`인 것과 필드 하나가 `null`인 것은 뜻이 다르다.** 전체 `null`은 **실측 이력이 아예 없는 것**이고, 필드 하나만 `null`이면 **그 실측 행이 이 컬럼 도입(2026-08-16) 이전 데이터**라 미측정이다. **어느 쪽도 `false`로 채우지 않는다** — "감지 안 됨"과 "측정한 적 없음"은 다르다
-- **`POST /skin/selfie` 응답에는 이 셋이 나가지 않는다.** 저장만 하고 여기서만 읽는다(§2.3)
+- **예보 3종과 분리돼 있다.** 대응하는 예보값이 없어 **HOME-07 대조에도 HOME-08 개인 가중치 학습에도 관여하지 않는다** — "예보와 실측은 같은 세트"라는 원칙은 그 세트(`darkCircle`·`complexion`·`barrier`) 안에서 그대로다. **이 넷을 예보 3종에 섞으면 그때가 원칙 위반이다**
+- **플래그는 늘어날 수 있지만 예보 지표는 늘어나지 않는다.** `blackheadDetected`가 2026-08-20에 추가되며 3종 → 4종이 됐고, 그때도 `SkinMetric`·`SkinForecast`·`personal_weight`(7행)는 그대로였다. **앱은 이 객체의 키가 늘어날 수 있다고 보고 파싱한다** — 모르는 키는 무시하면 되고 기존 키는 사라지지 않는다
+- **`clinicNeeded` 전체가 `null`인 것과 필드 하나가 `null`인 것은 뜻이 다르다.** 전체 `null`은 **실측 이력이 아예 없는 것**이고, 필드 하나만 `null`이면 **그 실측 행이 해당 컬럼 도입 이전 데이터**라 미측정이다. **어느 쪽도 `false`로 채우지 않는다** — "감지 안 됨"과 "측정한 적 없음"은 다르다
+- **⚠️ 도입 시점이 필드마다 다르다.** 앞의 셋은 2026-08-16, `blackheadDetected`는 2026-08-20이다. 그래서 **그 사이에 쌓인 실측 행은 앞의 셋이 `true`/`false`인데 `blackheadDetected`만 `null`** 이다 — 정상이며, 앱은 필드별로 `null`을 판단해야 한다
+- **`POST /skin/selfie` 응답에는 이 넷이 나가지 않는다.** 저장만 하고 여기서만 읽는다(§2.3)
 
 **`clinicLink`는 서버 상수 고정값**이며 앱은 파싱하지 않고 그대로 연다. **연결 클릭 이벤트 기록(REP-11 "필요 시")은 이번 범위에 없다** — 제휴 지표가 필요해지면 그때 연다.
 
@@ -1198,7 +1208,7 @@ Content-Type: application/json
 | 무엇 | 어디 |
 |---|---|
 | 종합 리포트 `GET /report/overall` — 마지막 도메인 API | §2.5 5번 |
-| `skin_measurement` 감지 플래그 3종 (클리닉 트리아지 전용) | §2.5 5번 · [erd.md](erd.md) §3.6 |
+| `skin_measurement` 감지 플래그 4종 (클리닉 트리아지 전용) | §2.5 5번 · [erd.md](erd.md) §3.6 |
 | 일간 `sleepSummary`에 `remSleepMinutes`·`hrv`·`restingHeartRate` | §2.5 1번 |
 | 주간·월간 `correlations`가 지표별 3그룹으로 **교체** (필드 병행 없음) | §2.5 3~4번 |
 | `action_master.threshold` 전 행 `+20` (상한 `90`) — 추천이 너무 드물게 뜨는 문제 | [erd.md](erd.md) §3.8 |
